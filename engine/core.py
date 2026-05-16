@@ -84,7 +84,16 @@ class Engine:
         """
         Hot-reload a node-type after its file was edited. Returns True if
         the type was found and reloaded successfully.
+
+        Implementation note: importlib.reload does not work cleanly for
+        modules originally loaded via importlib.util.spec_from_file_location
+        (it raises "spec not found" because the spec object isn't kept on
+        the module the way regular-import flows do). The reliable path is
+        to delete the module from sys.modules and re-run the same loader
+        the engine uses for initial discovery. That guarantees the new
+        file content is read and re-executed.
         """
+        importlib.invalidate_caches()
         for kind in ("node_types", "renderers"):
             for py_file in (self.root_dir / kind).glob("*.py"):
                 try:
@@ -93,9 +102,25 @@ class Engine:
                         m_old = sys.modules[mod_name].manifest()
                         if m_old.name != type_name:
                             continue
-                        importlib.reload(sys.modules[mod_name])
-                        m_new = sys.modules[mod_name].manifest()
-                        self.types[m_new.name] = sys.modules[mod_name]
+                        del sys.modules[mod_name]
+                        # Also evict any stale .pyc for this source file so
+                        # the next load re-reads the source. SourceFileLoader
+                        # otherwise prefers a fresh-looking cached bytecode
+                        # whose mtime can differ from the source's by less
+                        # than the filesystem's mtime resolution, producing
+                        # silent "reload returned True but content unchanged"
+                        # failures.
+                        try:
+                            cache_file = importlib.util.cache_from_source(str(py_file))
+                            if Path(cache_file).exists():
+                                Path(cache_file).unlink()
+                        except Exception:
+                            pass
+                        self._load_node_type_file(py_file, kind)
+                        new_module = sys.modules.get(mod_name)
+                        if new_module is None or not hasattr(new_module, "manifest"):
+                            return False
+                        self.types[new_module.manifest().name] = new_module
                         return True
                 except Exception as e:
                     self.errors.append(f"reload_type({type_name}): {e}")
