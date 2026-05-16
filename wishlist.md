@@ -111,6 +111,7 @@ The interpreter layer the maintainer named as "deferred for later."
 
 - **#051** [pending] — **Procedural tool recorder.** Each time a wish is granted, the wish-granting session ALSO produces a tool that makes the same shape of wish easier next time. The accumulator is structural; the catalog grows.
 - **#052** [pending] — **Wish-grants-better-than-wished.** Wish-granting sessions explicitly try to produce something better than the wished-for feature — more adaptable, more generalizable. The session compares its output against the wish and notes what improvements landed.
+- **#057** [pending] — **Periodic transcript-mining cadence.** A session or scheduled task that walks the imported claude.ai transcripts plus recent Claude Code session handoffs, looking for workflow directives that haven't been captured in the current wishlist / memory / conventions. Surfaces uncaptured items as candidate wishes. Today this only happens when a session remembers to run it on-demand; making it periodic catches directives sooner. Could compose with the scheduled-tasks MCP tool already available in the harness, or live as a session type whose only role is mining + filing.
 
 ## Granted
 
