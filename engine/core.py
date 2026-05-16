@@ -289,7 +289,11 @@ class Engine:
         # Z-buffer for color
         if "color" in over and "depth" in over and "depth" in base:
             mask = over["depth"] < base["depth"]
-            out["color"] = np.where(mask[..., None], over["color"], base.get("color", base["depth"][..., None] * 0))
+            fallback_color = base.get("color")
+            if fallback_color is None:
+                # base lacked a color channel; fall back to opaque black at over's shape
+                fallback_color = np.zeros_like(over["color"])
+            out["color"] = np.where(mask[..., None], over["color"], fallback_color)
             out["depth"] = np.where(mask, over["depth"], base["depth"])
         else:
             out["color"] = over.get("color", base.get("color"))

@@ -67,9 +67,10 @@ def write_bundle(channels: Channels, output_dir: Path, view: View = None, scene_
     # IDs (optional)
     if "ids" in channels:
         ids = np.asarray(channels["ids"], dtype=np.uint32)
-        # Save as 16-bit grayscale if it fits; otherwise as raw npy
+        # Save as 16-bit grayscale if it fits; otherwise as raw npy.
+        # PIL infers mode "I;16" from the uint16 dtype; passing mode= is deprecated.
         if ids.max() < 65536:
-            Image.fromarray(ids.astype(np.uint16), mode="I;16").save(output_dir / "ids.png")
+            Image.fromarray(ids.astype(np.uint16)).save(output_dir / "ids.png")
             manifest["channels"]["ids"] = "ids.png"
         else:
             np.save(output_dir / "ids.npy", ids)
