@@ -1,0 +1,17 @@
+# CODEOWNERS for Apeiron
+#
+# Atlas-linked paths require maintainer review per the meta-layer's
+# edit-permissions convention:
+# https://github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront/blob/main/conventions/edit_permissions.md
+#
+# Non-Atlas paths are editable by any session or subagent via direct
+# commit (when on a branch with the maintainer in the loop) or pull
+# request (when operating independently).
+
+# Atlas-linked pages
+/README.md           @liamhodgsonhollingsworth
+/whats_built.md      @liamhodgsonhollingsworth
+/architecture.md     @liamhodgsonhollingsworth
+/CLAUDE.md           @liamhodgsonhollingsworth
+/CODEOWNERS          @liamhodgsonhollingsworth
+/LICENSE             @liamhodgsonhollingsworth
