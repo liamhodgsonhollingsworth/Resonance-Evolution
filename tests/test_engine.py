@@ -176,6 +176,87 @@ def test_summarize_bundle(tmp_path, hello_scene, view_for_hello):
     assert "depth" in summary
 
 
+def test_computer_screen_shows_inner_cube():
+    """Computer renders its 'running' sub-graph internally and pastes the
+    result onto its screen rectangle in the outer world. The outer scene
+    has a red cube (parent frame) plus a Computer whose internal sub-graph
+    is a blue cube. Both colors must appear: red in the outer world,
+    blue on the screen surface."""
+    e = Engine(root_dir=ROOT)
+    e.discover()
+    scene_path = ROOT / "scenes" / "computer_demo.json"
+    root_id = e.load_scene(scene_path)
+    e.precompute()
+
+    pos = np.array([0.0, 0.5, 7.0])
+    target = np.array([0.0, 0.0, 0.0])
+    view = View(position=pos, orientation=look_at(pos, target), width=128, height=128)
+    channels = e.assemble(root_id, view)
+    color = channels["color"]
+    assert color is not None and color.shape == (128, 128, 3)
+
+    red_mask = (color[..., 0] > 0.5) & (color[..., 2] < 0.3)
+    assert red_mask.sum() > 0, "red cube not visible in outer world"
+
+    blue_mask = (color[..., 2] > 0.4) & (color[..., 0] < 0.3)
+    assert blue_mask.sum() > 0, "inner blue cube not visible on computer screen"
+
+
+def test_computer_skips_default_recursion():
+    """select_children returns [] for Computer — engine doesn't recurse
+    into 'running' under the outer view. Computer.emit() owns the
+    internal render."""
+    e = Engine(root_dir=ROOT)
+    e.discover()
+    scene_path = ROOT / "scenes" / "computer_demo.json"
+    e.load_scene(scene_path)
+
+    module = e.types["Computer"]
+    node = e.nodes["computer"]
+    pos = np.array([0.0, 0.5, 7.0])
+    view = View(position=pos, orientation=look_at(pos, np.zeros(3)),
+                width=64, height=64)
+    selected = module.select_children(node.state, view, e, node)
+    assert selected == [], f"expected select_children to return [], got {selected}"
+
+
+def test_computer_recursion_two_levels():
+    """Outer Computer renders an inner Computer that renders a green cube.
+    The green cube must appear in the outermost render — verifies the
+    recursion is unbounded by construction."""
+    e = Engine(root_dir=ROOT)
+    e.discover()
+
+    e.spawn("green_cube", "Cube",
+            params={"size": 1.5, "color": [0.2, 0.85, 0.3], "id_hash": 1})
+    e.spawn("inner_computer", "Computer",
+            params={
+                "screen_width": 3.0, "screen_height": 2.0,
+                "screen_resolution": 64,
+                "internal_camera_position": [0.0, 0.5, 4.0],
+                "internal_camera_target": [0.0, 0.0, 0.0],
+            },
+            connections={"running": "green_cube"})
+    e.spawn("outer_computer", "Computer",
+            params={
+                "screen_width": 4.0, "screen_height": 3.0,
+                "screen_resolution": 128,
+                "internal_camera_position": [0.0, 0.5, 6.0],
+                "internal_camera_target": [0.0, 0.0, 0.0],
+            },
+            connections={"running": "inner_computer"})
+    e.precompute()
+
+    pos = np.array([0.0, 0.5, 8.0])
+    view = View(position=pos, orientation=look_at(pos, np.zeros(3)),
+                width=128, height=128)
+    channels = e.assemble("outer_computer", view)
+    color = channels["color"]
+
+    green_mask = (color[..., 1] > 0.5) & (color[..., 0] < 0.4) & (color[..., 2] < 0.4)
+    assert green_mask.sum() > 0, "innermost green cube not visible — recursion broken"
+
+
 def test_aggregator_precompute_populates_cache():
     """Aggregator's precompute_hook walks the target sub-graph and
     populates engine.cache with centroid, bounding_box, average_color,
