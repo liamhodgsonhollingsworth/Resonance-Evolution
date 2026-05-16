@@ -95,19 +95,25 @@ def precompute_hook(state, engine, node):
     new_text = raw[state["parsed_offset"]:]
     state["parsed_offset"] = len(raw)
 
-    pending_requests: List[str] = []
+    pending_responses: List[str] = []
     for line in new_text.splitlines():
         outcome = _classify(line, state["known_commands"])
         state["output_log"].append(outcome)
-        if outcome["outcome"] == "novel" and state["claude_connected"]:
-            pending_requests.append(line)
+        if outcome["outcome"] == "novel":
+            if state["claude_connected"]:
+                pending_responses.append(f"requested: {line}\n")
+            else:
+                pending_responses.append(f"not yet learned: {line}\n")
 
-    # Append "requested:" or "not yet learned:" responses back to the log
-    # so the chat surface reflects the interpreter's state.
-    if pending_requests:
+    # Append response lines back to the log so the chat surface
+    # reflects the interpreter's state. claude_connected=true routes
+    # novel commands to Claude Code via "requested:"; not-connected
+    # surfaces "not yet learned:" so the user knows their input was
+    # received but couldn't be handled.
+    if pending_responses:
         with log_path.open("a", encoding="utf-8") as f:
-            for line in pending_requests:
-                f.write(f"requested: {line}\n")
+            for response in pending_responses:
+                f.write(response)
 
     return {
         "outcomes": list(state["output_log"]),

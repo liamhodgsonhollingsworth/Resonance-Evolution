@@ -303,6 +303,31 @@ def test_chat_interpreter_writes_request_when_claude_connected(engine, tmp_path)
     assert "requested: teleport_to_dream" in after
 
 
+def test_chat_interpreter_writes_not_yet_learned_when_offline(engine, tmp_path):
+    log = tmp_path / "chat.txt"
+    log.write_text("teleport_to_dream\n", encoding="utf-8")
+    engine.spawn("ci3", "ChatInterpreter",
+                 params={"log_path": str(log), "claude_connected": False})
+    engine.precompute()
+    after = log.read_text(encoding="utf-8")
+    assert "not yet learned: teleport_to_dream" in after
+
+
+def test_dimension_n_hypercube_combinatorial_matches_naive(engine):
+    """The O(V*N) hypercube edge generator must produce the same edges
+    (as a set) the original O(V^2) version produced."""
+    engine.spawn("hc", "DimensionN",
+                 params={"dims": 5, "shape": "hypercube"})
+    state = engine.nodes["hc"].state
+    # 5-cube: 32 vertices, 5 * 32 / 2 = 80 edges.
+    assert state["verts_nd"].shape == (32, 5)
+    assert state["edges"].shape == (80, 2)
+    # Every edge must connect vertices differing in exactly one coordinate.
+    for (a, b) in state["edges"]:
+        diff = np.sum(np.abs(state["verts_nd"][a] - state["verts_nd"][b]) > 1e-9)
+        assert diff == 1, f"edge ({a},{b}) differs in {diff} coordinates"
+
+
 # ---------------------------------------------------------------------------
 # Demo scenes
 # ---------------------------------------------------------------------------

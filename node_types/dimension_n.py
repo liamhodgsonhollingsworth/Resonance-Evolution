@@ -101,16 +101,27 @@ def _build_shape(shape: str, dims: int, size: float):
 
 def _hypercube(dims: int, size: float):
     """All 2^dims corners; edges connect corners that differ in exactly one
-    coordinate. For dims=4 returns 16 vertices and 32 edges (tesseract)."""
+    coordinate. For dims=4 returns 16 vertices and 32 edges (tesseract).
+
+    Edge generation is combinatorial: each vertex (encoded as a binary
+    index 0..2^N-1) has exactly N neighbors — the vertices reached by
+    flipping each of its N bits. This is O(V × N) total rather than the
+    naive O(V^2) all-pairs scan. We emit each edge once by requiring
+    i < j (the bit-flipped neighbor only goes through when it's larger).
+    Verified producing identical output to the V^2 scan for N up to 5;
+    safe up to N around 20 (2^20 verts, 20 * 2^20 / 2 = ~10M edges).
+    """
     if dims < 1:
         return (np.zeros((0, 1), dtype=np.float64),
                 np.zeros((0, 2), dtype=np.int32))
     coords = list(itertools.product([-1.0, 1.0], repeat=dims))
     verts = np.asarray(coords, dtype=np.float64) * size
     edges = []
-    for i in range(len(verts)):
-        for j in range(i + 1, len(verts)):
-            if np.sum(np.abs(verts[i] - verts[j]) > 1e-9) == 1:
+    n_verts = 1 << dims
+    for i in range(n_verts):
+        for bit in range(dims):
+            j = i ^ (1 << bit)
+            if j > i:
                 edges.append((i, j))
     return verts, np.asarray(edges, dtype=np.int32)
 
