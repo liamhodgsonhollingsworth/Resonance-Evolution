@@ -1,0 +1,21 @@
+{
+  "root": "scene",
+  "view": {
+    "position": [0.0, 1.5, 6.0],
+    "look_at": [0.0, 0.0, 0.0],
+    "width": 256,
+    "height": 256
+  },
+  "nodes": [
+    {
+      "id": "scene",
+      "type": "Group",
+      "connections": {
+        "sphere": {"target": "s1", "transform": [[1,0,0,-1.5],[0,1,0,0],[0,0,1,0],[0,0,0,1]]},
+        "cube":   {"target": "c1", "transform": [[1,0,0, 1.5],[0,1,0,0],[0,0,1,0],[0,0,0,1]]}
+      }
+    },
+    {"id": "s1", "type": "Sphere", "params": {"radius": 1.2, "color": [0.85, 0.40, 0.30], "id_hash": 1}},
+    {"id": "c1", "type": "Cube",   "params": {"size":   1.6, "color": [0.30, 0.55, 0.85], "id_hash": 2}}
+  ]
+}
