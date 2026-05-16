@@ -46,6 +46,7 @@ Implementations live in [renderers/](renderers/).
 
 - **TextRenderer** — implemented in `renderers/text.py`. The first-class bidirectional LLM interface. Walks its wrapped sub-graph, calls each child's `describe()` (or falls back to type+params), produces structured text output via the `text` channel. Exposes `command_grammar()` listing the text commands the tools layer dispatches.
 - **AsciiDebug** — implemented in `renderers/ascii_debug.py`. Renders the depth channel as ASCII art for text-mode topology debugging. Useful for verifying scene geometry from the viewer's position without opening a rendered PNG.
+- **PainterlyPostProcessor** — implemented in `renderers/painterly.py`. The first bundle-consuming renderer: wraps a "source" sub-graph, reads its color + ids channels, applies palette reduction (color quantization to N levels per channel) and ID-edge darkening (pixels where the IDs channel changes get multiplied by an edge_darkening factor). Validates the bundle format as a pipeline seam — the same channel shape Apeiron writes to disk also flows through internal renderers. v1 has two effects baked in; v2 can factor each into its own renderer-node and chain them via composition. The `scenes/painterly_demo.json` scene plus `test_painterly_post_quantizes_color_and_marks_edges` verify both effects fire.
 - **Software raster** — implemented inline as the engine's default compositor (Z-buffer over color/depth). Cubes and other geometric node-types ray-cast in their own `emit()` and the compositor stacks the results. A future explicit `SoftwareRaster` renderer-node can override this for sub-graphs that need different compositing.
 
 ## Bundle output
@@ -67,7 +68,7 @@ Implementations live in [renderers/](renderers/).
 
 ## Test suite
 
-- **`tests/test_engine.py`** — implemented with 24 tests covering discovery, spawn, assemble, bundle output, the text-renderer, the command dispatcher, the visibility assertion, module isolation (a deliberately-broken node-type doesn't crash the engine), the Portal node-type's parent-frame-plus-through-portal rendering, the Aggregator's precompute / far-view-impostor / near-view-individuals / skip-target-at-far-view dispatch, and the Computer's screen-shows-inner-cube / skip-default-recursion / two-level-recursion behavior. Run with `pytest tests/`.
+- **`tests/test_engine.py`** — implemented with 25 tests covering discovery, spawn, assemble, bundle output, the text-renderer, the command dispatcher, the visibility assertion, module isolation, Portal, Aggregator, Computer, and the PainterlyPostProcessor's quantization + edge-detection effects. Run with `pytest tests/`.
 
 ## How to modify this page
 

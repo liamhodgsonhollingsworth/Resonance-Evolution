@@ -176,6 +176,35 @@ def test_summarize_bundle(tmp_path, hello_scene, view_for_hello):
     assert "depth" in summary
 
 
+def test_painterly_post_quantizes_color_and_marks_edges():
+    """PainterlyPostProcessor consumes the source sub-graph's channels and
+    applies palette reduction + ID-edge darkening. Verifies the output
+    has fewer unique colors than the source (quantization fired) AND has
+    dark pixels at object boundaries (edges fired)."""
+    e = Engine(root_dir=ROOT)
+    e.discover()
+    scene_path = ROOT / "scenes" / "painterly_demo.json"
+    root_id = e.load_scene(scene_path)
+    e.precompute()
+
+    pos = np.array([0.0, 1.5, 8.0])
+    view = View(position=pos, orientation=look_at(pos, np.zeros(3)),
+                width=128, height=128)
+    channels = e.assemble(root_id, view)
+    color = channels["color"]
+
+    # Quantization: count unique colors. With levels=5 the per-channel
+    # range is discretized to ~6 values; total unique colors should be
+    # much less than what a raw raster of three different cubes produces.
+    unique = np.unique(color.reshape(-1, 3), axis=0)
+    assert len(unique) < 200, f"too many unique colors ({len(unique)}); quantization didn't fire"
+
+    # Edge pixels (darkened) should be present
+    # At object outlines color is multiplied by 0.30; many such pixels should exist
+    dim_pixels = ((color.sum(axis=-1) < 0.6) & (color.sum(axis=-1) > 0.05)).sum()
+    assert dim_pixels > 30, f"no darkened edge pixels found ({dim_pixels}); edge detection didn't fire"
+
+
 def test_computer_screen_shows_inner_cube():
     """Computer renders its 'running' sub-graph internally and pastes the
     result onto its screen rectangle in the outer world. The outer scene
