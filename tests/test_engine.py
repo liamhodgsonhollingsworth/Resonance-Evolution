@@ -176,6 +176,44 @@ def test_summarize_bundle(tmp_path, hello_scene, view_for_hello):
     assert "depth" in summary
 
 
+def test_chat_interface_renders_log_text(tmp_path):
+    """ChatInterface reads a log file and renders its contents to pixels
+    on a screen rectangle. Verifies the screen region contains non-zero
+    pixels (the background color paints inside the rectangle) and that
+    text strokes (foreground) are present (some pixels are noticeably
+    different from background)."""
+    log = tmp_path / "log.txt"
+    log.write_text("user: hello\nclaude: this is a chat log shown on the screen\n")
+
+    e = Engine(root_dir=ROOT)
+    e.discover()
+    e.spawn("chat", "ChatInterface", params={
+        "log_path": str(log),
+        "screen_width": 4.0,
+        "screen_height": 3.0,
+        "screen_resolution": 256,
+        "font_size": 20,
+        "text_color": [0.92, 0.92, 0.88],
+        "background_color": [0.10, 0.11, 0.16],
+    })
+
+    pos = np.array([0.0, 0.0, 6.0])
+    view = View(position=pos, orientation=look_at(pos, np.zeros(3)),
+                width=128, height=128)
+    channels = e.assemble("chat", view)
+    color = channels["color"]
+
+    # Inside-screen pixels should match either background or text color
+    inside_pixels = color.reshape(-1, 3)
+    bg_mask = (np.abs(inside_pixels[:, 0] - 0.10) < 0.05) & (np.abs(inside_pixels[:, 1] - 0.11) < 0.05)
+    text_mask = (inside_pixels[:, 0] > 0.7) & (inside_pixels[:, 1] > 0.7)
+
+    bg_count = int(bg_mask.sum())
+    text_count = int(text_mask.sum())
+    assert bg_count > 200, f"screen background not rendered ({bg_count} matching pixels)"
+    assert text_count > 5, f"text strokes not rendered ({text_count} matching pixels)"
+
+
 def test_sphere_renders_with_smooth_shading():
     """Sphere produces a lit, smoothly-shaded disc with depth varying
     radially. Verifies hits exist, shading varies (smooth not flat),
