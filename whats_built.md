@@ -18,43 +18,52 @@ An item is "implemented" when it functions reliably and is in regular use. It is
 
 ## Engine core
 
-- **Precompute/assemble split** — open work. The architectural commitment is in [architecture.md](architecture.md); no code yet.
-- **Manifest loader** — open work. Loads node-type modules from `node_types/` by reading their `manifest()` function.
-- **Try/except isolation wrapper** — open work. Wraps every `emit()` call; broken nodes return typed-zero placeholders.
-- **File-watch reload** — open work. Re-imports node-type modules when their files change; rebuilds the affected sub-graph.
-- **Scene loader** — open work. Reads `scenes/<name>.json` and instantiates the node graph.
-- **Viewer state** — open work. Dataclass with position-in-current-node, orientation, and view-scale.
+- **Manifest, NodeInstance, View, Channels, EmitContext** — implemented. The core primitive types in `engine/node.py`. Channels is `Dict[str, Any]`, extensible by name; EmitContext gives nodes access to the engine for child lookup and renderer dispatch.
+- **Engine.discover()** — implemented. Walks `node_types/` and `renderers/` for `.py` files, imports each, registers by `manifest().name`. Failures during discovery are recorded but don't crash discovery.
+- **Engine.spawn()** — implemented. Creates a node instance from a type name and params. Wraps `build()` in try/except — failures mark the instance `dead` with an error message; the engine keeps running.
+- **Engine.assemble()** — implemented. Walks the graph from a root id under a viewer, calls each node's `emit()`, composites results. Module isolation via try/except — broken nodes return placeholder channels.
+- **Engine.precompute()** — stub. Named entry point for future aggregator-as-node caching; no-op for now so the public API doesn't change when aggregators land.
+- **Engine.reload_type()** — implemented. Hot-reloads a node-type module by re-importing its file and swapping the registration. Future work: file-watcher to auto-trigger.
+- **Scene loader** — implemented as `Engine.load_scene()`. Reads `scenes/<name>.json` and spawns each node listed.
+- **Default compositor** — implemented as `Engine._composite_children()`. Z-buffer for color/depth, list-concat for text, pass-through for normal/ids. Future renderer-nodes override this for their sub-graph.
+- **Topology transforms** — implemented as `Engine._apply_transform()`. Connections can carry an optional 4x4 transform applied when traversing; identity transforms are the no-op case. Non-identity transforms enable impossible-geometry node-types in future work.
 
 ## Node types
 
-(Skeleton — entries land here as node-type files migrate into `node_types/`.)
+Implementations live in [node_types/](node_types/).
 
-Starter node-types planned: Cube, Sphere, Group, Aggregator, Renderer, Portal, Computer, ChatInterface, TextRenderer.
+- **Cube** — implemented in `node_types/cube.py`. Axis-aligned cube with ray-cast emit() against AABB; produces `color`, `depth`, and `ids` channels. Lambertian-ish shading via dominant-axis approximation. Also exposes `describe()` for the text-renderer.
+- **Group** — implemented in `node_types/group.py`. Container that composites its children using the engine's default compositor. No params; connections name children. Demonstrates composition-only node-types.
+- **Sphere, Aggregator, Portal, Computer, ChatInterface** — open work. Each lands as its own file when needed.
 
 ## Renderers
 
-(Skeleton — entries land here as renderer files migrate into `renderers/`.)
+Implementations live in [renderers/](renderers/).
 
-Starter renderers planned: software-raster (numpy + Pillow), ASCII-debug, TextRenderer.
+- **TextRenderer** — implemented in `renderers/text.py`. The first-class bidirectional LLM interface. Walks its wrapped sub-graph, calls each child's `describe()` (or falls back to type+params), produces structured text output via the `text` channel. Exposes `command_grammar()` listing the text commands the tools layer dispatches.
+- **AsciiDebug** — implemented in `renderers/ascii_debug.py`. Renders the depth channel as ASCII art for text-mode topology debugging. Useful for verifying scene geometry from the viewer's position without opening a rendered PNG.
+- **Software raster** — implemented inline as the engine's default compositor (Z-buffer over color/depth). Cubes and other geometric node-types ray-cast in their own `emit()` and the compositor stacks the results. A future explicit `SoftwareRaster` renderer-node can override this for sub-graphs that need different compositing.
 
 ## Bundle output
 
-- **Color, depth, normal, ID writer** — open work. Writes `color.png`, `depth.png`, optional `normal.png`, optional `ids.png`, and `manifest.json` to an output directory matching the painterly module engine's input contract.
+- **`write_bundle()`** — implemented in `engine/bundle.py`. Writes `color.png` (RGB or RGBA), `depth.png` (8-bit visualization), `depth.npy` (raw float depth), optional `normal.png`, optional `ids.png` (16-bit), and `manifest.json` (channel index, view metadata, scene metadata). Text channels land in the manifest directly. Unknown channels save as `.npy` plus a manifest reference, so new channel types pass through forward-compatibly.
 
 ## Text-renderer surface
 
-- **Observation channel** — open work. Renders the world's state at the viewer's current position and scale as text.
-- **Action channel** — open work. Accepts text commands (move, add, edit, link, render) and applies them to the graph or viewer state.
-- **Inspection channel** — open work. Surfaces node state, connection topology, and dispatch tables as text.
-- **Composition support** — open work. Lets an LLM write new node-types and renderers, then use them via hot-reload.
+- **Observation channel** — implemented via `TextRenderer.emit()` and `tools/text_test.describe_view()`. Produces a structured text description of the scene at the viewer's position.
+- **Action channel** — implemented via `tools/text_test.dispatch_command()` plus the command grammar declared in `renderers/text.py`. Commands: describe, describe-subtree, list-types, list-nodes, spawn, connect, move, look-at, render, render-text.
+- **Inspection channel** — implemented via `tools/text_test.describe_scene()` plus list-types and list-nodes commands. Surfaces node state, connection topology, and registered types as text.
+- **Composition support** — implemented via the spawn and connect commands plus hot-reload (`Engine.reload_type()`). An LLM can write a new node-type file, trigger a discover/reload, spawn instances, and connect them — all through the text surface.
+- **Bundle summary** — implemented as `tools/text_test.summarize_bundle()`. Reads a written bundle directory and produces a text summary of channel statistics for regression testing.
 
 ## Build tooling
 
-(Skeleton — entries land here as tooling migrates into `tools/`.)
+- **`tools/render.py`** — implemented. CLI entry point that loads a scene, runs precompute/assemble, and writes a bundle to `output/`. Invocation: `python -m tools.render <scene>`.
+- **`tools/text_test.py`** — implemented. CLI subcommands plus library functions for text-based testing: `describe`, `view`, `summary`, `command`. Designed so an LLM can verify scene state without opening a rendered image.
 
 ## Test suite
 
-(Skeleton — entries land here as the test suite is built.)
+- **`tests/test_engine.py`** — implemented with 15 tests covering discovery, spawn, assemble, bundle output, the text-renderer, the command dispatcher, the visibility assertion, and module isolation (a deliberately-broken node-type doesn't crash the engine). Run with `pytest tests/`.
 
 ## How to modify this page
 

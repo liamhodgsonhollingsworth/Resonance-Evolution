@@ -1,0 +1,23 @@
+[project]
+name = "apeiron"
+version = "0.1.0"
+description = "Node-graph engine for building, rendering, and inhabiting worlds."
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.25",
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["engine*", "node_types*", "renderers*", "tools*"]
+
+[project.scripts]
+apeiron-render = "tools.render:main"
+apeiron-text = "tools.text_test:main"

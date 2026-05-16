@@ -23,17 +23,27 @@ This page is a [static index](https://github.com/liamhodgsonhollingsworth/The-Re
 
 Major working components of Apeiron. The high-level shape is here; detailed status, sub-features, and open issues live in [What's built](whats_built.md).
 
-(Skeleton — entries land here as components ship.)
+- **Engine core** — discovery of node-type files in `node_types/` and `renderers/`, spawn with try/except isolation, assemble walking the graph from a viewer with module-isolated emit() calls, default Z-buffer compositor plus list-concat text compositor, scene loader from JSON, hot-reload entry point.
+- **Cube node-type** — axis-aligned cube with ray-cast emit() against AABB; produces color, depth, and IDs channels with Lambertian-ish shading.
+- **Group node-type** — container that composites its children via the engine's default compositor.
+- **TextRenderer** — the first-class bidirectional LLM-facing surface; walks its wrapped sub-graph, produces structured text output (view state, scene topology, observations, command grammar) via the `text` channel.
+- **AsciiDebug renderer** — depth channel rendered as ASCII art for text-mode topology debugging.
+- **Bundle writer** — emits `color.png`, `depth.png`, `depth.npy`, optional `normal.png` and `ids.png`, and `manifest.json` matching the painterly module engine's input contract.
+- **CLI tools** — `python -m tools.render <scene>` writes a bundle; `python -m tools.text_test` provides describe/view/summary/command subcommands for text-based testing.
+- **Text testing tools** — `describe_scene`, `describe_view`, `summarize_bundle`, `dispatch_command`, `assert_visible` — the LLM-facing verification surface; once visuals are confirmed, new features can be built and verified through these tools alone.
+- **Test suite** — 15 pytest tests covering discovery, spawn, assemble, bundle output, text-renderer, command dispatcher, visibility, and module isolation (a deliberately-broken node-type doesn't crash the engine).
+- **Starter scenes** — `scenes/hello_cube.json` (single cube, raster output) and `scenes/text_demo.json` (TextRenderer wrapping a group of cubes).
 
 ## Features being developed
 
 Active in-progress work; detailed status in [What's built](whats_built.md).
 
-- **Engine core** — the precompute/assemble split, the manifest loader, the try/except isolation wrapper, the file-watch reload.
-- **Starter node-types** — Cube, Sphere, Group (geometry); Aggregator (logic-as-node); Renderer (renderer-as-node); Portal (topology-first); Computer (recursive-renderer demo); ChatInterface (Claude Code side-channel).
-- **Software-raster renderer** — pure numpy plus Pillow, runs anywhere, no GPU dependency; outputs the bundle that the painterly module engine consumes.
-- **Text renderer** — bidirectional text surface so an LLM can read the world's state and issue commands; the most ambitious near-term commitment, since it decouples functionality verification from human visual confirmation.
-- **ASCII-debug renderer** — text-mode visualization for testing topology before the visuals work.
+- **Aggregator-as-node** — first-class node-type for coarse-scale emergence rules; precompute extension point exists in the engine but no Aggregator type yet.
+- **Portal node-type** — non-identity-composing connection transforms for impossible-geometry demos.
+- **Computer node-type** — recursive-renderer demo where the viewer can focus into a screen-region and the outer world stops rendering.
+- **ChatInterface node-type** — Claude Code side-channel demo, instantiating the artist-authoring-loop pattern within the engine.
+- **File-watch reload** — auto-trigger hot-reload when node-type files change on disk.
+- **More node-types and renderers** — Sphere, Plane, Cylinder, painterly post-processor, OpenGL renderer, browser renderer, etc.
 
 ## Node types
 

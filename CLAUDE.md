@@ -2,6 +2,8 @@
 
 You are in the Apeiron project repository, part of the [Resonance meta-layer](https://github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront) network. Apeiron is a node-graph engine for building, rendering, and inhabiting worlds — every world-object, every renderer, every aggregation rule, every text-interaction surface is a node. Produces bundles for the painterly module engine downstream and exposes a text-renderer so Claude Code can use the world fully.
 
+Working name **Apeiron** is a placeholder — better-name suggestions go in [name_suggestions.md](name_suggestions.md).
+
 Read this file as the entry point. The README has the full framing.
 
 ## Auto-load at session start
