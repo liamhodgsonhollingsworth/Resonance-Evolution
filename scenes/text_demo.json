@@ -1,0 +1,49 @@
+{
+  "root": "text_root",
+  "view": {
+    "position": [3.0, 2.0, 5.0],
+    "look_at": [0.0, 0.0, 0.0],
+    "width": 64,
+    "height": 24
+  },
+  "nodes": [
+    {
+      "id": "text_root",
+      "type": "TextRenderer",
+      "params": {
+        "include_state": true,
+        "include_topology": true,
+        "include_view": true
+      },
+      "connections": {
+        "scene": "scene_group"
+      }
+    },
+    {
+      "id": "scene_group",
+      "type": "Group",
+      "connections": {
+        "cube_a": "cube_a",
+        "cube_b": "cube_b"
+      }
+    },
+    {
+      "id": "cube_a",
+      "type": "Cube",
+      "params": {
+        "size": 2.0,
+        "color": [0.85, 0.45, 0.30],
+        "id_hash": 1
+      }
+    },
+    {
+      "id": "cube_b",
+      "type": "Cube",
+      "params": {
+        "size": 1.0,
+        "color": [0.3, 0.6, 0.85],
+        "id_hash": 2
+      }
+    }
+  ]
+}
