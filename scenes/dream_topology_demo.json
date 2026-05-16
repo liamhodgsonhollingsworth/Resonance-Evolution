@@ -1,0 +1,128 @@
+{
+  "root": "viewer_room",
+  "view": {
+    "position": [0.0, 1.5, 4.5],
+    "look_at": [0.0, 0.5, 0.0],
+    "width": 256,
+    "height": 256
+  },
+  "nodes": [
+    {
+      "id": "viewer_room",
+      "type": "Group",
+      "connections": {
+        "floor":      {"target": "floor_a"},
+        "anchor":     {"target": "anchor_cube"},
+        "doorway_b":  {"target": "portal_to_b"},
+        "doorway_c":  {"target": "portal_to_c"},
+        "doorway_d":  {"target": "portal_to_d"}
+      }
+    },
+    {
+      "id": "floor_a",
+      "type": "Plane",
+      "params": {"width": 6.0, "depth": 6.0, "color": [0.35, 0.40, 0.50], "id_hash": 90}
+    },
+    {
+      "id": "anchor_cube",
+      "type": "Cube",
+      "params": {"size": 0.6, "color": [0.95, 0.85, 0.55], "id_hash": 91}
+    },
+    {
+      "id": "portal_to_b",
+      "type": "Portal",
+      "params": {"width": 1.6, "height": 2.4},
+      "connections": {
+        "through": {
+          "target": "room_b",
+          "transform": [[ 0, 0, -1, 4.0],
+                        [ 0, 1,  0, 0.0],
+                        [ 1, 0,  0, 0.0],
+                        [ 0, 0,  0, 1.0]]
+        }
+      }
+    },
+    {
+      "id": "portal_to_c",
+      "type": "Portal",
+      "params": {"width": 1.6, "height": 2.4},
+      "connections": {
+        "through": {
+          "target": "room_c",
+          "transform": [[-1, 0,  0, 0.0],
+                        [ 0, 1,  0, 0.0],
+                        [ 0, 0, -1, -4.0],
+                        [ 0, 0,  0, 1.0]]
+        }
+      }
+    },
+    {
+      "id": "portal_to_d",
+      "type": "Portal",
+      "params": {"width": 1.6, "height": 2.4},
+      "connections": {
+        "through": {
+          "target": "room_d",
+          "transform": [[ 0, 0,  1, -4.0],
+                        [ 0, 1,  0,  0.0],
+                        [-1, 0,  0,  0.0],
+                        [ 0, 0,  0,  1.0]]
+        }
+      }
+    },
+    {
+      "id": "room_b",
+      "type": "Group",
+      "connections": {
+        "floor":  {"target": "floor_b"},
+        "marker": {"target": "marker_b"}
+      }
+    },
+    {
+      "id": "floor_b",
+      "type": "Plane",
+      "params": {"width": 6.0, "depth": 6.0, "color": [0.45, 0.30, 0.30], "id_hash": 92}
+    },
+    {
+      "id": "marker_b",
+      "type": "Cube",
+      "params": {"size": 0.5, "color": [0.85, 0.30, 0.30], "id_hash": 93}
+    },
+    {
+      "id": "room_c",
+      "type": "Group",
+      "connections": {
+        "floor":  {"target": "floor_c"},
+        "marker": {"target": "marker_c"}
+      }
+    },
+    {
+      "id": "floor_c",
+      "type": "Plane",
+      "params": {"width": 6.0, "depth": 6.0, "color": [0.30, 0.45, 0.30], "id_hash": 94}
+    },
+    {
+      "id": "marker_c",
+      "type": "Cube",
+      "params": {"size": 0.5, "color": [0.30, 0.85, 0.30], "id_hash": 95}
+    },
+    {
+      "id": "room_d",
+      "type": "Group",
+      "connections": {
+        "floor":  {"target": "floor_d"},
+        "marker": {"target": "marker_d"}
+      }
+    },
+    {
+      "id": "floor_d",
+      "type": "Plane",
+      "params": {"width": 6.0, "depth": 6.0, "color": [0.30, 0.30, 0.45], "id_hash": 96}
+    },
+    {
+      "id": "marker_d",
+      "type": "Cube",
+      "params": {"size": 0.5, "color": [0.30, 0.45, 0.85], "id_hash": 97}
+    }
+  ]
+}

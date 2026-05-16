@@ -1,0 +1,35 @@
+{
+  "root": "projector",
+  "view": {
+    "position": [0.0, 0.0, 6.0],
+    "look_at": [0.0, 0.0, 0.0],
+    "width": 256,
+    "height": 256
+  },
+  "nodes": [
+    {
+      "id": "projector",
+      "type": "ProjectorN",
+      "params": {
+        "projection": "perspective_4d",
+        "w_eye": 3.0,
+        "line_thickness": 2,
+        "background_color": [0.04, 0.04, 0.10]
+      },
+      "connections": {
+        "source": "tesseract"
+      }
+    },
+    {
+      "id": "tesseract",
+      "type": "DimensionN",
+      "params": {
+        "dims": 4,
+        "shape": "hypercube",
+        "size": 1.0,
+        "color": [0.9, 0.85, 1.0],
+        "id_hash": 41
+      }
+    }
+  ]
+}

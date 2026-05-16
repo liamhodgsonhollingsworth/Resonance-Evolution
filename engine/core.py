@@ -188,6 +188,47 @@ class Engine:
                     f"precompute({node_id}): {e}\n{traceback.format_exc()}"
                 )
 
+    def sim_precompute(self) -> None:
+        """
+        Companion to precompute() for nodes that pre-simulate interactions
+        before runtime. Walks every spawned node; for any module exposing
+        sim_precompute_hook(state, engine, node), calls it and stores the
+        result at self.cache[node_id + "__sim__"]. Separate cache key so a
+        node may have both regular precompute output (aggregator impostor)
+        and a simulation trajectory (SimulationProbe) cached side-by-side.
+
+        New node-types pre-simulating interactions just expose
+        sim_precompute_hook — same pattern as precompute_hook.
+        """
+        for node_id, node in self.nodes.items():
+            if node.dead:
+                continue
+            module = self.types.get(node.type_name)
+            if module is None or not hasattr(module, "sim_precompute_hook"):
+                continue
+            try:
+                self.cache[node_id + "__sim__"] = module.sim_precompute_hook(
+                    node.state, self, node
+                )
+            except Exception as e:
+                self.errors.append(
+                    f"sim_precompute({node_id}): {e}\n{traceback.format_exc()}"
+                )
+
+    def invert_edit(self, node_id: str, edit: Dict[str, Any]) -> bool:
+        """
+        Walk up from node_id to the nearest Generator ancestor; call its
+        invert_hook with edit; apply returned param_delta to the connected
+        Seed; re-trigger the Generator's precompute. Returns True if an
+        ancestor handled the edit. Implementation in engine/inverse.py.
+
+        Imported lazily to avoid a circular import (inverse uses Engine
+        type at runtime; Engine references inverse only inside this
+        method).
+        """
+        from engine.inverse import invert_edit as _invert
+        return _invert(self, node_id, edit)
+
     def assemble(self, root_id: str, view: View) -> Channels:
         """
         Walk from root under view; call each node's emit(); composite the
