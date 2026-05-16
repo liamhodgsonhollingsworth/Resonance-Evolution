@@ -1,0 +1,29 @@
+{
+  "root": "painterly",
+  "view": {
+    "position": [0.0, 1.5, 8.0],
+    "look_at": [0.0, 0.0, 0.0],
+    "width": 256,
+    "height": 256
+  },
+  "nodes": [
+    {
+      "id": "painterly",
+      "type": "PainterlyPostProcessor",
+      "params": {"quantization_levels": 5, "edge_darkening": 0.30},
+      "connections": {"source": "scene_group"}
+    },
+    {
+      "id": "scene_group",
+      "type": "Group",
+      "connections": {
+        "a": {"target": "cube_a", "transform": [[1,0,0,-2.0],[0,1,0, 0.0],[0,0,1, 0.0],[0,0,0,1]]},
+        "b": {"target": "cube_b", "transform": [[1,0,0, 0.0],[0,1,0,-1.0],[0,0,1, 1.0],[0,0,0,1]]},
+        "c": {"target": "cube_c", "transform": [[1,0,0, 2.0],[0,1,0, 0.5],[0,0,1, 0.0],[0,0,0,1]]}
+      }
+    },
+    {"id": "cube_a", "type": "Cube", "params": {"size": 1.2, "color": [0.85, 0.40, 0.30], "id_hash": 1}},
+    {"id": "cube_b", "type": "Cube", "params": {"size": 1.0, "color": [0.30, 0.65, 0.40], "id_hash": 2}},
+    {"id": "cube_c", "type": "Cube", "params": {"size": 1.4, "color": [0.40, 0.50, 0.85], "id_hash": 3}}
+  ]
+}
