@@ -73,6 +73,18 @@ class View:
     current node's local frame; scale is the LOD/zoom parameter — nodes
     use it to decide whether to render themselves or recurse to children.
     Width and height are the target render resolution.
+
+    Optional fields (gravity_mode, gravity_up, time) carry state for
+    interactive features (gravity toggle, time-driven simulation). Old
+    emit() implementations ignore them; new emit()s read them when
+    relevant. Their presence with defaults preserves current behavior.
+
+    scale semantics: scale acts as a world-to-screen multiplier in
+    projected-size calculations. A node deciding whether to recurse or
+    return an impostor should compute
+        projected_size ~= world_size * scale / distance
+    so that zooming in (scale > 1) and moving closer have equivalent
+    effect on level-of-detail dispatch.
     """
     position: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 5.0]))
     orientation: np.ndarray = field(default_factory=lambda: np.eye(3))
@@ -80,6 +92,15 @@ class View:
     width: int = 256
     height: int = 256
     fov_y_radians: float = np.pi / 4  # 45 degrees default
+
+    # ----- optional fields for interactive / dream-mode features -----
+    # gravity_mode: "world" (gravity points along gravity_up in world frame),
+    # "snap_to_region" (resets to the active GravityField's vector on toggle),
+    # "snap_to_viewer" (gravity-down becomes the viewer's current down on toggle),
+    # "free" (no gravity; orientation can rotate freely).
+    gravity_mode: str = "world"
+    gravity_up: np.ndarray = field(default_factory=lambda: np.array([0.0, 1.0, 0.0]))
+    time: float = 0.0
 
     def aspect(self) -> float:
         return self.width / self.height
