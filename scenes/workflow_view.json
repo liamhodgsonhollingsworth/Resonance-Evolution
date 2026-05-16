@@ -1,0 +1,84 @@
+{
+  "root": "workflow_view",
+  "view": {
+    "position": [0.0, 0.0, 9.0],
+    "look_at": [0.0, 0.0, 0.0],
+    "width": 1024,
+    "height": 512,
+    "fov_y_radians": 0.6
+  },
+  "nodes": [
+    {
+      "id": "workflow_view",
+      "type": "WorkflowView",
+      "params": {"mode": "panels"},
+      "connections": {
+        "panel_a": {"target": "task_panel",  "transform": [[1,0,0,-3.4],[0,1,0,0.0],[0,0,1,0.0],[0,0,0,1]]},
+        "panel_b": {"target": "idea_panel",  "transform": [[1,0,0, 0.0],[0,1,0,0.0],[0,0,1,0.0],[0,0,0,1]]},
+        "panel_c": {"target": "wish_panel",  "transform": [[1,0,0, 3.4],[0,1,0,0.0],[0,0,1,0.0],[0,0,0,1]]}
+      }
+    },
+
+    {
+      "id": "task_panel",
+      "type": "ListRenderer",
+      "params": {
+        "screen_width": 3.2,
+        "screen_height": 4.6,
+        "screen_resolution": 384,
+        "font_size": 13,
+        "title_text": "Tasks",
+        "background_color": [0.10, 0.12, 0.18],
+        "title_color":      [0.92, 0.92, 0.85]
+      },
+      "connections": {"source": "tasks_source"}
+    },
+    {
+      "id": "idea_panel",
+      "type": "ListRenderer",
+      "params": {
+        "screen_width": 3.2,
+        "screen_height": 4.6,
+        "screen_resolution": 384,
+        "font_size": 13,
+        "title_text": "Ideas",
+        "background_color": [0.10, 0.18, 0.16],
+        "title_color":      [0.85, 0.95, 0.88]
+      },
+      "connections": {"source": "ideas_source"}
+    },
+    {
+      "id": "wish_panel",
+      "type": "ListRenderer",
+      "params": {
+        "screen_width": 3.2,
+        "screen_height": 4.6,
+        "screen_resolution": 384,
+        "font_size": 13,
+        "title_text": "Wishlist",
+        "background_color": [0.16, 0.12, 0.18],
+        "title_color":      [0.95, 0.88, 0.95]
+      },
+      "connections": {"source": "wishes_source"}
+    },
+
+    {
+      "id": "tasks_source",
+      "type": "FileSource",
+      "params": {"path": "tasks.md", "parser_name": "tasks"}
+    },
+    {
+      "id": "ideas_source",
+      "type": "FileSource",
+      "params": {
+        "path": "examples/ideas_queue_sample.md",
+        "parser_name": "ideas"
+      }
+    },
+    {
+      "id": "wishes_source",
+      "type": "FileSource",
+      "params": {"path": "wishlist.md", "parser_name": "wishes"}
+    }
+  ]
+}
