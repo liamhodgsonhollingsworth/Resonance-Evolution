@@ -25,6 +25,7 @@ Major working components of Apeiron. The high-level shape is here; detailed stat
 
 - **Engine core** — discovery of node-type files in `node_types/` and `renderers/`, spawn with try/except isolation, assemble walking the graph from a viewer with module-isolated emit() calls, default Z-buffer compositor plus list-concat text compositor, scene loader from JSON, hot-reload entry point.
 - **Cube node-type** — axis-aligned cube with ray-cast emit() against AABB; produces color, depth, and IDs channels with Lambertian-ish shading.
+- **Sphere node-type** — sphere primitive with smooth normal-based shading; same channel contract as Cube.
 - **Group node-type** — container that composites its children via the engine's default compositor.
 - **Portal node-type** — rectangular doorway whose "through" connection's 4x4 transform places the far-side sub-graph at any pose; demonstrates topology-over-coordinates, since impossible geometries fall out of non-identity connection transforms rather than special-cased engine code.
 - **Aggregator node-type** — observes its "target" sub-graph, precomputes centroid + bounding-box + average-color, and dispatches at emit time between a colored-AABB impostor (far view) and the target's full render (near view); demonstrates aggregator-as-node, emergence-at-scale, and precomputation-moves-heavy-work-to-build-time simultaneously. The engine's new `select_children` hook lets the aggregator skip the target's runtime render entirely when the impostor is in use, so precomputation is real rather than aspirational.

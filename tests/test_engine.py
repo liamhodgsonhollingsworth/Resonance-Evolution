@@ -176,6 +176,38 @@ def test_summarize_bundle(tmp_path, hello_scene, view_for_hello):
     assert "depth" in summary
 
 
+def test_sphere_renders_with_smooth_shading():
+    """Sphere produces a lit, smoothly-shaded disc with depth varying
+    radially. Verifies hits exist, shading varies (smooth not flat),
+    and ID channel is populated."""
+    e = Engine(root_dir=ROOT)
+    e.discover()
+    e.spawn("s1", "Sphere", params={"radius": 1.0, "color": [0.8, 0.4, 0.3], "id_hash": 7})
+
+    pos = np.array([0.0, 0.0, 4.0])
+    view = View(position=pos, orientation=look_at(pos, np.zeros(3)),
+                width=128, height=128)
+    channels = e.assemble("s1", view)
+    color = channels["color"]
+    depth = channels["depth"]
+    ids = channels["ids"]
+
+    lit = (color.sum(axis=-1) > 0.3).sum()
+    assert lit > 200, f"sphere rendered too few pixels ({lit})"
+
+    # Smooth shading: red-channel values should span a range (not all equal)
+    red_at_hits = color[..., 0][color.sum(axis=-1) > 0.3]
+    red_range = float(red_at_hits.max() - red_at_hits.min())
+    assert red_range > 0.05, f"shading too flat ({red_range}); smooth shading should vary"
+
+    # ID hash populated
+    assert (ids == 7).sum() > 100
+
+    # Depth finite at hits
+    finite_depth = depth[np.isfinite(depth)]
+    assert finite_depth.size > 100
+
+
 def test_painterly_post_quantizes_color_and_marks_edges():
     """PainterlyPostProcessor consumes the source sub-graph's channels and
     applies palette reduction + ID-edge darkening. Verifies the output
