@@ -26,6 +26,7 @@ Major working components of Apeiron. The high-level shape is here; detailed stat
 - **Engine core** — discovery of node-type files in `node_types/` and `renderers/`, spawn with try/except isolation, assemble walking the graph from a viewer with module-isolated emit() calls, default Z-buffer compositor plus list-concat text compositor, scene loader from JSON, hot-reload entry point.
 - **Cube node-type** — axis-aligned cube with ray-cast emit() against AABB; produces color, depth, and IDs channels with Lambertian-ish shading.
 - **Sphere node-type** — sphere primitive with smooth normal-based shading; same channel contract as Cube.
+- **Plane node-type** — bounded floor primitive (XZ plane, normal +Y); walls and ceilings via rotation transforms.
 - **Light node-type + LambertianShader renderer-node** — directional lights register themselves in `engine.cache["__lights__"]` at precompute time; LambertianShader reads the cache plus source's color and normal channels, outputs lit color via standard `base * (ambient + Σ light·diffuse)`. Deferred-shading-style separation between geometry and lighting; new light types add as new node-types registering richer cache metadata.
 - **Group node-type** — container that composites its children via the engine's default compositor.
 - **Portal node-type** — rectangular doorway whose "through" connection's 4x4 transform places the far-side sub-graph at any pose; demonstrates topology-over-coordinates, since impossible geometries fall out of non-identity connection transforms rather than special-cased engine code.

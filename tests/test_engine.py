@@ -176,6 +176,50 @@ def test_summarize_bundle(tmp_path, hello_scene, view_for_hello):
     assert "depth" in summary
 
 
+def test_plane_renders_floor_with_upward_normal():
+    """Plane emits a floor with +Y normal and the configured color at
+    inside-bounds pixels."""
+    e = Engine(root_dir=ROOT)
+    e.discover()
+    e.spawn("p1", "Plane", params={"size_x": 8, "size_z": 8,
+                                   "color": [0.5, 0.5, 0.5], "id_hash": 9})
+    pos = np.array([0.0, 3.0, 4.0])
+    view = View(position=pos, orientation=look_at(pos, np.array([0.0, 0.0, 0.0])),
+                width=64, height=64)
+    channels = e.assemble("p1", view)
+    inside = channels["ids"] == 9
+    assert inside.sum() > 100
+    # Normals at hits should all be +Y
+    normal = channels["normal"]
+    y_components = normal[..., 1][inside]
+    assert np.allclose(y_components, 1.0), "plane normals should be +Y"
+
+
+def test_showcase_scene_composes_everything():
+    """Showcase scene combines Plane + Sphere + Cube + Light +
+    LambertianShader + PainterlyPostProcessor. Verifies the scene
+    assembles to a non-empty render with quantized colors (painterly
+    fired) and lit shading (lambertian fired)."""
+    e = Engine(root_dir=ROOT)
+    e.discover()
+    scene_path = ROOT / "scenes" / "showcase.json"
+    root_id = e.load_scene(scene_path)
+    e.precompute()
+    pos = np.array([3.0, 2.5, 7.0])
+    view = View(position=pos, orientation=look_at(pos, np.array([0.0, 0.5, 0.0])),
+                width=128, height=128)
+    channels = e.assemble(root_id, view)
+    color = channels["color"]
+
+    # Some pixels lit (not all black)
+    bright = (color.sum(axis=-1) > 0.3).sum()
+    assert bright > 1000
+
+    # Quantization: bounded unique color count
+    unique = np.unique(color.reshape(-1, 3), axis=0)
+    assert len(unique) < 250
+
+
 def test_lighting_demo_produces_lit_output():
     """Light + LambertianShader: lights register at precompute, shader
     reads cache['__lights__'] and consumes the source's normal channel.

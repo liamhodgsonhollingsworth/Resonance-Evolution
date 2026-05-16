@@ -1,0 +1,41 @@
+{
+  "root": "painterly",
+  "view": {
+    "position": [3.0, 2.5, 7.0],
+    "look_at": [0.0, 0.5, 0.0],
+    "width": 384,
+    "height": 384
+  },
+  "nodes": [
+    {
+      "id": "painterly",
+      "type": "PainterlyPostProcessor",
+      "params": {"quantization_levels": 6, "edge_darkening": 0.35},
+      "connections": {"source": "lit"}
+    },
+    {
+      "id": "lit",
+      "type": "LambertianShader",
+      "params": {"ambient": 0.12},
+      "connections": {"source": "world"}
+    },
+    {
+      "id": "world",
+      "type": "Group",
+      "connections": {
+        "floor":      {"target": "floor",  "transform": [[1,0,0,0],[0,1,0,-1.0],[0,0,1,0],[0,0,0,1]]},
+        "sphere":     {"target": "sphere", "transform": [[1,0,0,-1.5],[0,1,0,0],[0,0,1, 0.5],[0,0,0,1]]},
+        "cube":       {"target": "cube",   "transform": [[1,0,0, 1.5],[0,1,0,0],[0,0,1, 0.0],[0,0,0,1]]},
+        "back_cube":  {"target": "back_cube", "transform": [[1,0,0, 0.0],[0,1,0,0.3],[0,0,1,-2.5],[0,0,0,1]]},
+        "key_light":  "key_light",
+        "fill_light": "fill_light"
+      }
+    },
+    {"id": "floor",     "type": "Plane",  "params": {"size_x": 14, "size_z": 14, "color": [0.55, 0.50, 0.42], "id_hash": 1}},
+    {"id": "sphere",    "type": "Sphere", "params": {"radius": 1.0, "color": [0.85, 0.45, 0.30], "id_hash": 2}},
+    {"id": "cube",      "type": "Cube",   "params": {"size":   1.4, "color": [0.35, 0.60, 0.85], "id_hash": 3}},
+    {"id": "back_cube", "type": "Cube",   "params": {"size":   1.6, "color": [0.50, 0.80, 0.45], "id_hash": 4}},
+    {"id": "key_light",  "type": "Light", "params": {"direction": [-0.5, -1.0, -0.4], "color": [1.0, 0.95, 0.82], "intensity": 0.95}},
+    {"id": "fill_light", "type": "Light", "params": {"direction": [ 0.7, -0.3, -0.6], "color": [0.55, 0.65, 0.85], "intensity": 0.35}}
+  ]
+}
