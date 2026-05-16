@@ -168,18 +168,25 @@ class Engine:
 
     def precompute(self) -> None:
         """
-        Walk graph, precompute aggregations and caches.
-
-        Stub for the first build. Future versions will:
-        - Walk graph from each potential viewer position
-        - Build aggregation caches at multiple scales
-        - Build renderer dispatch tables
-        - Cache rendered intermediates
-
-        Kept as a named entry point now so future work doesn't change the
-        public API.
+        Walk every spawned node; for any node-type module exposing a
+        precompute_hook(state, engine, node) function, call it and store
+        the result at self.cache[node_id]. New node-types that want
+        build-time work just expose precompute_hook — no engine change
+        required. Wrapped in try/except so a broken hook doesn't block
+        other nodes' precompute.
         """
-        return
+        for node_id, node in self.nodes.items():
+            if node.dead:
+                continue
+            module = self.types.get(node.type_name)
+            if module is None or not hasattr(module, "precompute_hook"):
+                continue
+            try:
+                self.cache[node_id] = module.precompute_hook(node.state, self, node)
+            except Exception as e:
+                self.errors.append(
+                    f"precompute({node_id}): {e}\n{traceback.format_exc()}"
+                )
 
     def assemble(self, root_id: str, view: View) -> Channels:
         """
@@ -198,9 +205,26 @@ class Engine:
         if node.dead:
             return self._placeholder_channels(view, color=(1.0, 0.0, 1.0))
 
-        # Recursively emit children first
+        module = self.types.get(node.type_name)
+
+        # Ask the node which children to recurse into. Default: all of them.
+        # A node-type implementing select_children() can skip subtrees that
+        # would be thrown away at composite time — e.g., an Aggregator using
+        # its precomputed impostor and not needing the target's full render.
+        children_to_emit = list(node.connections.keys())
+        if module is not None and hasattr(module, "select_children"):
+            try:
+                children_to_emit = list(module.select_children(node.state, view, self, node))
+            except Exception as e:
+                self.errors.append(f"select_children({node.id}): {e}")
+                children_to_emit = list(node.connections.keys())
+
+        # Recursively emit selected children
         child_outputs: Dict[str, Tuple[NodeInstance, Channels]] = {}
-        for conn_name, conn in node.connections.items():
+        for conn_name in children_to_emit:
+            conn = node.connections.get(conn_name)
+            if conn is None:
+                continue
             target_id, transform = self._resolve_connection(conn)
             child_view = self._apply_transform(view, transform)
             sub_node = self.nodes.get(target_id)
@@ -209,7 +233,8 @@ class Engine:
 
         # Then emit this node
         try:
-            module = self.types[node.type_name]
+            if module is None:
+                return self._placeholder_channels(view, color=(0.5, 0.5, 0.5))
             if not hasattr(module, "emit"):
                 # Composition-only node (e.g. a Group with no own emit):
                 # composite children directly.

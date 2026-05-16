@@ -27,6 +27,7 @@ Major working components of Apeiron. The high-level shape is here; detailed stat
 - **Cube node-type** — axis-aligned cube with ray-cast emit() against AABB; produces color, depth, and IDs channels with Lambertian-ish shading.
 - **Group node-type** — container that composites its children via the engine's default compositor.
 - **Portal node-type** — rectangular doorway whose "through" connection's 4x4 transform places the far-side sub-graph at any pose; demonstrates topology-over-coordinates, since impossible geometries fall out of non-identity connection transforms rather than special-cased engine code.
+- **Aggregator node-type** — observes its "target" sub-graph, precomputes centroid + bounding-box + average-color, and dispatches at emit time between a colored-AABB impostor (far view) and the target's full render (near view); demonstrates aggregator-as-node, emergence-at-scale, and precomputation-moves-heavy-work-to-build-time simultaneously. The engine's new `select_children` hook lets the aggregator skip the target's runtime render entirely when the impostor is in use, so precomputation is real rather than aspirational.
 - **TextRenderer** — the first-class bidirectional LLM-facing surface; walks its wrapped sub-graph, produces structured text output (view state, scene topology, observations, command grammar) via the `text` channel.
 - **AsciiDebug renderer** — depth channel rendered as ASCII art for text-mode topology debugging.
 - **Bundle writer** — emits `color.png`, `depth.png`, `depth.npy`, optional `normal.png` and `ids.png`, and `manifest.json` matching the painterly module engine's input contract.
@@ -39,7 +40,6 @@ Major working components of Apeiron. The high-level shape is here; detailed stat
 
 Active in-progress work; detailed status in [What's built](whats_built.md).
 
-- **Aggregator-as-node** — first-class node-type for coarse-scale emergence rules; precompute extension point exists in the engine but no Aggregator type yet.
 - **Computer node-type** — recursive-renderer demo where the viewer can focus into a screen-region and the outer world stops rendering.
 - **ChatInterface node-type** — Claude Code side-channel demo, instantiating the artist-authoring-loop pattern within the engine.
 - **File-watch reload** — auto-trigger hot-reload when node-type files change on disk.
