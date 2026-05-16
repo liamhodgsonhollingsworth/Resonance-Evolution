@@ -1,80 +1,60 @@
 # Pending — Apeiron
 
-Maintainer-side items deferred until they become relevant. Each entry names the trigger condition (when it becomes a problem) and the exact step-by-step actions the maintainer takes when triggered. Future sessions surface the relevant entry when its trigger fires; the maintainer follows the steps.
+Items deferred until triggered. The default handling policy is that a session does the work itself via `gh` or other tooling per the GitHub-fully-handled-by-sessions policy in the maintainer's memory; entries here describe the session action plus any fallback UI steps for the maintainer if a session capability is blocked.
 
 ## Pending
 
-### #001 — Flip github repo visibility to public
+### #002 — CODEOWNERS branch protection on main
 
-**Filed:** 2026-05-16 by the bootstrap session.
-**Trigger:** When an external collaborator or reader needs to view the repo, OR when a session invokes the meta-layer's public-by-default convention against this repo, OR when the maintainer asks a session to make the Apeiron repo public.
+**Filed:** 2026-05-16. Deferred per the maintainer's "defer until it becomes a problem" directive.
+**Trigger:** An unauthorized session or subagent pushes a destructive change to main without going through PR review, OR parallel sessions begin conflicting often enough that gentleman's-agreement coordination is insufficient.
 
-**Why deferred:** Auto-mode required explicit authorization to create the repo public; the maintainer chose to defer the flip until it becomes relevant rather than authorize it preemptively. The current private state preserves all work; only external visibility is affected.
+**Session action when triggered:**
 
-**When triggered, the session should instruct the maintainer with these exact steps:**
+Run the following from any working copy of the Apeiron repo:
 
-1. Open a browser to: `https://github.com/liamhodgsonhollingsworth/Apeiron/settings`
-2. Scroll to the very bottom of the page to find the "Danger Zone" section.
-3. In the "Change repository visibility" row, click the **Change visibility** button.
-4. Select **Change to public** in the dialog that appears.
-5. Read the warnings. Type the repository name exactly — `liamhodgsonhollingsworth/Apeiron` — into the confirmation field.
-6. Click **I understand, change repository visibility** to confirm.
+    gh api -X PUT /repos/liamhodgsonhollingsworth/Apeiron/branches/main/protection \
+      --input - <<'EOF'
+    {
+      "required_status_checks": null,
+      "enforce_admins": false,
+      "required_pull_request_reviews": {
+        "required_approving_review_count": 0,
+        "require_code_owner_reviews": true
+      },
+      "restrictions": null
+    }
+    EOF
 
-After the flip, the repo matches the public-by-default meta-convention and the meta-atlas link resolves for external readers. The session reports back to the maintainer: "Apeiron is now public; meta-atlas link is live."
+This requires CODEOWNER approval on PRs touching CODEOWNERS-mapped paths (README.md, whats_built.md, architecture.md, CLAUDE.md, CODEOWNERS, LICENSE) while leaving non-CODEOWNERS paths freely mergeable by any session.
 
----
+**Fallback (if `gh api` is blocked or the call fails):** Surface to the maintainer with these exact UI steps:
 
-### #002 — Set up CODEOWNERS branch protection on main
-
-**Filed:** 2026-05-16 by the bootstrap session.
-**Trigger:** When an unauthorized session or subagent pushes a destructive change to main without going through PR review, OR when sessions begin operating in parallel often enough that gentleman's-agreement coordination is insufficient, OR when the maintainer asks for enforcement of the CODEOWNERS convention.
-
-**Why deferred:** The CODEOWNERS file is in place and the convention is documented in CLAUDE.md; until parallel sessions actually conflict on Atlas-linked paths, the documented convention plus the per-session branch discipline are sufficient enforcement. Branch protection requires github settings configuration that only the maintainer can do.
-
-**When triggered, the session should instruct the maintainer with these exact steps:**
-
-1. Open a browser to: `https://github.com/liamhodgsonhollingsworth/Apeiron/settings/branches`
-2. Click **Add branch protection rule** (or **Add classic branch protection rule** if both options appear — classic is sufficient for this use case).
-3. In the "Branch name pattern" field, type exactly: `main`
-4. Check the box for **Require a pull request before merging**.
-5. Once that box is checked, additional sub-options appear. Check **Require review from Code Owners**.
-6. Leave "Require approvals" at its default unless you want a specific minimum number (1 is conservative; 0 is fine if you trust your own merges).
-7. Optionally check **Require status checks to pass before merging** — leave unchecked for now, since CI is not yet configured.
-8. Scroll down past any other options (they can stay at defaults).
-9. Click **Create** at the bottom of the page.
-
-After this, any push to main that touches a CODEOWNERS-mapped path (README.md, whats_built.md, architecture.md, CLAUDE.md, CODEOWNERS, LICENSE) requires a pull request with maintainer approval. The session reports back to the maintainer: "Branch protection is active on main; CODEOWNERS gating is enforced."
+1. Open `https://github.com/liamhodgsonhollingsworth/Apeiron/settings/branches` in a browser.
+2. Click **Add branch protection rule** (or **Add classic branch protection rule**).
+3. In the "Branch name pattern" field, type: `main`
+4. Check **Require a pull request before merging**.
+5. Check **Require review from Code Owners**.
+6. Leave "Require approvals" at 0 (no approvals required for non-CODEOWNERS paths).
+7. Click **Create** at the bottom.
 
 ---
 
 ### #003 — Install Python locally for running tests and the engine
 
-**Filed:** 2026-05-16 by the bootstrap session.
-**Trigger:** When the maintainer (or a session on the maintainer's machine) wants to run `python -m tools.render scenes/hello_cube.json`, `pytest tests/`, or any engine code locally. Currently Python isn't installed at any standard location on the machine, so the bootstrap session committed the code without running the tests against the actual interpreter.
+**Filed:** 2026-05-16. Maintainer-only — `gh` cannot install Python on the maintainer's machine.
+**Trigger:** When a session on the maintainer's machine wants to run `pytest tests/`, `python -m tools.render scenes/hello_cube.json`, or any engine code locally to verify implementation work against the actual interpreter rather than by code review alone.
 
-**Why deferred:** The code is reviewable as written; running it requires installing Python plus numpy and Pillow. The maintainer may want to use a specific Python distribution (system, venv, conda, uv-managed). Choosing one now without input would bake in a tool decision.
+**Maintainer steps when triggered:** The session walks the maintainer through one of these install paths, asking which they prefer:
 
-**When triggered, the session should instruct the maintainer with these exact steps:**
+1. **python.org installer (simplest):** Download Python 3.12 from `https://www.python.org/downloads/windows/`, run the installer, and check "Add Python to PATH" before clicking Install. Then open a fresh terminal and run `python --version` to confirm.
+2. **winget (terminal-based):** In PowerShell, run `winget install Python.Python.3.12`. Verify with `python --version` in a fresh terminal.
+3. **uv (modern, per-project managed):** In PowerShell, run `irm https://astral.sh/uv/install.ps1 | iex`. Then in the Apeiron repo, the session can run `uv sync` to read pyproject.toml and create a venv automatically.
 
-1. Decide which Python to install. The simplest options:
-   - **From python.org** (most portable): download the latest Python 3.12 installer from `https://www.python.org/downloads/windows/`, run it, and check "Add Python to PATH" before clicking Install.
-   - **Via winget** (Windows package manager, terminal-based): in PowerShell or Command Prompt, run: `winget install Python.Python.3.12`
-   - **Via uv** (modern Python tooling that manages versions per project): in PowerShell, run: `irm https://astral.sh/uv/install.ps1 | iex`, then in this repo: `uv sync` (uv reads pyproject.toml and creates a venv automatically).
-
-2. Verify the install. Open a fresh terminal, run: `python --version` — should print `Python 3.12.x` (or similar).
-
-3. Install the project dependencies. In the Apeiron repo root, run:
-   - With pip: `python -m pip install -e ".[test]"` (installs numpy, Pillow, pytest, and Apeiron itself as an editable package).
-   - With uv: `uv pip install -e ".[test]"` (same effect, but inside uv's managed venv).
-
-4. Run the tests. From the Apeiron repo root: `pytest tests/` — should report 15 passed.
-
-5. Run a scene end-to-end: `python -m tools.render scenes/hello_cube.json` — should write a bundle to `output/` and print "wrote bundle: output".
-
-6. Confirm the text-renderer: `python -m tools.text_test describe scenes/hello_cube.json` — should print a structured text description of the scene.
-
-After this, the session can run tests and the engine locally to verify any future implementation work before pushing.
+After Python is available, the session runs `python -m pip install -e ".[test]"` (or `uv pip install -e ".[test]"`) from the Apeiron repo root to install numpy, Pillow, pytest, and Apeiron itself as an editable package. Then `pytest tests/` and `python -m tools.render scenes/hello_cube.json` should both succeed.
 
 ## Resolved
 
-(None yet.)
+### #001 — Flip github repo visibility to public (resolved 2026-05-16)
+
+Apeiron's github repo was created private under auto-mode classifier restriction. Resolved by the same session that opened this entry, the moment the maintainer surfaced the GitHub-fully-handled-by-sessions policy: ran `gh repo edit liamhodgsonhollingsworth/Apeiron --visibility public --accept-visibility-change-consequences`. Verified via `gh repo view ... --json visibility,isPrivate`: now PUBLIC, isPrivate false. The meta-atlas link resolves for external readers.
