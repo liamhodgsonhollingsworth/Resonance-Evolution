@@ -111,6 +111,13 @@ The interpreter layer the maintainer named as "deferred for later."
 
 - **#051** [pending] — **Procedural tool recorder.** Each time a wish is granted, the wish-granting session ALSO produces a tool that makes the same shape of wish easier next time. The accumulator is structural; the catalog grows.
 - **#052** [pending] — **Wish-grants-better-than-wished.** Wish-granting sessions explicitly try to produce something better than the wished-for feature — more adaptable, more generalizable. The session compares its output against the wish and notes what improvements landed.
+
+## Tier R — Refactor / engine polish
+
+Bounded refactors surfaced by other sessions; each is small enough to land alongside other work or as a standalone short session.
+
+- **#057** [pending] — **Extract `_paste_onto_screen_rectangle` into `engine/screen.py`.** The ray-cast + UV-sample screen-rectangle paste primitive is duplicated across `node_types/chat_interface.py`, `node_types/computer.py` (as `_render_screen_rectangle` with an extra `fill_color` mode), and `node_types/list_renderer.py`. A single `engine/screen.py::paste_onto_screen_rectangle(view, screen_w, screen_h, *, internal_color=None, fill_color=None)` covers all three. The three node-types import it; existing tests catch regressions. Estimated 50 LOC + small per-file edits.
+- **#058** [pending] — **Document the engine-loaded-module test-patching gotcha.** Tests that monkeypatch a node-type module's internals must patch via `engine.types["TypeName"]._attr`, not `from node_types import x; monkeypatch.setattr(x, ...)`. The engine loads modules via `importlib.util.spec_from_file_location` under names like `apeiron_node_types_X`, so `from node_types import X` gives a different module object than what the engine uses. Surfaced during Tier A test-writing for MCPSource. Add a section to `architecture.md` or a tests/README.md once enough such gotchas accumulate.
 - **#057** [pending] — **Periodic transcript-mining cadence.** A session or scheduled task that walks the imported claude.ai transcripts plus recent Claude Code session handoffs, looking for workflow directives that haven't been captured in the current wishlist / memory / conventions. Surfaces uncaptured items as candidate wishes. Today this only happens when a session remembers to run it on-demand; making it periodic catches directives sooner. Could compose with the scheduled-tasks MCP tool already available in the harness, or live as a session type whose only role is mining + filing.
 
 ## Granted
