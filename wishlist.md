@@ -37,6 +37,8 @@ Next-priority wishes that build on Tier A.
 - **#013** [pending] — **Generic Queue node-type + make_queue skill.** When the maintainer says "make a new queue of X," the skill drives the work — no full implementation session needed.
 - **#014** [pending] — **mount_panel skill.** Generalizes the work of wiring a new panel into the WorkflowView. Any new panel type becomes a one-skill-invocation away.
 - **#015** [pending] — **add_button skill.** Generalizes adding an action button to any panel item.
+- **#053** [pending] — **Visual depth indicators for nonlinear reading.** Surfaced from the 2026-05-11 idea-realization-machine transcript: nonlinear documents need explicit visual markers showing how deep a dropdown / branch goes, plus a "shallow read" surface mode. Panel items that expand into longer content show their depth so the reader knows when they're going deeper. Generalizes to: every expandable item carries a depth-hint.
+- **#054** [pending] — **Release-cadence system.** Surfaced from the 2026-05-11 transcript: real-time publication with staged visibility control (draft → internal → public). Each artifact has a visibility state; transitions are observable. The system itself iterates on the staging rules through use rather than fixing them in advance.
 
 ## Tier C — Workflow integrations (one panel per domain)
 
@@ -49,6 +51,8 @@ Each is a single new panel node-type plus an MCP tool (or direct file read) for 
 - **#020** [pending] — **Finance panel.** Read budget / transactions / balances from connected accounts.
 - **#021** [pending] — **Diet / exercise / health panel.** Daily tracking surface with trend visualization.
 - **#022** [pending] — **Reading-list panel.** Pending reads, in-progress reads, completed reads with notes.
+- **#055** [pending] — **Voice input for workflow control.** Surfaced from the 2026-05-11 transcript's "everything integrated" vision. Voice channel alongside text for chat input. Composes with the input-as-channel generalization (#041) — voice writes to the same input channel that mouse, keyboard, scroll write to. Realtime transcription via a wrapped service (e.g. Whisper) feeding the chat input. Out-of-band: voice commands route through ChatInterpreter the same way typed commands do.
+- **#056** [pending] — **Write-for-all-readers-and-let-them-propagate.** Surfaced from the 2026-05-11 transcript: optimize the publication output for every reader type, then let each segment propagate the ideas to their natural networks rather than the maintainer manually distributing. Renderer-side implication: every artifact has multiple reading depths (one-line, one-page, full doc), each complete at its level. Each depth has its own share link.
 
 ## Tier D — Dream-mode core features
 
