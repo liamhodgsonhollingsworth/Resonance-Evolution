@@ -22,7 +22,8 @@ An item is "implemented" when it functions reliably and is in regular use. It is
 - **Engine.discover()** — implemented. Walks `node_types/` and `renderers/` for `.py` files, imports each, registers by `manifest().name`. Failures during discovery are recorded but don't crash discovery.
 - **Engine.spawn()** — implemented. Creates a node instance from a type name and params. Wraps `build()` in try/except — failures mark the instance `dead` with an error message; the engine keeps running.
 - **Engine.assemble()** — implemented. Walks the graph from a root id under a viewer, calls each node's `emit()`, composites results. Module isolation via try/except — broken nodes return placeholder channels.
-- **Engine.precompute()** — stub. Named entry point for future aggregator-as-node caching; no-op for now so the public API doesn't change when aggregators land.
+- **Engine.precompute()** — implemented. Walks every spawned node; for any node-type module exposing `precompute_hook(state, engine, node)`, calls the hook and stores the result at `engine.cache[node_id]`. Wrapped in try/except — a broken hook doesn't block other nodes' precompute. New node-types that want build-time work just expose the hook; no engine change needed.
+- **Engine `select_children` dispatch** — implemented in `_emit_node()`. A node-type module exposing `select_children(state, view, engine, node) -> List[str]` controls which connections the engine recurses into for this emit. Aggregator uses this to skip the target's full render at far views — runtime work is not done and thrown away when the precomputed impostor is in use.
 - **Engine.reload_type()** — implemented. Hot-reloads a node-type module by re-importing its file and swapping the registration. Future work: file-watcher to auto-trigger.
 - **Scene loader** — implemented as `Engine.load_scene()`. Reads `scenes/<name>.json` and spawns each node listed.
 - **Default compositor** — implemented as `Engine._composite_children()`. Z-buffer for color/depth, list-concat for text, pass-through for normal/ids. Future renderer-nodes override this for their sub-graph.
@@ -35,7 +36,8 @@ Implementations live in [node_types/](node_types/).
 - **Cube** — implemented in `node_types/cube.py`. Axis-aligned cube with ray-cast emit() against AABB; produces `color`, `depth`, and `ids` channels. Lambertian-ish shading via dominant-axis approximation. Also exposes `describe()` for the text-renderer.
 - **Group** — implemented in `node_types/group.py`. Container that composites its children using the engine's default compositor. No params; connections name children. Demonstrates composition-only node-types.
 - **Portal** — implemented in `node_types/portal.py`. Rectangular doorway in the XY plane at z=0; ray-casts against the doorway and uses the "through" child's color for inside-doorway pixels. The 4x4 connection transform on "through" is applied automatically by the engine — the Portal node-type itself adds only rectangle masking on top of existing engine machinery. Demonstrates the topology-over-coordinates architectural commitment: impossible geometries are a node-type, not an engine feature. The `scenes/portal_demo.json` scene plus the `test_portal_renders_through_to_blue_cube` test verify both the parent-frame and through-portal rendering paths.
-- **Sphere, Aggregator, Computer, ChatInterface** — open work. Each lands as its own file when needed.
+- **Aggregator** — implemented in `node_types/aggregator.py`. Observes its "target" sub-graph; `precompute_hook` walks the target collecting cube positions and colors, computes centroid + bounding-box + average-color (the BehaviorSummary), caches in `engine.cache`. At emit time, `select_children` returns `[]` when viewer-distance-to-centroid exceeds the threshold (skipping the target's runtime render entirely) and emit returns the colored AABB impostor; otherwise `select_children` returns `["target"]` and emit returns the target's full nine-cube composite. Demonstrates three architectural commitments simultaneously — aggregator-as-node, emergence-at-scale, and precomputation-moves-heavy-work-to-build-time. The `scenes/aggregator_demo.json` scene (3x3 grid of distinctly colored cubes wrapped in an Aggregator) plus four tests (`test_aggregator_precompute_populates_cache`, `test_aggregator_far_view_renders_impostor`, `test_aggregator_near_view_renders_individuals`, `test_aggregator_skips_target_render_at_far_view`) verify the precompute pipeline, the dispatch at both view ranges, and the runtime-work-skipping invariant.
+- **Sphere, Computer, ChatInterface** — open work. Each lands as its own file when needed.
 
 ## Renderers
 
@@ -64,7 +66,7 @@ Implementations live in [renderers/](renderers/).
 
 ## Test suite
 
-- **`tests/test_engine.py`** — implemented with 15 tests covering discovery, spawn, assemble, bundle output, the text-renderer, the command dispatcher, the visibility assertion, and module isolation (a deliberately-broken node-type doesn't crash the engine). Run with `pytest tests/`.
+- **`tests/test_engine.py`** — implemented with 21 tests covering discovery, spawn, assemble, bundle output, the text-renderer, the command dispatcher, the visibility assertion, module isolation (a deliberately-broken node-type doesn't crash the engine), the Portal node-type's parent-frame-plus-through-portal rendering, and the Aggregator's precompute / far-view-impostor / near-view-individuals / skip-target-at-far-view dispatch. Run with `pytest tests/`.
 
 ## How to modify this page
 

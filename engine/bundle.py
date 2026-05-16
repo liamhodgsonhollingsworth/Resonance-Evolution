@@ -90,8 +90,25 @@ def write_bundle(channels: Channels, output_dir: Path, view: View = None, scene_
         elif isinstance(value, (str, int, float, bool, list, dict)):
             manifest["channels"][name] = value
 
-    (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    (output_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, default=_json_default)
+    )
     return output_dir
+
+
+def _json_default(obj):
+    """JSON encoder fallback. Handles numpy types that appear inside nested
+    channel dicts (BehaviorSummary, etc.) so unknown future channel shapes
+    don't break the bundle writer."""
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 def _ensure_uint8_rgb(arr) -> np.ndarray:
