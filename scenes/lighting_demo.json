@@ -1,0 +1,46 @@
+{
+  "root": "scene",
+  "view": {
+    "position": [0.0, 2.0, 6.0],
+    "look_at": [0.0, 0.0, 0.0],
+    "width": 256,
+    "height": 256
+  },
+  "nodes": [
+    {
+      "id": "scene",
+      "type": "Group",
+      "connections": {
+        "lit":      "shader",
+        "key_light": "key_light",
+        "fill_light": "fill_light"
+      }
+    },
+    {
+      "id": "shader",
+      "type": "LambertianShader",
+      "params": {"ambient": 0.10},
+      "connections": {"source": "geometry"}
+    },
+    {
+      "id": "geometry",
+      "type": "Group",
+      "connections": {
+        "sphere": {"target": "s1", "transform": [[1,0,0,-1.5],[0,1,0,0],[0,0,1,0],[0,0,0,1]]},
+        "cube":   {"target": "c1", "transform": [[1,0,0, 1.5],[0,1,0,0],[0,0,1,0],[0,0,0,1]]}
+      }
+    },
+    {"id": "s1", "type": "Sphere", "params": {"radius": 1.2, "color": [0.85, 0.55, 0.40], "id_hash": 1}},
+    {"id": "c1", "type": "Cube",   "params": {"size":   1.6, "color": [0.50, 0.75, 0.85], "id_hash": 2}},
+    {
+      "id": "key_light",
+      "type": "Light",
+      "params": {"direction": [-0.4, -1.0, -0.6], "color": [1.0, 0.95, 0.85], "intensity": 0.9}
+    },
+    {
+      "id": "fill_light",
+      "type": "Light",
+      "params": {"direction": [0.6, -0.3, -0.7], "color": [0.5, 0.6, 0.8], "intensity": 0.4}
+    }
+  ]
+}

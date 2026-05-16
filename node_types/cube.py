@@ -93,7 +93,16 @@ def emit(state, view: View, ctx: EmitContext) -> Channels:
 
     ids_img = np.where(hit, state["node_id_hash"], 0).astype(np.uint32)
 
-    return {"color": color_img, "depth": depth, "ids": ids_img}
+    # Surface normal: along the dominant t_low axis, sign opposite to ray direction.
+    # Additive channel — non-breaking; downstream renderers that don't read it
+    # (the default raster compositor) still work.
+    normals = np.zeros((height, width, 3), dtype=np.float32)
+    neg_dir_sign = -np.sign(dirs_world).astype(np.float32)
+    for axis in range(3):
+        is_axis = (dominant_axis == axis) & hit
+        normals[..., axis] = np.where(is_axis, neg_dir_sign[..., axis], normals[..., axis])
+
+    return {"color": color_img, "depth": depth, "ids": ids_img, "normal": normals}
 
 
 def describe(state, ctx: EmitContext) -> str:

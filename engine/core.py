@@ -309,14 +309,16 @@ class Engine:
         return result
 
     def _composite_pair(self, base: Channels, over: Channels) -> Channels:
-        """Composite `over` onto `base` using a depth test on the depth channel."""
+        """Composite `over` onto `base` using a depth test on the depth channel.
+        The Z-buffer mask also drives normal/ids — without that the pixel's
+        normal can come from a node that's behind something else, breaking
+        downstream shaders that read the normal channel."""
         out: Channels = {}
-        # Z-buffer for color
+        mask = None
         if "color" in over and "depth" in over and "depth" in base:
             mask = over["depth"] < base["depth"]
             fallback_color = base.get("color")
             if fallback_color is None:
-                # base lacked a color channel; fall back to opaque black at over's shape
                 fallback_color = np.zeros_like(over["color"])
             out["color"] = np.where(mask[..., None], over["color"], fallback_color)
             out["depth"] = np.where(mask, over["depth"], base["depth"])
@@ -324,10 +326,22 @@ class Engine:
             out["color"] = over.get("color", base.get("color"))
             out["depth"] = over.get("depth", base.get("depth"))
 
-        # Pass-through optional channels
+        # Z-buffer for normal/ids using the same mask. Without this the
+        # "winning" channel for compositing diverges per channel — pixels
+        # could read color from one node and normal from another.
         for name in ("normal", "ids"):
-            if name in over or name in base:
-                out[name] = over.get(name, base.get(name))
+            over_chan = over.get(name)
+            base_chan = base.get(name)
+            if over_chan is not None and base_chan is not None and mask is not None \
+                    and over_chan.shape == base_chan.shape:
+                if over_chan.ndim == 3:
+                    out[name] = np.where(mask[..., None], over_chan, base_chan)
+                else:
+                    out[name] = np.where(mask, over_chan, base_chan)
+            elif over_chan is not None:
+                out[name] = over_chan
+            elif base_chan is not None:
+                out[name] = base_chan
 
         # Concatenate text channels if present
         text_parts = []

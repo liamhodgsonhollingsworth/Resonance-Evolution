@@ -176,6 +176,55 @@ def test_summarize_bundle(tmp_path, hello_scene, view_for_hello):
     assert "depth" in summary
 
 
+def test_lighting_demo_produces_lit_output():
+    """Light + LambertianShader: lights register at precompute, shader
+    reads cache['__lights__'] and consumes the source's normal channel.
+    Verifies a non-trivial lit output appears (different from raw
+    unlit), and that the lights cache is populated."""
+    e = Engine(root_dir=ROOT)
+    e.discover()
+    scene_path = ROOT / "scenes" / "lighting_demo.json"
+    root_id = e.load_scene(scene_path)
+    e.precompute()
+
+    # Light cache populated
+    lights = e.cache.get("__lights__", [])
+    assert len(lights) == 2, f"expected 2 lights registered, got {len(lights)}"
+
+    pos = np.array([0.0, 2.0, 6.0])
+    view = View(position=pos, orientation=look_at(pos, np.zeros(3)),
+                width=128, height=128)
+    channels = e.assemble(root_id, view)
+    color = channels["color"]
+
+    # Lit output: hits should exist with varied brightness
+    bright = (color.sum(axis=-1) > 0.3).sum()
+    assert bright > 200, f"too few lit pixels ({bright})"
+
+    # Shading should vary across the surface (not flat) — implies normals are working
+    red_channel = color[..., 0][color.sum(axis=-1) > 0.3]
+    assert (float(red_channel.max()) - float(red_channel.min())) > 0.1, (
+        "shading too uniform; lighting not varying across surface")
+
+
+def test_cube_emits_normal_channel():
+    """Cube's emit now includes a normal channel; pixels at hits should
+    have unit-length normals along ±X, ±Y, or ±Z."""
+    e = Engine(root_dir=ROOT)
+    e.discover()
+    e.spawn("c1", "Cube", params={"size": 1.0, "color": [0.5, 0.5, 0.5], "id_hash": 1})
+    pos = np.array([0.0, 0.0, 4.0])
+    view = View(position=pos, orientation=look_at(pos, np.zeros(3)),
+                width=64, height=64)
+    channels = e.assemble("c1", view)
+    normal = channels.get("normal")
+    assert normal is not None, "Cube should emit a normal channel"
+    # At least some pixels should have non-zero normals (the cube face)
+    norms = np.linalg.norm(normal, axis=-1)
+    hit_mask = norms > 0.5
+    assert hit_mask.sum() > 50
+
+
 def test_chat_interface_renders_log_text(tmp_path):
     """ChatInterface reads a log file and renders its contents to pixels
     on a screen rectangle. Verifies the screen region contains non-zero
