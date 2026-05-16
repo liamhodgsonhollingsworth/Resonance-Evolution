@@ -1,0 +1,37 @@
+{
+  "root": "root_group",
+  "view": {
+    "position": [0.0, 1.5, 6.0],
+    "look_at": [0.0, 0.0, 0.0],
+    "width": 256,
+    "height": 256
+  },
+  "nodes": [
+    {
+      "id": "root_group",
+      "type": "Group",
+      "connections": {
+        "red_cube": {"target": "red_cube", "transform": [[1, 0, 0, 2.5], [0, 1, 0, 0], [0, 0, 1, 0.5], [0, 0, 0, 1]]},
+        "portal":   "portal_a"
+      }
+    },
+    {
+      "id": "red_cube",
+      "type": "Cube",
+      "params": {"size": 1.0, "color": [0.85, 0.25, 0.25], "id_hash": 1}
+    },
+    {
+      "id": "portal_a",
+      "type": "Portal",
+      "params": {"width": 2.5, "height": 3.0},
+      "connections": {
+        "through": {"target": "blue_cube_far", "transform": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, -1.0], [0, 0, 0, 1]]}
+      }
+    },
+    {
+      "id": "blue_cube_far",
+      "type": "Cube",
+      "params": {"size": 2.0, "color": [0.25, 0.45, 0.85], "id_hash": 2}
+    }
+  ]
+}

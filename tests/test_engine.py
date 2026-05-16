@@ -176,6 +176,40 @@ def test_summarize_bundle(tmp_path, hello_scene, view_for_hello):
     assert "depth" in summary
 
 
+def test_portal_renders_through_to_blue_cube():
+    """Portal demonstrates topology-over-coordinates. The scene has a red
+    cube in the parent frame plus a Portal whose 'through' connection
+    targets a blue cube via a translation transform. The rendered output
+    must contain both cube colors — red somewhere in the parent frame,
+    blue somewhere visible through the portal's doorway. If only the
+    parent frame rendered correctly, blue wouldn't appear; if only the
+    portal's child rendered, red wouldn't appear; both must coexist."""
+    e = Engine(root_dir=ROOT)
+    e.discover()
+    scene_path = ROOT / "scenes" / "portal_demo.json"
+    root_id = e.load_scene(scene_path)
+
+    pos = np.array([0.0, 1.5, 6.0])
+    target = np.array([0.0, 0.0, 0.0])
+    view = View(position=pos, orientation=look_at(pos, target), width=128, height=128)
+
+    channels = e.assemble(root_id, view)
+    color = channels["color"]
+    assert color is not None and color.shape == (128, 128, 3)
+
+    # Red cube visible in the parent frame
+    red_mask = (color[..., 0] > 0.5) & (color[..., 2] < 0.3)
+    assert red_mask.sum() > 0, "red cube not visible — parent frame failed to render"
+
+    # Blue cube visible through the portal
+    blue_mask = (color[..., 2] > 0.4) & (color[..., 0] < 0.3)
+    assert blue_mask.sum() > 0, "blue cube not visible — portal's through-render failed"
+
+    # Portal's id should appear in the spawned nodes
+    assert "portal_a" in e.nodes
+    assert e.nodes["portal_a"].type_name == "Portal"
+
+
 def test_broken_node_type_isolated(engine, tmp_path):
     """A node-type whose emit() raises should not crash the engine — its
     instance is marked dead and the rest of the scene renders."""

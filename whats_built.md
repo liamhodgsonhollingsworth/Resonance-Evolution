@@ -34,7 +34,8 @@ Implementations live in [node_types/](node_types/).
 
 - **Cube** — implemented in `node_types/cube.py`. Axis-aligned cube with ray-cast emit() against AABB; produces `color`, `depth`, and `ids` channels. Lambertian-ish shading via dominant-axis approximation. Also exposes `describe()` for the text-renderer.
 - **Group** — implemented in `node_types/group.py`. Container that composites its children using the engine's default compositor. No params; connections name children. Demonstrates composition-only node-types.
-- **Sphere, Aggregator, Portal, Computer, ChatInterface** — open work. Each lands as its own file when needed.
+- **Portal** — implemented in `node_types/portal.py`. Rectangular doorway in the XY plane at z=0; ray-casts against the doorway and uses the "through" child's color for inside-doorway pixels. The 4x4 connection transform on "through" is applied automatically by the engine — the Portal node-type itself adds only rectangle masking on top of existing engine machinery. Demonstrates the topology-over-coordinates architectural commitment: impossible geometries are a node-type, not an engine feature. The `scenes/portal_demo.json` scene plus the `test_portal_renders_through_to_blue_cube` test verify both the parent-frame and through-portal rendering paths.
+- **Sphere, Aggregator, Computer, ChatInterface** — open work. Each lands as its own file when needed.
 
 ## Renderers
 
