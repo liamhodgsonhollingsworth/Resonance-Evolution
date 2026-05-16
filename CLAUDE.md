@@ -13,8 +13,10 @@ At session start, after reading this CLAUDE.md, also read:
 1. `README.md` — this project's framing and Atlas.
 2. `architecture.md` — the load-bearing design commitments. Read this before touching engine or node-type code.
 3. `whats_built.md` — current state of what is and is not implemented.
-4. The meta-layer's atlas at `https://github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront/blob/main/README.md` — the network's index of indexes.
-5. The meta-layer's operational discipline at `https://github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront/blob/main/conventions/discipline.md` — network-wide rules for response shape, communication, closing-block format, archive process, github URL links, and auto-push.
+4. `session_types/handoff.md` — chronological index of prior sessions; read the most recent handoff to pick up where the last session left off.
+5. `pending.md` — items deferred for future sessions or for the maintainer.
+6. The meta-layer's atlas at `https://github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront/blob/main/README.md` — the network's index of indexes.
+7. The meta-layer's operational discipline at `https://github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront/blob/main/conventions/discipline.md` — network-wide rules for response shape, communication, closing-block format, archive process, github URL links, and auto-push.
 
 (Additional orientation pages are added as the project develops.)
 
