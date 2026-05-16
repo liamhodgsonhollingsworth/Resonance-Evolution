@@ -17,15 +17,15 @@ The append-only meta-convention applies: nothing is deleted, only re-classified.
 
 The implementation session for the first renderer view focuses here. Most of these are bounded enough to land together.
 
-- **#001** [pending] — **MCP adapter inside Apeiron.** A node-type whose emit calls a named Alethea-cc MCP tool and returns the result on a channel. Precondition for any panel that reads live data from the corpus.
-- **#002** [pending] — **TaskPanel.** Reads tasks.md, renders a vertical list of TaskItem nodes inside its Computer-node region.
-- **#003** [pending] — **IdeaPanel.** Reads Alethea's ideas_queue.md (via MCP adapter), renders a list of IdeaItem nodes.
-- **#004** [pending] — **WishPanel.** Reads wishlist.md (this file), renders a list of WishItem nodes with status indicators.
-- **#005** [pending] — **WorkflowView composite.** The three-panel layout root scene composing TaskPanel, IdeaPanel, WishPanel side-by-side with a top bar and a chat bar.
-- **#006** [pending] — **Click-to-expand for panel items.** Generic expand action that takes any panel item and shows its full content plus connections in a sub-renderer overlay. Escape collapses back.
-- **#007** [pending] — **SessionRoster + ChatPanel.** Bottom-edge messaging surface: roster of active Claude Code sessions, plus an active-session chat panel showing recent messages and an input field.
+- **#001** [granted] — **MCP adapter inside Apeiron.** A node-type whose emit calls a named Alethea-cc MCP tool and returns the result on a channel. Precondition for any panel that reads live data from the corpus. Granted as `MCPSource` (one half of the DataSource + Renderer orthogonal pair); calls in `precompute_hook` + cache, graceful degrade if MCP unavailable.
+- **#002** [granted] — **TaskPanel.** Reads tasks.md, renders a vertical list of TaskItem nodes inside its Computer-node region. Granted via `FileSource(parser=tasks) + ListRenderer` composition.
+- **#003** [granted] — **IdeaPanel.** Reads Alethea's ideas_queue.md (via MCP adapter), renders a list of IdeaItem nodes. Granted via `FileSource(parser=ideas) + ListRenderer`; can swap to `MCPSource` once Alethea-cc MCP server is HTTP-hosted (pending Alethea #005).
+- **#004** [granted] — **WishPanel.** Reads wishlist.md (this file), renders a list of WishItem nodes with status indicators. Granted via `FileSource(parser=wishes) + ListRenderer`.
+- **#005** [granted] — **WorkflowView composite.** The three-panel layout root scene composing TaskPanel, IdeaPanel, WishPanel side-by-side with a top bar and a chat bar. Granted as `WorkflowView` composition node-type + `scenes/workflow_view.json`. Top/chat bars are connection slots ready for the future SessionRoster + ChatPanel work (#007).
+- **#006** [pending] — **Click-to-expand for panel items.** Generic expand action that takes any panel item and shows its full content plus connections in a sub-renderer overlay. Escape collapses back. (Items already carry stable IDs and a `body` field — the click-handler infrastructure is the remaining work.)
+- **#007** [pending] — **SessionRoster + ChatPanel.** Bottom-edge messaging surface: roster of active Claude Code sessions, plus an active-session chat panel showing recent messages and an input field. (Can mount via the existing `chat_bar` connection slot on WorkflowView and a new SessionRoster node-type.)
 - **#008** [pending] — **File-watcher integration for view-refresh.** Wire the existing file-watcher to invalidate precompute caches and re-emit panels when their source files change.
-- **#009** [pending] — **Text-compatibility verification suite.** Every panel action (expand, select, scroll, send-message) has a text-equivalent command in the TextRenderer grammar; the suite tests each one.
+- **#009** [granted] — **Text-compatibility verification suite.** Every panel action (expand, select, scroll, send-message) has a text-equivalent command in the TextRenderer grammar; the suite tests each one. Granted as `tests/test_workflow_view.py` (21 tests) plus the dispatched fresh-subagent verification of the workflow_view scene through `describe_scene`/`dispatch_command` — every panel surface is observable headlessly via the text-API.
 
 ## Tier B — First-renderer-view enrichments
 
@@ -35,7 +35,7 @@ Next-priority wishes that build on Tier A.
 - **#011** [pending] — **Subagent messaging route.** When a subagent posts to its parent session's log file, the SessionRoster shows the subagent as a sub-entry under its parent.
 - **#012** [pending] — **Router node-type.** Sits between chat input and session log files. State holds routing rules (focus-default, @-tags, #-tags). Generalizes the "where does this message go" decision into editable data.
 - **#013** [pending] — **Generic Queue node-type + make_queue skill.** When the maintainer says "make a new queue of X," the skill drives the work — no full implementation session needed.
-- **#014** [pending] — **mount_panel skill.** Generalizes the work of wiring a new panel into the WorkflowView. Any new panel type becomes a one-skill-invocation away.
+- **#014** [granted] — **mount_panel skill.** Generalizes the work of wiring a new panel into the WorkflowView. Any new panel type becomes a one-skill-invocation away. Granted as [mount-panel.md](https://github.com/liamhodgsonhollingsworth/Alethea/blob/main/skills/mount-panel.md) in the Alethea skills/ catalog; codifies the FileSource/MCPSource + ListRenderer + scene-edit + test procedure.
 - **#015** [pending] — **add_button skill.** Generalizes adding an action button to any panel item.
 
 ## Tier C — Workflow integrations (one panel per domain)
@@ -110,7 +110,7 @@ The interpreter layer the maintainer named as "deferred for later."
 
 ## Granted
 
-(None yet.)
+- **Tier A foundation (#001-#005, #009) + accumulator skill (#014)** — granted 2026-05-16 by the wish-granting session `first-renderer-view-impl-nostalgic`. Generalization: the cluster shipped as **DataSource + Renderer orthogonal node-type families** (FileSource + MCPSource as sources; ListRenderer as the first renderer in that family). Future panels mount via the [mount-panel skill](https://github.com/liamhodgsonhollingsworth/Alethea/blob/main/skills/mount-panel.md) — one source-config + one renderer-config + one connection per panel. All seven Tier C panels (#016-#022) become single-skill invocations against this primitive without writing new node-types. PR: forthcoming on merge.
 
 ## Superseded
 
