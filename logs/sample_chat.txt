@@ -1,0 +1,8 @@
+Apeiron session — sample log.
+
+liam: open the painterly_demo and add a fourth cube.
+claude: editing scenes/painterly_demo.json — adding cube_d at position (-1, 1, -1) with color [0.8, 0.7, 0.4].
+liam: nice. now wrap that in an Aggregator.
+claude: replacing the painterly's source connection with an Aggregator wrapping the four-cube group.
+liam: render at viewer distance 20.
+claude: rendering. distance is past threshold, so the Aggregator emits its impostor — output/painterly_far/color.png shows a single colored box.

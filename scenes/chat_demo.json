@@ -1,0 +1,35 @@
+{
+  "root": "scene",
+  "view": {
+    "position": [0.0, 0.0, 6.0],
+    "look_at": [0.0, 0.0, 0.0],
+    "width": 256,
+    "height": 256
+  },
+  "nodes": [
+    {
+      "id": "scene",
+      "type": "Group",
+      "connections": {
+        "chat":      "chat",
+        "side_cube": {"target": "side_cube", "transform": [[1,0,0,3.0],[0,1,0,-1.0],[0,0,1,0.5],[0,0,0,1]]}
+      }
+    },
+    {
+      "id": "chat",
+      "type": "ChatInterface",
+      "params": {
+        "log_path": "logs/sample_chat.txt",
+        "screen_width": 4.5,
+        "screen_height": 3.0,
+        "screen_resolution": 384,
+        "font_size": 18
+      }
+    },
+    {
+      "id": "side_cube",
+      "type": "Cube",
+      "params": {"size": 0.8, "color": [0.85, 0.45, 0.30], "id_hash": 1}
+    }
+  ]
+}
