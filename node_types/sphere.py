@@ -71,7 +71,12 @@ def emit(state, view: View, ctx: EmitContext) -> Channels:
     color_img[hit] = (base_color[None, :] * shade[..., None])[hit]
 
     ids_img = np.where(hit, state["node_id_hash"], 0).astype(np.uint32)
-    return {"color": color_img, "depth": depth, "ids": ids_img}
+
+    # Surface normal: P/r since sphere is at local origin. Zero outside hits.
+    normals = normal.astype(np.float32)
+    normals[~hit] = 0.0
+
+    return {"color": color_img, "depth": depth, "ids": ids_img, "normal": normals}
 
 
 def describe(state, ctx: EmitContext) -> str:
