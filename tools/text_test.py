@@ -355,6 +355,18 @@ def _cmd_collapse(
     return ("OK: " if ok else "ERR: ") + msg, view
 
 
+def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
+    """Return the canonical command-grammar list — what verbs the CLI
+    supports. Equivalent to rendering a TextRenderer-wrapped scene and
+    reading the COMMANDS AVAILABLE section, but accessible directly
+    without scene loading."""
+    from renderers.text import command_grammar
+    lines = ["available commands:"]
+    for entry in command_grammar():
+        lines.append(f"  {entry}")
+    return "\n".join(lines), view
+
+
 _COMMANDS = {
     "describe": _cmd_describe,
     "describe-subtree": _cmd_describe_subtree,
@@ -369,6 +381,7 @@ _COMMANDS = {
     "invoke": _cmd_invoke,
     "expand": _cmd_expand,
     "collapse": _cmd_collapse,
+    "list-commands": _cmd_list_commands,
 }
 
 

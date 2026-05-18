@@ -100,6 +100,7 @@ def command_grammar() -> List[str]:
         "invoke <renderer> <item> <action> [k=v ...] — dispatch a named action; pass \"\" for renderer-scoped",
         "expand <renderer> <item>       — show full body + meta for one panel item",
         "collapse <renderer>            — return the panel to its list view",
+        "list-commands                  — print this command grammar (every verb the CLI supports)",
     ]
 
 

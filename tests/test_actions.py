@@ -245,6 +245,17 @@ def test_text_api_grammar_lists_action_verbs():
     assert "collapse" in grammar
 
 
+def test_list_commands_verb_returns_grammar(engine):
+    """`list-commands` returns the canonical command grammar so verbs
+    are discoverable from the CLI without triggering an error."""
+    from tools.text_test import dispatch_command
+    result, _ = dispatch_command(engine, "list-commands")
+    assert "available commands:" in result
+    # Every existing verb should appear
+    for verb in ("describe", "spawn", "invoke", "expand", "collapse", "list-commands"):
+        assert verb in result, f"verb {verb!r} missing from list-commands output"
+
+
 def test_dispatch_payload_passthrough(engine, tmp_path):
     """Caller-supplied payload entries should pass through to
     handle_action. Verify by monkey-patching handle_action to record
