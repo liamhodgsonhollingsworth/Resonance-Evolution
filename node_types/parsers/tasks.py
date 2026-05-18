@@ -16,6 +16,8 @@ Indented sub-bullets attach to the previous task as continuation in
 import re
 from typing import List, Dict, Any
 
+from node_types.parsers import attach_default_actions
+
 
 _LINE_RE = re.compile(r"^\s*[-*]\s*\[(?P<box>[ x~\-])\]\s*(?P<title>.+?)\s*$")
 _STATUS = {" ": "pending", "x": "done", "~": "in_progress", "-": "cancelled"}
@@ -47,4 +49,4 @@ def parse(text: str) -> List[Dict[str, Any]]:
             sep = "\n" if current["body"] else ""
             current["body"] += sep + stripped
 
-    return items
+    return attach_default_actions(items)

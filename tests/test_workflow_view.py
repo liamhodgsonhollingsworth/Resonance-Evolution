@@ -93,6 +93,49 @@ def test_wishes_parser_extracts_number_status_tier_title():
     assert items[2]["status"] == "planning"
 
 
+def test_tasks_parser_emits_default_actions_for_every_item():
+    text = "- [ ] one\n- [x] two\n"
+    items = parse_tasks(text)
+    assert items
+    for item in items:
+        assert item["actions"] == ["expand"]
+
+
+def test_wishes_parser_emits_default_actions_for_every_item():
+    text = "## Tier A\n- **#001** [pending] — **One.** body\n"
+    items = parse_wishes(text)
+    assert items[0]["actions"] == ["expand"]
+
+
+def test_default_actions_list_is_per_item_copy_not_shared():
+    """Each item must own its actions list — mutating one item's list
+    must not mutate any other item's list. Without this guarantee, the
+    accumulator pattern (renderers extending an item's actions in-place)
+    silently affects siblings."""
+    text = "- [ ] one\n- [ ] two\n"
+    items = parse_tasks(text)
+    items[0]["actions"].append("delete")
+    assert items[1]["actions"] == ["expand"]
+
+
+def test_attach_default_actions_preserves_explicit_actions():
+    from node_types.parsers import attach_default_actions
+    items = [
+        {"id": "a", "title": "with-actions", "actions": ["custom", "expand"]},
+        {"id": "b", "title": "without-actions"},
+    ]
+    attach_default_actions(items)
+    assert items[0]["actions"] == ["custom", "expand"]
+    assert items[1]["actions"] == ["expand"]
+
+
+def test_attach_default_actions_accepts_default_override():
+    from node_types.parsers import attach_default_actions
+    items = [{"id": "a", "title": "no-actions"}]
+    attach_default_actions(items, default=["expand", "delete"])
+    assert items[0]["actions"] == ["expand", "delete"]
+
+
 def test_ideas_parser_extracts_entries_under_sections():
     text = (
         "## Queue\n"
@@ -120,6 +163,17 @@ def test_ideas_parser_extracts_entries_under_sections():
     assert items[0]["title"] == "2026-05-16 — A first idea"
     assert items[0]["meta"].get("source") == "session foo"
     assert items[2]["meta"]["section"].startswith("Resolved")
+
+
+def test_ideas_parser_emits_default_actions_for_every_item():
+    text = (
+        "## Queue\n\n"
+        "### 2026-05-16 — one\n\n"
+        "**Source:** s\n"
+    )
+    items = parse_ideas(text)
+    assert items
+    assert items[0]["actions"] == ["expand"]
 
 
 # ---------------------------------------------------------------------------
