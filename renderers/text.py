@@ -97,6 +97,9 @@ def command_grammar() -> List[str]:
         "look-at <x> <y> <z>            — rotate the viewer to look at a world point",
         "render <root_id>               — render the current scene to a bundle",
         "render-text <root_id>          — render the current scene as text only",
+        "invoke <renderer> <item> <action> [k=v ...] — dispatch a named action; pass \"\" for renderer-scoped",
+        "expand <renderer> <item>       — show full body + meta for one panel item",
+        "collapse <renderer>            — return the panel to its list view",
     ]
 
 
