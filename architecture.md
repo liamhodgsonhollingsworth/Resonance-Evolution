@@ -51,6 +51,10 @@ The text-renderer is the LLM-friendly interface. It exposes:
 
 In the limit, an LLM interacting only through the text-renderer can build composite tools, verify them by their text output, and improve the system with no human in the loop on each iteration. The user's role becomes confirming aesthetics and direction rather than gating every feature.
 
+## Actions are typed verbs that ride a single dispatch path
+
+Renderer-node-types may declare an optional `handle_action(state, action_name, payload, engine, node) -> state_delta` hook. Items produced by parsers carry an `actions: list[str]` field declaring which verbs they support. The free function `engine.actions.dispatch_action(engine, renderer_id, action_name, item_id=None, payload=None)` validates the action against the item's declared list when item-scoped, calls the renderer's `handle_action` under module isolation (try/except), and merges the returned delta into per-renderer view-state at `engine.cache["__view_state__"][renderer_id]`. The same dispatch path is reachable from the text-API (`invoke` / `expand` / `collapse` verbs in `tools/text_test.py`) and will be reachable from the realtime renderer's click handler when that lands. Per-renderer view-state lives outside `node.state` because `node.state` is the build-time output; view-state is what runtime interaction has produced, and survives `precompute()` re-runs and hot-reloads of the renderer module by living in `engine.cache`. The action primitive composes with the named-channels architecture without engine-core extension — actions are domain logic that the engine package owns, not a new wire protocol — and absorbs the per-item-interaction wish cluster (expand-to-show-body, mark-done, delete, add-button) under one hook per renderer.
+
 ## Precomputation moves the heavy work to build time
 
 The engine has two phases:
