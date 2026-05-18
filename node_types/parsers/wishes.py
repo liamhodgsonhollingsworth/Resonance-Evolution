@@ -13,6 +13,8 @@ Trailing sections `## Granted` and `## Superseded` (each containing
 import re
 from typing import List, Dict, Any
 
+from node_types.parsers import attach_default_actions
+
 
 _ITEM_RE = re.compile(
     r"^- \*\*#(?P<num>\d+)\*\*\s*\[(?P<status>[^\]]+)\]\s*—\s*(?P<rest>.+?)\s*$"
@@ -49,7 +51,7 @@ def parse(text: str) -> List[Dict[str, Any]]:
             }
         )
 
-    return items
+    return attach_default_actions(items)
 
 
 def _split_title_body(rest: str) -> tuple[str, str, str]:

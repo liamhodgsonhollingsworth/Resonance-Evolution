@@ -296,6 +296,65 @@ def _cmd_render_text(engine: Engine, view: View, root_id: str, *_) -> Tuple[str,
     return describe_view(engine, root_id, view), view
 
 
+def _cmd_invoke(
+    engine: Engine,
+    view: View,
+    renderer_id: str,
+    item_id: str,
+    action_name: str,
+    *payload_kvs,
+) -> Tuple[str, View]:
+    """Generic action dispatch: invoke <renderer> <item> <action> [k=v ...].
+
+    Pass ``""`` (an empty-string item-id) for renderer-scoped actions
+    that don't target an item — e.g. ``invoke panel "" refresh``.
+    """
+    from engine.actions import dispatch_action
+    payload: Dict[str, Any] = {}
+    for kv in payload_kvs:
+        if "=" in kv:
+            k, v = kv.split("=", 1)
+            try:
+                payload[k] = json.loads(v)
+            except json.JSONDecodeError:
+                payload[k] = v
+    ok, msg = dispatch_action(
+        engine,
+        renderer_id=renderer_id,
+        action_name=action_name,
+        item_id=item_id if item_id else None,
+        payload=payload or None,
+    )
+    return ("OK: " if ok else "ERR: ") + msg, view
+
+
+def _cmd_expand(
+    engine: Engine,
+    view: View,
+    renderer_id: str,
+    item_id: str,
+    *_,
+) -> Tuple[str, View]:
+    """Sugar: expand <renderer> <item> == invoke <renderer> <item> expand."""
+    from engine.actions import dispatch_action
+    ok, msg = dispatch_action(
+        engine, renderer_id, "expand", item_id=item_id
+    )
+    return ("OK: " if ok else "ERR: ") + msg, view
+
+
+def _cmd_collapse(
+    engine: Engine,
+    view: View,
+    renderer_id: str,
+    *_,
+) -> Tuple[str, View]:
+    """Sugar: collapse <renderer> — renderer-scoped, no item required."""
+    from engine.actions import dispatch_action
+    ok, msg = dispatch_action(engine, renderer_id, "collapse")
+    return ("OK: " if ok else "ERR: ") + msg, view
+
+
 _COMMANDS = {
     "describe": _cmd_describe,
     "describe-subtree": _cmd_describe_subtree,
@@ -307,6 +366,9 @@ _COMMANDS = {
     "look-at": _cmd_look_at,
     "render": _cmd_render,
     "render-text": _cmd_render_text,
+    "invoke": _cmd_invoke,
+    "expand": _cmd_expand,
+    "collapse": _cmd_collapse,
 }
 
 
@@ -359,6 +421,11 @@ def main(argv=None):
     engine.discover()
     scene_data = json.loads(args.scene.read_text())
     root_id = engine.load_scene(args.scene)
+    # Run precompute so source-cache entries are populated before any
+    # describe/view/command subcommand. Without this, FileSource and
+    # MCPSource panels appear empty to the CLI even though the panel
+    # is correctly wired in the scene.
+    engine.precompute()
     if args.cmd != "summary" and getattr(args, "root", None):
         root_id = args.root
 

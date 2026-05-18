@@ -21,6 +21,8 @@ ignored.
 import re
 from typing import List, Dict, Any
 
+from node_types.parsers import attach_default_actions
+
 
 _ENTRY_RE = re.compile(r"^###\s*(?P<title>.+?)\s*$")
 _SECTION_RE = re.compile(r"^##\s+(?P<section>.+?)\s*$")
@@ -67,7 +69,7 @@ def parse(text: str) -> List[Dict[str, Any]]:
             current["body"] += sep + raw.strip()
 
     _flush(items, current)
-    return items
+    return attach_default_actions(items)
 
 
 def _flush(items: List[Dict[str, Any]], entry: Dict[str, Any] | None) -> None:

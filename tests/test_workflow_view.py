@@ -93,6 +93,49 @@ def test_wishes_parser_extracts_number_status_tier_title():
     assert items[2]["status"] == "planning"
 
 
+def test_tasks_parser_emits_default_actions_for_every_item():
+    text = "- [ ] one\n- [x] two\n"
+    items = parse_tasks(text)
+    assert items
+    for item in items:
+        assert item["actions"] == ["expand"]
+
+
+def test_wishes_parser_emits_default_actions_for_every_item():
+    text = "## Tier A\n- **#001** [pending] — **One.** body\n"
+    items = parse_wishes(text)
+    assert items[0]["actions"] == ["expand"]
+
+
+def test_default_actions_list_is_per_item_copy_not_shared():
+    """Each item must own its actions list — mutating one item's list
+    must not mutate any other item's list. Without this guarantee, the
+    accumulator pattern (renderers extending an item's actions in-place)
+    silently affects siblings."""
+    text = "- [ ] one\n- [ ] two\n"
+    items = parse_tasks(text)
+    items[0]["actions"].append("delete")
+    assert items[1]["actions"] == ["expand"]
+
+
+def test_attach_default_actions_preserves_explicit_actions():
+    from node_types.parsers import attach_default_actions
+    items = [
+        {"id": "a", "title": "with-actions", "actions": ["custom", "expand"]},
+        {"id": "b", "title": "without-actions"},
+    ]
+    attach_default_actions(items)
+    assert items[0]["actions"] == ["custom", "expand"]
+    assert items[1]["actions"] == ["expand"]
+
+
+def test_attach_default_actions_accepts_default_override():
+    from node_types.parsers import attach_default_actions
+    items = [{"id": "a", "title": "no-actions"}]
+    attach_default_actions(items, default=["expand", "delete"])
+    assert items[0]["actions"] == ["expand", "delete"]
+
+
 def test_ideas_parser_extracts_entries_under_sections():
     text = (
         "## Queue\n"
@@ -120,6 +163,17 @@ def test_ideas_parser_extracts_entries_under_sections():
     assert items[0]["title"] == "2026-05-16 — A first idea"
     assert items[0]["meta"].get("source") == "session foo"
     assert items[2]["meta"]["section"].startswith("Resolved")
+
+
+def test_ideas_parser_emits_default_actions_for_every_item():
+    text = (
+        "## Queue\n\n"
+        "### 2026-05-16 — one\n\n"
+        "**Source:** s\n"
+    )
+    items = parse_ideas(text)
+    assert items
+    assert items[0]["actions"] == ["expand"]
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +332,85 @@ def test_listrenderer_renders_source_error_inline(engine):
     assert "SOURCE ERROR" in text
 
 
+def test_listrenderer_renders_expanded_view_when_state_has_expanded_item(
+    tmp_path, engine,
+):
+    """When the per-renderer view-state names an expanded_item, emit
+    renders the detail view instead of the list. We verify by checking
+    that describe() reports EXPANDED."""
+    from engine.actions import dispatch_action
+    path = tmp_path / "tasks.md"
+    path.write_text(
+        "- [ ] alpha\n"
+        "  this is body for alpha\n"
+        "  second line of body\n"
+        "- [x] beta\n"
+    )
+    engine.spawn("src", "FileSource", params={"path": str(path), "parser_name": "tasks"})
+    engine.spawn(
+        "panel",
+        "ListRenderer",
+        params={"title_text": "Tasks", "screen_resolution": 96},
+        connections={"source": "src"},
+    )
+    engine.precompute()
+
+    ok, _ = dispatch_action(engine, "panel", "expand", item_id="task:1")
+    assert ok
+
+    node = engine.nodes["panel"]
+    ctx = EmitContext(engine=engine, node=node)
+    text = list_renderer.describe(node.state, ctx)
+    assert "EXPANDED" in text
+    assert "alpha" in text
+    assert "task:1" in text
+
+    # Render via emit; bundle should produce non-zero pixels.
+    view = View(
+        position=np.array([0.0, 0.0, 5.0]),
+        orientation=look_at(np.array([0.0, 0.0, 5.0]), np.array([0.0, 0.0, 0.0])),
+        width=128,
+        height=128,
+    )
+    channels = engine.assemble("panel", view)
+    assert channels["color"].sum() > 0
+
+    # Collapse and confirm the list view returns.
+    ok, _ = dispatch_action(engine, "panel", "collapse")
+    assert ok
+    text2 = list_renderer.describe(node.state, ctx)
+    assert "EXPANDED" not in text2
+    assert "[ ] alpha" in text2
+
+
+def test_listrenderer_defensive_emit_drops_stale_expanded_id(tmp_path, engine):
+    """When the expanded_item id no longer matches any current item
+    (a source-file edit removed it or shifted line numbers), emit
+    silently falls back to the list view rather than expanding the
+    wrong item or crashing."""
+    from engine.actions import dispatch_action, get_view_state
+
+    path = tmp_path / "tasks.md"
+    path.write_text("- [ ] alpha\n- [x] beta\n")
+    engine.spawn("src", "FileSource", params={"path": str(path), "parser_name": "tasks"})
+    engine.spawn(
+        "panel",
+        "ListRenderer",
+        params={"title_text": "Tasks", "screen_resolution": 96},
+        connections={"source": "src"},
+    )
+    engine.precompute()
+
+    # Forge a stale view-state pointing at a non-existent id.
+    get_view_state(engine, "panel")["expanded_item"] = "task:999"
+
+    node = engine.nodes["panel"]
+    ctx = EmitContext(engine=engine, node=node)
+    text = list_renderer.describe(node.state, ctx)
+    assert "EXPANDED" not in text
+    assert "[ ] alpha" in text  # list view rendered
+
+
 def test_listrenderer_describe_lists_items_with_glyphs(tmp_path, engine):
     path = tmp_path / "tasks.md"
     path.write_text("- [ ] alpha\n- [x] beta\n- [~] gamma\n")
@@ -392,6 +525,57 @@ def test_workflow_view_scene_loads_and_renders(engine, tmp_path, monkeypatch):
     assert wish_cache.get("items"), "wishes_source should have parsed items from wishlist.md"
     titles = [item["title"] for item in wish_cache["items"]]
     assert any("MCP adapter" in t for t in titles)
+
+
+def test_workflow_view_scene_expand_and_collapse_end_to_end(engine):
+    """Load the workflow_view.json scene, expand a wish-panel item via
+    the text-API, confirm the panel's describe surfaces EXPANDED with
+    that item's title, render the scene to confirm no crash, then
+    collapse and confirm the list view returns. The full action
+    primitive exercised against the live scene."""
+    from tools.text_test import dispatch_command
+    from engine.actions import get_view_state
+
+    scene_path = ROOT / "scenes" / "workflow_view.json"
+    engine.load_scene(scene_path)
+    engine.precompute()
+
+    # Pick the first wish-source item id (whatever wishlist.md actually has).
+    wishes = engine.cache.get("wishes_source", {})
+    items = wishes.get("items") or []
+    assert items, "wishes_source should have items from wishlist.md"
+    target_id = items[0]["id"]
+    target_title = items[0]["title"]
+
+    # Expand via the text-API.
+    result, _ = dispatch_command(engine, f"expand wish_panel {target_id}")
+    assert result.startswith("OK"), result
+    assert get_view_state(engine, "wish_panel").get("expanded_item") == target_id
+
+    # Confirm the panel's describe reflects the expansion.
+    node = engine.nodes["wish_panel"]
+    ctx = EmitContext(engine=engine, node=node)
+    text = list_renderer.describe(node.state, ctx)
+    assert "EXPANDED" in text
+    assert target_title in text
+
+    # Re-render and confirm we still produce non-empty output.
+    view = View(
+        position=np.array([0.0, 0.0, 9.0]),
+        orientation=look_at(np.array([0.0, 0.0, 9.0]), np.array([0.0, 0.0, 0.0])),
+        width=192,
+        height=96,
+        fov_y_radians=0.6,
+    )
+    channels = engine.assemble("workflow_view", view)
+    assert channels["color"].sum() > 0
+
+    # Collapse and confirm the list view returns.
+    result2, _ = dispatch_command(engine, "collapse wish_panel")
+    assert result2.startswith("OK"), result2
+    assert get_view_state(engine, "wish_panel").get("expanded_item") is None
+    text_after = list_renderer.describe(node.state, ctx)
+    assert "EXPANDED" not in text_after
 
 
 def test_workflow_view_scene_panel_isolation(engine, monkeypatch):
