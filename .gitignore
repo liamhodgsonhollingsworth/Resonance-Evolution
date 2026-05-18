@@ -23,5 +23,8 @@ output/
 .cache/
 *.npy
 
+# Workflow shell runtime state (sessions, raw logs, local inbox)
+state/
+
 # Claude Code worktrees
 .claude/worktrees/
