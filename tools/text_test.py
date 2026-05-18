@@ -421,6 +421,11 @@ def main(argv=None):
     engine.discover()
     scene_data = json.loads(args.scene.read_text())
     root_id = engine.load_scene(args.scene)
+    # Run precompute so source-cache entries are populated before any
+    # describe/view/command subcommand. Without this, FileSource and
+    # MCPSource panels appear empty to the CLI even though the panel
+    # is correctly wired in the scene.
+    engine.precompute()
     if args.cmd != "summary" and getattr(args, "root", None):
         root_id = args.root
 
