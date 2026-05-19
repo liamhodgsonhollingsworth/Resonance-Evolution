@@ -29,7 +29,10 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .trust import TrustSet  # noqa: F401
 
 
 # ----- public types -----
@@ -62,9 +65,26 @@ class Inbox:
       - omitted (default sentinel) → auto-detect a sibling Alethea-cc/nodes/.
       - None → explicitly skip the shared dir; only the local state_dir is used.
       - Path → use this path's `nodes/` subdirectory as the shared dir.
+
+    `sender_trust` (optional): a ``TrustSet`` consulted by ``list_main`` /
+    ``list_quarantine`` so untrusted-sender messages route to a separate
+    surface (SPEC-057). The legacy ``list_all`` / ``list_for`` keep
+    pre-trust behavior (no filter) — they are still used by tests + tools
+    that want the unfiltered view.
+
+    `session_trust` (optional): a separate ``TrustSet`` consulted by
+    ``list_for_session`` so messages addressed to a running session are
+    filtered by who is allowed to message that session. Initial default:
+    the maintainer only. SPEC-059.
     """
 
-    def __init__(self, state_dir: Path, alethea_cc_root=_DETECT):
+    def __init__(
+        self,
+        state_dir: Path,
+        alethea_cc_root=_DETECT,
+        sender_trust: Any = None,
+        session_trust: Any = None,
+    ):
         self.state_dir = Path(state_dir)
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.local_dir = self.state_dir / "inbox"
@@ -75,6 +95,8 @@ class Inbox:
         self.alethea_cc_inbox = (
             (alethea_cc_root / "nodes") if alethea_cc_root else None
         )
+        self.sender_trust = sender_trust
+        self.session_trust = session_trust
 
     # ----- writing -----
 
@@ -140,6 +162,96 @@ class Inbox:
 
     def list_for(self, recipient: str, unread_only: bool = True) -> List[InboxMessage]:
         return [m for m in self.list_all(unread_only=unread_only) if m.to == recipient]
+
+    def list_main(self, unread_only: bool = False) -> List[InboxMessage]:
+        """Messages from trusted senders only (SPEC-057).
+
+        When no ``sender_trust`` is configured the call falls through to
+        ``list_all`` so legacy callers continue to work.
+        """
+        if self.sender_trust is None:
+            return self.list_all(unread_only=unread_only)
+        return [
+            m for m in self.list_all(unread_only=unread_only)
+            if self.sender_trust.is_trusted(m.sender)
+        ]
+
+    def list_quarantine(self, unread_only: bool = False) -> List[InboxMessage]:
+        """Messages from untrusted senders only (SPEC-057 / SPEC-058).
+
+        When no ``sender_trust`` is configured the quarantine is empty by
+        definition — without a trust-set there is no notion of untrusted.
+        """
+        if self.sender_trust is None:
+            return []
+        return [
+            m for m in self.list_all(unread_only=unread_only)
+            if not self.sender_trust.is_trusted(m.sender)
+        ]
+
+    def is_sender_trusted(self, sender: str) -> bool:
+        """Convenience: returns True when no trust-set is configured."""
+        if self.sender_trust is None:
+            return True
+        return self.sender_trust.is_trusted(sender)
+
+    def partition_main_quarantine(
+        self,
+        unread_only: bool = False,
+    ) -> "tuple[List[InboxMessage], List[InboxMessage]]":
+        """Single-pass walk that returns (main, quarantine).
+
+        list_main + list_quarantine both call list_all which is O(N) in
+        file I/O. Callers that want both surfaces should use this method
+        to avoid the double walk.
+        """
+        all_msgs = self.list_all(unread_only=unread_only)
+        if self.sender_trust is None:
+            return all_msgs, []
+        main: List[InboxMessage] = []
+        quar: List[InboxMessage] = []
+        for m in all_msgs:
+            if self.sender_trust.is_trusted(m.sender):
+                main.append(m)
+            else:
+                quar.append(m)
+        return main, quar
+
+    def list_for_session(
+        self,
+        session_id: str,
+        unread_only: bool = False,
+    ) -> List[InboxMessage]:
+        """Messages addressed to ``session_id`` from session-trusted senders only (SPEC-059).
+
+        When no ``session_trust`` is configured, falls through to
+        ``list_for(session_id)`` so legacy callers stay correct.
+        """
+        msgs = self.list_for(session_id, unread_only=unread_only)
+        if self.session_trust is None:
+            return msgs
+        return [m for m in msgs if self.session_trust.is_trusted(m.sender)]
+
+    def list_for_session_quarantine(
+        self,
+        session_id: str,
+        unread_only: bool = False,
+    ) -> List[InboxMessage]:
+        """Messages addressed to ``session_id`` from session-UNtrusted senders.
+
+        Empty when no ``session_trust`` is configured (no notion of
+        untrusted-for-session without a trust-set).
+        """
+        if self.session_trust is None:
+            return []
+        msgs = self.list_for(session_id, unread_only=unread_only)
+        return [m for m in msgs if not self.session_trust.is_trusted(m.sender)]
+
+    def is_sender_trusted_for_session(self, sender: str) -> bool:
+        """True when no session-trust-set is configured (legacy passthrough)."""
+        if self.session_trust is None:
+            return True
+        return self.session_trust.is_trusted(sender)
 
     def mark_read(self, msg: InboxMessage) -> None:
         s = self._load_read_set()
