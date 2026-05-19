@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import queue
 import shlex
 import sys
@@ -116,10 +117,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         default=None,
         help="Apeiron repo root. Defaults to detection via cwd.",
     )
+    parser.add_argument(
+        "--no-default-session",
+        action="store_true",
+        help="Skip auto-spawn of the default workflow-management session at startup (smoke testing).",
+    )
+    parser.add_argument(
+        "--alethea-root",
+        default=None,
+        help="Path to the Alethea repo root, used to locate the design-specification skill + SPECIFICATIONS doc for the workflow-management seed prompt. Defaults to a sibling-of-Apeiron heuristic.",
+    )
     args = parser.parse_args(argv)
 
     root = Path(args.root) if args.root else _detect_root()
     state_dir = Path(args.state_dir) if args.state_dir else (root / "state" / "workflow")
+    alethea_root = Path(args.alethea_root) if args.alethea_root else _detect_alethea_root(root)
 
     engine = Engine(root_dir=root)
     engine.discover()
@@ -134,12 +146,21 @@ def main(argv: Optional[List[str]] = None) -> int:
     inbox = Inbox(state_dir=state_dir)
     sm = SessionManager(state_dir=state_dir)
 
-    shell = Shell(engine=engine, session_manager=sm, inbox=inbox, root=root)
+    shell = Shell(
+        engine=engine,
+        session_manager=sm,
+        inbox=inbox,
+        root=root,
+        alethea_root=alethea_root,
+    )
     fw: Optional[FileWatcher] = None
     if not args.no_watch:
         fw = FileWatcher(engine, on_event=shell.on_file_event)
         fw.start()
     shell.file_watcher = fw
+
+    if not args.no_default_session:
+        shell.ensure_default_workflow_mgmt_session()
 
     try:
         shell.run()
@@ -161,11 +182,13 @@ class Shell:
         out=sys.stdout,
         err=sys.stderr,
         in_=sys.stdin,
+        alethea_root: Optional[Path] = None,
     ):
         self.engine = engine
         self.sm = session_manager
         self.inbox = inbox
         self.root = Path(root)
+        self.alethea_root = Path(alethea_root) if alethea_root else None
         self.out = out
         self.err = err
         self.in_ = in_
@@ -180,6 +203,72 @@ class Shell:
             self._seen_inbox_paths.add(str(msg.path))
         # Prompt redraw helpers.
         self._current_input = ""
+
+    # ----- default workflow-management session (SPEC-002, SPEC-003) -----
+
+    def _default_session_marker_path(self) -> Path:
+        """File that records the persistent ID of the default workflow-management session."""
+        return Path(self.sm.state_dir) / "default_workflow_mgmt.txt"
+
+    def ensure_default_workflow_mgmt_session(self) -> Optional[str]:
+        """
+        Ensure a workflow-management session exists and is set as the active
+        chat target. Spawns one with the design-specification seed prompt if
+        no persistent ID is recorded; otherwise sets the recorded session as
+        active without re-spawning (the SessionManager auto-reactivates on
+        next send).
+
+        Returns the active session id, or None if spawn failed.
+        """
+        marker = self._default_session_marker_path()
+        existing_id: Optional[str] = None
+        if marker.exists():
+            try:
+                existing_id = marker.read_text(encoding="utf-8").strip() or None
+            except Exception:
+                existing_id = None
+
+        if existing_id:
+            rec = self.sm.get(existing_id)
+            if rec is not None and rec.status != "archived":
+                self.active_session_id = existing_id
+                self._println(
+                    f"[shell] default workflow-management session ready: "
+                    f"{rec.display_name} ({existing_id[:8]}). Bare text routes here."
+                )
+                return existing_id
+            # Marker exists but session is gone or archived; fall through to fresh spawn.
+
+        seed = _build_workflow_mgmt_seed(
+            apeiron_root=self.root,
+            alethea_root=self.alethea_root,
+        )
+        try:
+            rec = self.sm.spawn(
+                session_type="workflow-management",
+                display_name="workflow-mgmt-default",
+                cwd=self.root,
+                seed_message=seed,
+            )
+        except SessionError as exc:
+            self._println(
+                f"[shell] could not auto-spawn the default workflow-management "
+                f"session ({exc}). The shell still works; spawn manually with "
+                f"`/spawn workflow-management <name>` once `claude` is on PATH."
+            )
+            return None
+
+        self.active_session_id = rec.id
+        try:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(rec.id, encoding="utf-8")
+        except Exception:
+            pass
+        self._println(
+            f"[shell] auto-spawned default workflow-management session "
+            f"{rec.display_name} ({rec.id[:8]}). Bare text routes here from now on."
+        )
+        return rec.id
 
     # ----- entry -----
 
@@ -604,6 +693,39 @@ def _detect_root() -> Path:
     return cwd
 
 
+def _detect_alethea_root(apeiron_root: Path) -> Optional[Path]:
+    """
+    Locate the Alethea checkout (sibling of Apeiron on the maintainer's
+    machine). The workflow-management session reads
+    `<alethea>/specifications/README.md`, `<alethea>/skills/design-specification.md`,
+    and `<alethea>/session_types/workflow_management.md` at startup.
+
+    Resolution:
+    1. ALETHEA_ROOT env var
+    2. Sibling of the Apeiron root named "Alethea"
+    3. Standard maintainer location at C:/Users/Liam/Desktop/Alethea
+    4. Walk parents for an "Alethea/CLAUDE.md" pair
+    """
+    explicit = os.environ.get("ALETHEA_ROOT")
+    if explicit and Path(explicit).exists():
+        return Path(explicit)
+
+    sibling = apeiron_root.parent / "Alethea"
+    if (sibling / "CLAUDE.md").exists():
+        return sibling
+
+    canonical = Path("C:/Users/Liam/Desktop/Alethea")
+    if (canonical / "CLAUDE.md").exists():
+        return canonical
+
+    for parent in [apeiron_root, *apeiron_root.parents]:
+        candidate = parent / "Alethea"
+        if (candidate / "CLAUDE.md").exists():
+            return candidate
+
+    return None
+
+
 def _format_text_api_result(result: Any) -> str:
     if isinstance(result, (dict, list)):
         return json.dumps(result, indent=2, default=str)
@@ -635,6 +757,92 @@ def _build_wish_prompt(description: str, root: Path) -> str:
         "If the request is ambiguous or trivial, ask one clarifying question "
         "before writing files. Only do work in this repo (Apeiron); do not "
         "make changes elsewhere."
+    )
+
+
+def _build_workflow_mgmt_seed(apeiron_root: Path, alethea_root: Optional[Path]) -> str:
+    """
+    Seed message for the always-on workflow-management session (SPEC-002 / SPEC-003).
+
+    The session is the default chat recipient for the workflow shell. It receives
+    every bare-text message the maintainer types and is responsible for:
+
+      - Classifying intent: feature description, action request, regression flag,
+        completion query, or conversational.
+      - Drafting SPEC-NNN entries (intake-from-chat) when feature descriptions
+        arrive, per the design-specification skill.
+      - Routing implementation work to wish-granting / parallel-development
+        worker sessions via /spawn or the inbox, per SPEC-020.
+      - Maintaining the canonical SPECIFICATIONS document.
+
+    The seed primes the session with absolute paths to the documents it must
+    read at startup, so it doesn't have to discover them on its own.
+    """
+    apeiron = apeiron_root.as_posix()
+    alethea = alethea_root.as_posix() if alethea_root else "(not detected — ask the maintainer)"
+    return (
+        "You are the always-on workflow-management session for the Alethea / "
+        "Apeiron workflow surface. The maintainer's chat shell routes bare-text "
+        "messages to you by default — you are the single default recipient. "
+        "Other sessions are your colleagues; you dispatch work to them and "
+        "report their results back to the maintainer.\n\n"
+        "## Repos on this machine\n"
+        f"- Apeiron (this session's cwd, the engine + node-types + this shell): {apeiron}\n"
+        f"- Alethea (session-types, skills, mistakes, specifications): {alethea}\n\n"
+        "## Read these at startup, in full\n"
+        f"1. {alethea}/specifications/README.md — the canonical SPECIFICATIONS index. "
+        "Every SPEC-NNN entry is a contract the system has committed to fulfilling. "
+        "You maintain this document as part of your job.\n"
+        f"2. {alethea}/skills/design-specification.md — the procedure for "
+        "maintaining the SPECIFICATIONS document. Includes the intake-from-chat "
+        "pattern (how to detect feature descriptions and propose SPEC entries "
+        "without the maintainer saying 'this is a wish').\n"
+        f"3. {alethea}/session_types/workflow_management.md — your own session-type "
+        "discipline. Per-turn workflow-fit check is mandatory. End-of-session "
+        "learning audit is mandatory.\n"
+        f"4. {alethea}/CLAUDE.md — the Alethea auto-load chain. Item 9 surfaces "
+        "the specifications index; items 3-4 surface mistakes + discipline. "
+        "Follow the auto-load discipline as if you'd booted via this chain.\n"
+        f"5. {alethea}/mistakes/global.md — the mistakes record. Mistake #001 "
+        "(communication body shape) and mistake #005 (cockpit framing) are "
+        "load-bearing for your work; you compose responses past their checks.\n"
+        f"6. {apeiron}/tools/workflow/README.md — the workflow shell you sit "
+        "inside. Knowing the shell's slash commands lets you instruct the "
+        "maintainer on how to drive other sessions when needed.\n\n"
+        "## Your behavior\n"
+        "**On every maintainer message:**\n"
+        "1. Classify the intent. Five primary kinds:\n"
+        "   - *feature description* — apply the design-specification skill's intake "
+        "procedure. Draft a SPEC-NNN entry inline; confirm with the maintainer; "
+        "on confirmation, edit specifications/README.md to add the entry.\n"
+        "   - *action request* — execute directly if bounded and in your scope, "
+        "or dispatch a worker session via `/spawn` (via the shell, you may "
+        "instruct the maintainer to run the command, or you may write the work "
+        "yourself if it's a file edit / a small piece of code).\n"
+        "   - *regression flag* — find the SPEC entry whose acceptance criteria "
+        "no longer hold, move it from `satisfied` back to `pending` or "
+        "`in-progress` with a note describing the regression.\n"
+        "   - *completion query* — read the relevant SPEC entries, run the "
+        "acceptance criteria mentally or actually, report the status.\n"
+        "   - *conversational* — respond conversationally without spec action.\n"
+        "2. Respond at the system-level shift (see Alethea mistake #001). The "
+        "maintainer sees your Communication block; technical detail lives in "
+        "extended thinking or in the handoff document for your work.\n"
+        "3. Update the SPECIFICATIONS document whenever a spec's status moves.\n\n"
+        "**Cross-session coordination.** You are one of potentially many sessions "
+        "running on the maintainer's machine. Use the file-based inbox at "
+        f"{alethea}/Alethea-cc/nodes/ (or the local fallback at "
+        f"{apeiron}/state/workflow/inbox/) to send messages to other sessions. "
+        "When a wish-granting session is needed for a SPEC entry, dispatch it "
+        "via inbox + /spawn instruction, name the SPEC ID in the seed message, "
+        "and report progress back to the maintainer.\n\n"
+        "**Soft WIP limit (per design-specification skill).** No more than 3 specs "
+        "in `in-progress` at once across the portfolio. If a new feature would "
+        "exceed the limit, tell the maintainer the queue is at capacity and "
+        "offer to bump priorities or wait.\n\n"
+        "**Begin** by reading the six documents listed above, then reply with "
+        "exactly: `Ready. Default chat recipient is online. Describe a feature "
+        "or send a request; I will record / route / respond as appropriate.`"
     )
 
 

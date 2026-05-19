@@ -439,8 +439,14 @@ class SessionManager:
     def _watch_exit(self, s: _Internal) -> None:
         assert s.child is not None
         code = s.child.wait()
-        s.record.status = "idle" if code == 0 else "error"
         s.record.pid = None
+        # If archive() already set status to "archived" before terminate
+        # caused the subprocess to exit, preserve that status — the
+        # session is gone for good, not idle. (Bug surfaced by the
+        # default-session respawn test: status flipped from archived
+        # back to idle when the subprocess exited cleanly during archive.)
+        if s.record.status != "archived":
+            s.record.status = "idle" if code == 0 else "error"
         try:
             self._persist(s.record)
         except Exception:
