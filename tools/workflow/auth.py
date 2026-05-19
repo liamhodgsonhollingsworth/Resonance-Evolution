@@ -21,7 +21,7 @@ import secrets
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 
 DEFAULT_ACCOUNTS_PATH = Path("state/accounts.json")
@@ -80,7 +80,19 @@ def _save_store(path: Path, data: dict) -> None:
     tmp = path.with_suffix(".json.tmp")
     with tmp.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, sort_keys=True)
-    os.replace(tmp, path)
+    # Windows can raise PermissionError on os.replace if a concurrent reader has
+    # the destination open at the moment of the rename. POSIX allows
+    # rename-over-open-file; Windows does not. Retry with short backoff so the
+    # race resolves naturally (caller-visible behavior matches POSIX).
+    last_exc: Optional[Exception] = None
+    for attempt in range(10):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError as exc:
+            last_exc = exc
+            time.sleep(0.005 * (attempt + 1))
+    raise last_exc if last_exc else OSError("os.replace failed without an exception")
 
 
 def validate_username(username: str) -> None:
