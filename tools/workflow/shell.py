@@ -86,6 +86,12 @@ Workflow shell -- commands:
                                           [-- body]
   /render <renderer> <viewer_path>   Render a scene via a registered renderer.
                                        Example: /render TextRenderer 0,0,5
+  /realtime [scene] [w] [h]          Open the scene in an interactive Tk window.
+                                       Default scene: scenes/workflow_view.json.
+                                       Default size: 800x600. WASD = move,
+                                       mouse = look, Esc = WorkflowView mode
+                                       toggle / quit. Blocks the shell until
+                                       the window closes.
   /types                             List currently-registered node-types.
   /nodes                             List live spawned nodes in the scene.
   /dispatch <cmd ...>                Dispatch a text-API command (the same grammar
@@ -136,10 +142,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     engine = Engine(root_dir=root)
     engine.discover()
 
+    initial_scene_root: Optional[str] = None
+    initial_scene_path: Optional[Path] = None
     if args.scene:
         scene_path = (root / "scenes" / args.scene) if not Path(args.scene).is_absolute() else Path(args.scene)
         if scene_path.exists():
-            engine.load_scene(scene_path)
+            initial_scene_root = engine.load_scene(scene_path)
+            initial_scene_path = scene_path
         else:
             sys.stderr.write(f"warning: scene not found: {scene_path}\n")
 
@@ -153,6 +162,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         root=root,
         alethea_root=alethea_root,
     )
+    shell.last_scene_root = initial_scene_root
+    shell.last_scene_path = initial_scene_path
     fw: Optional[FileWatcher] = None
     if not args.no_watch:
         fw = FileWatcher(engine, on_event=shell.on_file_event)
@@ -195,6 +206,9 @@ class Shell:
         self.active_session_id: Optional[str] = None
         self.running = False
         self.file_watcher: Optional[FileWatcher] = None
+        # Set by main() after engine.load_scene; /realtime defaults to these.
+        self.last_scene_root: Optional[str] = None
+        self.last_scene_path: Optional[Path] = None
         self._last_inbox_scan = 0.0
         self._seen_inbox_paths: set = set()
         self._lock = threading.Lock()
@@ -484,6 +498,110 @@ class Shell:
             return
         result = dispatch_command(self.engine, ["render"] + argv)
         self._println(_format_text_api_result(result))
+
+    def cmd_realtime(self, argv: List[str]) -> None:
+        """Open the current (or named) scene in an interactive Tk window.
+
+        Forms:
+            /realtime                       — workflow_view scene at 800x600
+            /realtime <scene-or-path>       — load and open the named scene
+            /realtime <scene> <w> <h>       — explicit window size
+
+        Blocks the shell until the window closes. The engine is shared with
+        the shell, so file-watcher hot-reloads in the shell are reflected in
+        the realtime window's next frame.
+        """
+        scene_arg = argv[0] if argv else None
+        try:
+            width = int(argv[1]) if len(argv) > 1 else 800
+            height = int(argv[2]) if len(argv) > 2 else 600
+        except ValueError:
+            self._println("[shell] /realtime: width and height must be integers")
+            return
+
+        if scene_arg is None:
+            scene_path = self.last_scene_path or (self.root / "scenes" / "workflow_view.json")
+            scene_root = self.last_scene_root
+        else:
+            scene_path = (self.root / "scenes" / scene_arg) if not Path(scene_arg).is_absolute() else Path(scene_arg)
+            if not scene_path.suffix:
+                scene_path = scene_path.with_suffix(".json")
+            scene_root = None
+
+        if not scene_path.exists():
+            self._println(f"[shell] /realtime: scene not found: {scene_path}")
+            return
+
+        try:
+            if scene_root is None:
+                scene_root = self.engine.load_scene(scene_path)
+                self.last_scene_path = scene_path
+                self.last_scene_root = scene_root
+        except Exception as exc:
+            self._println(f"[shell] /realtime: load_scene failed: {exc}")
+            return
+
+        try:
+            scene_data = json.loads(scene_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            self._println(f"[shell] /realtime: could not read scene json: {exc}")
+            return
+
+        try:
+            from engine import View, look_at
+            from engine.realtime import RealtimeDriver, available_backends, make_backend
+            import numpy as np
+        except Exception as exc:
+            self._println(f"[shell] /realtime: import failed: {exc}")
+            return
+
+        backends = available_backends()
+        if not backends:
+            self._println("[shell] /realtime: no windowing backend available (need tkinter or pygame)")
+            return
+
+        view_meta = scene_data.get("view", {}) or {}
+        position = np.asarray(view_meta.get("position", [3.0, 2.0, 5.0]), dtype=np.float64)
+        if "orientation" in view_meta:
+            orientation = np.asarray(view_meta["orientation"], dtype=np.float64).reshape(3, 3)
+        else:
+            target = np.asarray(view_meta.get("look_at", [0.0, 0.0, 0.0]), dtype=np.float64)
+            orientation = look_at(position, target)
+        view = View(
+            position=position,
+            orientation=orientation,
+            scale=float(view_meta.get("scale", 1.0)),
+            width=int(view_meta.get("width", width)),
+            height=int(view_meta.get("height", height)),
+            fov_y_radians=float(view_meta.get("fov_y_radians", np.pi / 4)),
+        )
+
+        try:
+            self.engine.precompute()
+        except Exception as exc:
+            self._println(f"[shell] /realtime: precompute warning: {exc}")
+
+        driver = RealtimeDriver(
+            engine=self.engine,
+            root_id=scene_root,
+            view=view,
+            frame_budget_s=1.0 / 60.0,
+        )
+        backend = make_backend()
+        try:
+            backend.open(width=width, height=height, title=f"Apeiron — {scene_path.name}")
+        except Exception as exc:
+            self._println(f"[shell] /realtime: window open failed: {exc}")
+            return
+        self._println(
+            f"[shell] /realtime open: scene={scene_path.name} root={scene_root} "
+            f"backend={type(backend).__name__}. Close the window to return."
+        )
+        try:
+            rendered = driver.run(backend)
+            self._println(f"[shell] /realtime closed; rendered {rendered} frame(s).")
+        except Exception as exc:
+            self._println(f"[shell] /realtime: driver crashed: {exc}")
 
     def cmd_dispatch(self, argv: List[str]) -> None:
         if not argv:
