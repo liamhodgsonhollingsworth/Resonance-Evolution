@@ -21,3 +21,4 @@ include = ["engine*", "node_types*", "renderers*", "tools*"]
 [project.scripts]
 apeiron-render = "tools.render:main"
 apeiron-text = "tools.text_test:main"
+apeiron-realtime = "tools.realtime:main"
