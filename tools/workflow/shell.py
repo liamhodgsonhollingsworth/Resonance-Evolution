@@ -64,6 +64,12 @@ from .session_manager import (
     SessionManager,
     SessionRecord,
 )
+from .quarantine import quarantine_delete, quarantine_promote_sender, scan_message
+from .trust import (
+    render_trust_set,
+    sender_trust_set,
+    session_trust_set,
+)
 
 
 HELP_TEXT = """\
@@ -182,7 +188,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             sys.stderr.write("Sign-in cancelled. Exiting.\n")
             return 1
 
-    engine = Engine(root_dir=root)
+    render_ts = render_trust_set(root)
+    engine = Engine(root_dir=root, trust_set=render_ts)
     engine.discover()
 
     initial_scene_root: Optional[str] = None
@@ -195,8 +202,33 @@ def main(argv: Optional[List[str]] = None) -> int:
         else:
             sys.stderr.write(f"warning: scene not found: {scene_path}\n")
 
-    inbox = Inbox(state_dir=state_dir)
+    sender_ts = sender_trust_set(root, user=current_user)
+    session_ts = session_trust_set(root, user=current_user)
+
+    inbox = Inbox(
+        state_dir=state_dir,
+        sender_trust=sender_ts,
+        session_trust=session_ts,
+    )
     sm = SessionManager(state_dir=state_dir)
+
+    for source_id in engine.untrusted_encounters:
+        inbox.post(
+            to=current_user or "LHH",
+            kind="trust-decision",
+            summary=f"Untrusted node-type source: {source_id}",
+            body=(
+                f"Apeiron discovered a node-type source file at "
+                f"`{source_id}` that is not in the render-trust set. "
+                f"The source was NOT loaded — any scene referencing its "
+                f"type-name will render the typed-zero placeholder.\n\n"
+                f"To promote this source to trusted, add the path to "
+                f"`state/trusted_sources.json` under the `trusted` list "
+                f"(version 1 format), or use a future trust-management "
+                f"action once the UI surface lands."
+            ),
+            sender="apeiron-engine",
+        )
 
     shell = Shell(
         engine=engine,
@@ -204,6 +236,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         inbox=inbox,
         root=root,
         alethea_root=alethea_root,
+        sender_trust=sender_ts,
+        session_trust=session_ts,
     )
     shell.current_user = current_user
     shell.last_scene_root = initial_scene_root
@@ -245,6 +279,8 @@ class Shell:
         err=sys.stderr,
         in_=sys.stdin,
         alethea_root: Optional[Path] = None,
+        sender_trust: Any = None,
+        session_trust: Any = None,
     ):
         self.engine = engine
         self.sm = session_manager
@@ -258,6 +294,8 @@ class Shell:
         self.current_user: Optional[str] = None
         self.running = False
         self.file_watcher: Optional[FileWatcher] = None
+        self.sender_trust = sender_trust
+        self.session_trust = session_trust
         # Set by main() after engine.load_scene; /realtime defaults to these.
         self.last_scene_root: Optional[str] = None
         self.last_scene_path: Optional[Path] = None
@@ -429,10 +467,39 @@ class Shell:
 
     def cmd_inbox(self, argv: List[str]) -> None:
         if not argv or argv[0] == "unread":
-            self._list_inbox(unread_only=True)
+            self._list_inbox(unread_only=True, surface="main")
             return
         if argv[0] == "all":
-            self._list_inbox(unread_only=False)
+            self._list_inbox(unread_only=False, surface="main")
+            return
+        if argv[0] == "quarantine":
+            self._list_inbox(unread_only=False, surface="quarantine")
+            return
+        if argv[0] == "raw":
+            self._list_inbox(unread_only=False, surface="raw")
+            return
+        if argv[0] == "trust":
+            if len(argv) < 2:
+                self._println("[shell] /inbox trust <sender>")
+                return
+            sender = argv[1]
+            if self.sender_trust is None:
+                self._println("[shell] no sender-trust configured; cannot trust.")
+                return
+            self.sender_trust.add(sender)
+            self._println(f"[shell] sender {sender!r} promoted to trusted.")
+            return
+        if argv[0] == "delete":
+            if len(argv) < 2:
+                self._println("[shell] /inbox delete <filename-substring>")
+                return
+            needle = argv[1]
+            removed = 0
+            for msg in self.inbox.list_quarantine():
+                if needle in msg.path.name:
+                    quarantine_delete(msg)
+                    removed += 1
+            self._println(f"[shell] deleted {removed} quarantined message(s).")
             return
         if argv[0] == "to":
             if len(argv) < 2:
@@ -757,13 +824,23 @@ class Shell:
             status = getattr(node, "status", "?")
             self._println(f"  {nid:30s} {type_name:24s} status={status}")
 
-    def _list_inbox(self, unread_only: bool = False) -> None:
-        msgs = self.inbox.list_all(unread_only=unread_only)
+    def _list_inbox(self, unread_only: bool = False, surface: str = "main") -> None:
+        if surface == "quarantine":
+            msgs = self.inbox.list_quarantine(unread_only=unread_only)
+            label = "quarantine"
+        elif surface == "raw":
+            msgs = self.inbox.list_all(unread_only=unread_only)
+            label = "raw"
+        else:
+            msgs = self.inbox.list_main(unread_only=unread_only)
+            label = "main"
         if not msgs:
-            self._println("[shell] inbox is empty.")
+            self._println(f"[shell] {label} inbox is empty.")
             return
         for m in msgs:
             self._show_inbox(m)
+            if surface == "quarantine":
+                self._show_scan(m)
 
     def _show_inbox(self, msg: InboxMessage) -> None:
         mark = " " if msg.read else "*"
@@ -772,6 +849,20 @@ class Shell:
             f"to={msg.to:24s} from={msg.sender:24s} kind={msg.kind:12s} "
             f"{msg.summary} :: {msg.path.name}"
         )
+
+    def _show_scan(self, msg: InboxMessage) -> None:
+        """Annotate a quarantined message with its scan findings (SPEC-058)."""
+        report = scan_message(msg)
+        self._println(
+            f"   scan: severity={report.overall_severity} "
+            f"anomaly={report.anomaly_score:.2f} findings={len(report.findings)}"
+        )
+        for f in report.findings:
+            excerpt = f.excerpt.replace("\n", " ")[:80]
+            self._println(
+                f"     - [{f.severity}] {f.category}: {f.detail}"
+                + (f" :: {excerpt}" if excerpt else "")
+            )
 
     def _resolve_session(self, ident: str) -> Optional[str]:
         recs = self.sm.list()
@@ -848,9 +939,15 @@ class Shell:
             if key in self._seen_inbox_paths:
                 continue
             self._seen_inbox_paths.add(key)
-            self._println(
-                f"[inbox] new to={msg.to} from={msg.sender} kind={msg.kind} :: {msg.summary}"
-            )
+            if self.inbox.is_sender_trusted(msg.sender):
+                self._println(
+                    f"[inbox] new to={msg.to} from={msg.sender} kind={msg.kind} :: {msg.summary}"
+                )
+            else:
+                self._println(
+                    f"[quarantine] new to={msg.to} from={msg.sender} kind={msg.kind} :: {msg.summary} "
+                    f"(/inbox quarantine to review)"
+                )
 
     # ----- IO -----
 

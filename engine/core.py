@@ -37,12 +37,29 @@ from engine.node import (
 
 
 class Engine:
-    def __init__(self, root_dir: Path):
+    def __init__(self, root_dir: Path, trust_set: Any = None):
+        """Construct the engine.
+
+        ``trust_set`` (optional) gates which node-type source files the
+        engine will execute (SPEC-054 render-trust). When provided, only
+        sources for which ``trust_set.is_trusted(source_id)`` returns
+        True are imported; others are skipped, recorded in
+        ``self.untrusted_encounters``, and any spawn referencing their
+        type-name produces the same typed-zero placeholder as an
+        unknown-type spawn.
+
+        When ``trust_set`` is ``None`` (the default), all sources load.
+        This preserves backward compatibility with tests and pre-trust
+        callers; production startup wires a trust-set in.
+        """
         self.root_dir = Path(root_dir)
         self.types: Dict[str, Any] = {}     # type_name -> module
+        self.type_sources: Dict[str, str] = {}  # type_name -> source-id (relative posix path)
         self.nodes: Dict[str, NodeInstance] = {}
         self.cache: Dict[str, Any] = {}
         self.errors: List[str] = []
+        self.trust_set = trust_set
+        self.untrusted_encounters: List[str] = []  # source-ids encountered but not loaded
 
     # ----- registration / discovery -----
 
@@ -65,6 +82,15 @@ class Engine:
                 self._load_node_type_file(py_file, kind)
 
     def _load_node_type_file(self, py_file: Path, kind: str) -> None:
+        source_id = self._source_id_for(py_file)
+        if self.trust_set is not None and not self.trust_set.is_trusted(source_id):
+            if source_id not in self.untrusted_encounters:
+                self.untrusted_encounters.append(source_id)
+            self.errors.append(
+                f"discover({py_file}): source not trusted ({source_id}); "
+                f"add to state/trusted_sources.json to enable."
+            )
+            return
         try:
             mod_name = f"apeiron_{kind}_{py_file.stem}"
             spec = importlib.util.spec_from_file_location(mod_name, py_file)
@@ -75,10 +101,25 @@ class Engine:
                 return
             m = module.manifest()
             self.types[m.name] = module
+            self.type_sources[m.name] = source_id
         except Exception as e:
             self.errors.append(
                 f"discover({py_file}): {e}\n{traceback.format_exc()}"
             )
+
+    def _source_id_for(self, py_file: Path) -> str:
+        """Compute the canonical source-id for a node-type file.
+
+        The id is the path relative to ``self.root_dir`` in forward-slash
+        form. Used by the trust-set to gate which sources may execute.
+        """
+        try:
+            rel = Path(py_file).resolve().relative_to(self.root_dir.resolve())
+        except ValueError:
+            # File is outside the root — return its absolute posix path
+            # so trust-sets can be explicit about external locations.
+            return Path(py_file).resolve().as_posix()
+        return rel.as_posix()
 
     def reload_type(self, type_name: str) -> bool:
         """
