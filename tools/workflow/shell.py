@@ -56,6 +56,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from engine.core import Engine
 from engine.file_watcher import FileWatcher
 
+from .auth import DEFAULT_ACCOUNTS_PATH
 from .inbox import Inbox, InboxMessage
 from .session_manager import (
     SessionError,
@@ -144,11 +145,42 @@ def main(argv: Optional[List[str]] = None) -> int:
             "inbox via the filesystem."
         ),
     )
+    parser.add_argument(
+        "--skip-auth",
+        action="store_true",
+        help=(
+            "Skip the login gate (SPEC-056). For testing or for dev "
+            "workflows where authentication is enforced elsewhere. "
+            "Default is to require sign-in before the shell boots."
+        ),
+    )
+    parser.add_argument(
+        "--accounts-path",
+        default=None,
+        help="Override the accounts store path. Defaults to <repo>/state/accounts.json.",
+    )
     args = parser.parse_args(argv)
 
     root = Path(args.root) if args.root else _detect_root()
     state_dir = Path(args.state_dir) if args.state_dir else (root / "state" / "workflow")
     alethea_root = Path(args.alethea_root) if args.alethea_root else _detect_alethea_root(root)
+    accounts_path = (
+        Path(args.accounts_path) if args.accounts_path else (root / DEFAULT_ACCOUNTS_PATH)
+    )
+
+    current_user: Optional[str] = None
+    if not args.skip_auth:
+        try:
+            from .login_gate import run_login_gate
+        except Exception as exc:
+            sys.stderr.write(
+                f"error: could not load login gate ({exc}); pass --skip-auth to bypass.\n"
+            )
+            return 2
+        current_user = run_login_gate(accounts_path=accounts_path)
+        if current_user is None:
+            sys.stderr.write("Sign-in cancelled. Exiting.\n")
+            return 1
 
     engine = Engine(root_dir=root)
     engine.discover()
@@ -173,6 +205,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         root=root,
         alethea_root=alethea_root,
     )
+    shell.current_user = current_user
     shell.last_scene_root = initial_scene_root
     shell.last_scene_path = initial_scene_path
     fw: Optional[FileWatcher] = None
@@ -222,6 +255,7 @@ class Shell:
         self.err = err
         self.in_ = in_
         self.active_session_id: Optional[str] = None
+        self.current_user: Optional[str] = None
         self.running = False
         self.file_watcher: Optional[FileWatcher] = None
         # Set by main() after engine.load_scene; /realtime defaults to these.
