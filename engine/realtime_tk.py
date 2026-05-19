@@ -78,6 +78,7 @@ class TkBackend:
         self._width = 0
         self._height = 0
         self._t0 = time.perf_counter()
+        self._fullscreen = False
 
     # --- backend protocol ---
 
@@ -165,6 +166,21 @@ class TkBackend:
                 self.root.title(title)
             except Exception:
                 pass
+
+    def set_fullscreen(self, fullscreen: bool) -> None:
+        """Toggle Tk's ``-fullscreen`` attribute. No-op if root missing."""
+        if self.root is None:
+            return
+        try:
+            self.root.attributes("-fullscreen", bool(fullscreen))
+            self._fullscreen = bool(fullscreen)
+        except Exception:
+            # Some Tk builds (or remote-display setups) reject the attribute;
+            # remain in normal mode silently.
+            pass
+
+    def is_fullscreen(self) -> bool:
+        return self._fullscreen
 
     # --- internal event translators ---
 

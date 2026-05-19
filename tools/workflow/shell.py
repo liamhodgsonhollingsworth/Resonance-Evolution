@@ -133,6 +133,17 @@ def main(argv: Optional[List[str]] = None) -> int:
         default=None,
         help="Path to the Alethea repo root, used to locate the design-specification skill + SPECIFICATIONS doc for the workflow-management seed prompt. Defaults to a sibling-of-Apeiron heuristic.",
     )
+    parser.add_argument(
+        "--launch-realtime",
+        action="store_true",
+        help=(
+            "Spawn the realtime window in a separate process at startup. "
+            "Used by scripts/launch_apeiron.bat for one-click GUI launch "
+            "(SPEC-001). The shell and the window run concurrently as "
+            "two processes — both share scene files, state dir, and "
+            "inbox via the filesystem."
+        ),
+    )
     args = parser.parse_args(argv)
 
     root = Path(args.root) if args.root else _detect_root()
@@ -172,6 +183,13 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if not args.no_default_session:
         shell.ensure_default_workflow_mgmt_session()
+
+    if args.launch_realtime and initial_scene_path is not None:
+        shell.launch_realtime_subprocess(initial_scene_path)
+    elif args.launch_realtime:
+        sys.stderr.write(
+            "warning: --launch-realtime requested but no --scene was loaded.\n"
+        )
 
     try:
         shell.run()
@@ -498,6 +516,41 @@ class Shell:
             return
         result = dispatch_command(self.engine, ["render"] + argv)
         self._println(_format_text_api_result(result))
+
+    def launch_realtime_subprocess(self, scene_path: Path) -> Optional[int]:
+        """Spawn ``python -m tools.realtime <scene>`` as a separate process.
+
+        Used by the ``--launch-realtime`` flag for one-click GUI launch
+        (SPEC-001). Returns the subprocess pid on success, ``None`` on
+        failure. The subprocess has its own engine instance; file/state
+        coordination is via the shared filesystem (scenes/, state/,
+        Alethea-cc/nodes/).
+
+        This is intentionally fire-and-forget: the shell doesn't wait for
+        the window to close, and closing the window doesn't affect the
+        shell. The maintainer can spawn additional windows via
+        ``/realtime`` from the shell prompt — that one blocks; this one
+        doesn't.
+        """
+        import subprocess as _sp
+
+        try:
+            proc = _sp.Popen(
+                [sys.executable, "-m", "tools.realtime", str(scene_path)],
+                cwd=str(self.root),
+                creationflags=getattr(_sp, "CREATE_NEW_PROCESS_GROUP", 0),
+            )
+        except Exception as exc:
+            self._println(
+                f"[shell] --launch-realtime: subprocess spawn failed: {exc}"
+            )
+            return None
+        self._println(
+            f"[shell] --launch-realtime: opened realtime window (pid {proc.pid}) "
+            f"with scene {scene_path.name}. Close the window or quit the shell "
+            f"to stop it."
+        )
+        return proc.pid
 
     def cmd_realtime(self, argv: List[str]) -> None:
         """Open the current (or named) scene in an interactive Tk window.

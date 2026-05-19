@@ -44,8 +44,13 @@ class WindowBackend(Protocol):
 
     Methods are called in this order: ``open`` once, then a loop of
     ``poll_events`` / ``blit_color`` / ``should_close`` (any order each
-    frame), then ``close`` once at teardown. ``set_title`` is optional —
-    call when a frame's metadata changes (FPS, mode).
+    frame), then ``close`` once at teardown. ``set_title`` and
+    ``set_fullscreen`` are optional — call when a frame's metadata
+    changes or the driver wants to toggle fullscreen.
+
+    Backends that can't fulfill ``set_fullscreen`` should accept the
+    call as a no-op rather than raise — the driver's F11 handler is
+    best-effort.
     """
 
     def open(self, width: int, height: int, title: str = "Apeiron") -> None: ...
@@ -54,6 +59,8 @@ class WindowBackend(Protocol):
     def should_close(self) -> bool: ...
     def close(self) -> None: ...
     def set_title(self, title: str) -> None: ...
+    def set_fullscreen(self, fullscreen: bool) -> None: ...
+    def is_fullscreen(self) -> bool: ...
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +69,29 @@ class WindowBackend(Protocol):
 
 
 GlobalHandler = Callable[[InputEvent, "RealtimeDriver"], bool]
+
+
+def f11_toggles_fullscreen(
+    event: InputEvent, driver: "RealtimeDriver"
+) -> bool:
+    """F11 key handler: toggles the backend's fullscreen state.
+
+    The driver caches the backend reference on its first ``run_one_frame``
+    so handlers can ask the backend to toggle without the driver needing
+    to receive the backend as an argument to every step. Best-effort —
+    backends that can't fulfill fullscreen accept the call as a no-op.
+    """
+    if event.kind != "key_down" or event.key != "f11":
+        return False
+    backend = driver._current_backend
+    if backend is None:
+        return True
+    try:
+        currently = backend.is_fullscreen()
+        backend.set_fullscreen(not currently)
+    except Exception as e:
+        driver.engine.errors.append(f"realtime: fullscreen toggle failed: {e}")
+    return True
 
 
 def escape_toggles_workflow_mode_or_quits(
@@ -140,12 +170,14 @@ class RealtimeDriver:
         self.global_handlers: List[GlobalHandler] = list(
             global_handlers
             if global_handlers is not None
-            else (escape_toggles_workflow_mode_or_quits,)
+            else (escape_toggles_workflow_mode_or_quits, f11_toggles_fullscreen)
         )
         self.frame_budget_s = float(frame_budget_s)
         self.frame_index = 0
         self._quit_requested = False
         self._last_color: Optional[np.ndarray] = None
+        # Set on each run_one_frame call so global handlers can reach the backend.
+        self._current_backend: Optional[WindowBackend] = None
 
     # --- control ---
 
@@ -218,10 +250,12 @@ class RealtimeDriver:
     def run_one_frame(self, backend: WindowBackend) -> FrameStats:
         """Poll, resolve, mutate, assemble, blit. Returns FrameStats.
 
-        Always blits something — if the assemble fails, the last good
-        color frame is re-blitted so the window doesn't go blank. If no
-        previous frame exists, a 1-pixel black frame is blitted.
+        Always blits something — if the assemble fails, a magenta-tinted
+        version of the last good color frame is blitted so the
+        maintainer sees a frame in distress is in distress (SPEC-030).
+        If no previous frame exists, a 1-pixel magenta frame is blitted.
         """
+        self._current_backend = backend
         t0 = time.perf_counter()
         events = backend.poll_events()
         consumed = 0
@@ -238,9 +272,10 @@ class RealtimeDriver:
 
         color, err = self.assemble_frame()
         if color is None:
-            color = self._last_color
-            if color is None:
-                color = np.zeros((1, 1, 3), dtype=np.uint8)
+            if self._last_color is None:
+                color = _solid_magenta(self.view.width, self.view.height)
+            else:
+                color = _magenta_tint(self._last_color)
         else:
             self._last_color = color
         try:
@@ -284,6 +319,33 @@ class RealtimeDriver:
             except Exception as e:
                 self.engine.errors.append(f"realtime close: {e}")
         return rendered
+
+
+# ---------------------------------------------------------------------------
+# Placeholder helpers for the assemble-error fallback (SPEC-030).
+# ---------------------------------------------------------------------------
+
+
+_MAGENTA = np.array([255, 0, 255], dtype=np.uint8)
+
+
+def _solid_magenta(width: int, height: int) -> np.ndarray:
+    """Return an ``HxWx3`` solid-magenta frame for the no-prior-frame case."""
+    out = np.empty((max(1, int(height)), max(1, int(width)), 3), dtype=np.uint8)
+    out[:] = _MAGENTA
+    return out
+
+
+def _magenta_tint(color: np.ndarray) -> np.ndarray:
+    """Half-blend the prior frame with magenta to mark distress while
+    preserving recognizability of the last good frame's content."""
+    arr = np.asarray(color)
+    if arr.dtype != np.uint8 or arr.ndim != 3 or arr.shape[2] != 3:
+        h = arr.shape[0] if arr.ndim >= 2 else 1
+        w = arr.shape[1] if arr.ndim >= 2 else 1
+        return _solid_magenta(w, h)
+    blended = (arr.astype(np.uint16) + _MAGENTA.astype(np.uint16)) // 2
+    return blended.astype(np.uint8)
 
 
 # ---------------------------------------------------------------------------
