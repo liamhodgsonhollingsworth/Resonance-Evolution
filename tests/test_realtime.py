@@ -47,7 +47,9 @@ class StubBackend:
         self.opened = False
         self.closed = False
         self.titles: List[str] = []
+        self.fullscreen_calls: List[bool] = []
         self._should_close = False
+        self._fullscreen = False
         self.open_args: Optional[tuple] = None
 
     def queue_events(self, *events: InputEvent) -> None:
@@ -77,6 +79,13 @@ class StubBackend:
 
     def set_title(self, title: str) -> None:
         self.titles.append(title)
+
+    def set_fullscreen(self, fullscreen: bool) -> None:
+        self.fullscreen_calls.append(bool(fullscreen))
+        self._fullscreen = bool(fullscreen)
+
+    def is_fullscreen(self) -> bool:
+        return self._fullscreen
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +204,40 @@ def test_run_one_frame_survives_assemble_error(driver_for_workflow, monkeypatch)
     assert len(backend.blits) == 1
 
 
+def test_assemble_error_with_no_prior_frame_blits_solid_magenta(driver_for_workflow, monkeypatch):
+    driver = driver_for_workflow
+    monkeypatch.setattr(driver.engine, "assemble", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    backend = StubBackend()
+    backend.open(8, 8, "test")
+    driver.run_one_frame(backend)
+    blitted = backend.blits[0]
+    # Solid magenta when no prior frame: every pixel is (255, 0, 255).
+    assert (blitted == np.array([255, 0, 255], dtype=np.uint8)).all()
+
+
+def test_assemble_error_after_good_frame_blits_magenta_tinted_last_frame(driver_for_workflow, monkeypatch):
+    driver = driver_for_workflow
+    backend = StubBackend()
+    backend.open(16, 16, "test")
+    # One good frame first.
+    driver.run_one_frame(backend)
+    good = backend.blits[-1]
+    # Then induce an error; the next frame must be a magenta blend of `good`.
+    monkeypatch.setattr(driver.engine, "assemble", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    driver.run_one_frame(backend)
+    tinted = backend.blits[-1]
+    # Blend = (prev + (255, 0, 255)) // 2. Channel 0 and channel 2 are pulled toward 255;
+    # channel 1 (green) is pulled toward 0.
+    assert tinted.shape == good.shape
+    # Green channel of every pixel is no greater than the corresponding pixel in `good`
+    # (magenta has green=0, so blending can only reduce green).
+    assert (tinted[..., 1].astype(np.int16) <= good[..., 1].astype(np.int16)).all()
+    # Red channel and Blue channel of every pixel are at least as large as in `good`
+    # (magenta has red=255 and blue=255, so blending can only increase those channels).
+    assert (tinted[..., 0].astype(np.int16) >= good[..., 0].astype(np.int16)).all()
+    assert (tinted[..., 2].astype(np.int16) >= good[..., 2].astype(np.int16)).all()
+
+
 # ---------------------------------------------------------------------------
 # Global handlers: Escape toggles WorkflowView mode.
 # ---------------------------------------------------------------------------
@@ -225,6 +268,32 @@ def test_escape_quits_when_root_not_workflow_view():
     consumed = escape_toggles_workflow_mode_or_quits(event, driver)
     assert consumed is True
     assert driver._quit_requested is True
+
+
+def test_f11_toggles_fullscreen_on_backend(driver_for_workflow):
+    from engine.realtime import f11_toggles_fullscreen
+
+    backend = StubBackend()
+    backend.open(32, 32, "test")
+    driver = driver_for_workflow
+    driver._current_backend = backend
+    event = InputEvent(kind="key_down", key="f11", timestamp=0.0)
+    assert backend.is_fullscreen() is False
+    consumed = f11_toggles_fullscreen(event, driver)
+    assert consumed is True
+    assert backend.fullscreen_calls == [True]
+    f11_toggles_fullscreen(event, driver)
+    assert backend.fullscreen_calls == [True, False]
+
+
+def test_f11_consumed_during_run_one_frame(driver_for_workflow):
+    backend = StubBackend()
+    backend.open(64, 64, "test")
+    driver = driver_for_workflow
+    backend.queue_events(InputEvent(kind="key_down", key="f11", timestamp=0.0))
+    stats = driver.run_one_frame(backend)
+    assert stats.consumed_globally == 1
+    assert backend.fullscreen_calls == [True]
 
 
 def test_escape_event_is_consumed_globally(driver_for_workflow):
@@ -316,3 +385,68 @@ def test_make_backend_unknown_name_raises():
 
     with pytest.raises(RuntimeError, match="unknown realtime backend"):
         make_backend("nonexistent")
+
+
+# ---------------------------------------------------------------------------
+# Workflow shell --launch-realtime: subprocess spawn (mocked).
+# ---------------------------------------------------------------------------
+
+
+def test_launch_realtime_subprocess_invokes_popen(tmp_path, monkeypatch):
+    """The shell's launch_realtime_subprocess Popen-spawns tools.realtime
+    against the given scene path. Mocks Popen so no real subprocess fires."""
+    from tools.workflow.shell import Shell
+    from tools.workflow.inbox import Inbox
+    from tools.workflow.session_manager import SessionManager
+
+    captured = {}
+
+    class FakeProc:
+        pid = 42
+
+    class FakePopen:
+        def __init__(self, cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["kwargs"] = kwargs
+
+        def __new__(cls, cmd, **kwargs):
+            inst = object.__new__(cls)
+            cls.__init__(inst, cmd, **kwargs)
+            return FakeProc()
+
+    monkeypatch.setattr("subprocess.Popen", FakePopen)
+
+    engine = Engine(root_dir=ROOT)
+    engine.discover()
+    sm = SessionManager(state_dir=tmp_path / "wf")
+    inbox = Inbox(state_dir=tmp_path / "wf")
+    shell = Shell(engine=engine, session_manager=sm, inbox=inbox, root=ROOT)
+
+    scene = ROOT / "scenes" / "workflow_view.json"
+    pid = shell.launch_realtime_subprocess(scene)
+    assert pid == 42
+    assert "tools.realtime" in captured["cmd"]
+    assert str(scene) in captured["cmd"]
+
+
+def test_launch_realtime_subprocess_handles_spawn_error(tmp_path, monkeypatch):
+    import io
+
+    from tools.workflow.shell import Shell
+    from tools.workflow.inbox import Inbox
+    from tools.workflow.session_manager import SessionManager
+
+    def fail_popen(*args, **kwargs):
+        raise FileNotFoundError("no python executable in this sandbox")
+
+    monkeypatch.setattr("subprocess.Popen", fail_popen)
+
+    engine = Engine(root_dir=ROOT)
+    engine.discover()
+    sm = SessionManager(state_dir=tmp_path / "wf")
+    inbox = Inbox(state_dir=tmp_path / "wf")
+    out_buf = io.StringIO()
+    shell = Shell(engine=engine, session_manager=sm, inbox=inbox, root=ROOT, out=out_buf)
+    pid = shell.launch_realtime_subprocess(ROOT / "scenes" / "workflow_view.json")
+    assert pid is None
+    assert "subprocess spawn failed" in out_buf.getvalue()
