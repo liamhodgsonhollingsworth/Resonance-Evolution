@@ -13,9 +13,11 @@
       "type": "WorkflowView",
       "params": {"mode": "panels"},
       "connections": {
-        "panel_a": {"target": "task_panel",  "transform": [[1,0,0,-3.4],[0,1,0,0.0],[0,0,1,0.0],[0,0,0,1]]},
-        "panel_b": {"target": "idea_panel",  "transform": [[1,0,0, 0.0],[0,1,0,0.0],[0,0,1,0.0],[0,0,0,1]]},
-        "panel_c": {"target": "wish_panel",  "transform": [[1,0,0, 3.4],[0,1,0,0.0],[0,0,1,0.0],[0,0,0,1]]}
+        "panel_a": {"target": "task_panel",             "transform": [[1,0,0,-4.4],[0,1,0,0.0],[0,0,1,0.0],[0,0,0,1]]},
+        "panel_b": {"target": "idea_panel",             "transform": [[1,0,0,-2.2],[0,1,0,0.0],[0,0,1,0.0],[0,0,0,1]]},
+        "panel_c": {"target": "wish_panel",             "transform": [[1,0,0, 0.0],[0,1,0,0.0],[0,0,1,0.0],[0,0,0,1]]},
+        "panel_d": {"target": "quarantine_panel",       "transform": [[1,0,0, 2.2],[0,1,0,0.0],[0,0,1,0.0],[0,0,0,1]]},
+        "panel_e": {"target": "trusted_senders_panel",  "transform": [[1,0,0, 4.4],[0,1,0,0.0],[0,0,1,0.0],[0,0,0,1]]}
       }
     },
 
@@ -23,10 +25,10 @@
       "id": "task_panel",
       "type": "ListRenderer",
       "params": {
-        "screen_width": 3.2,
+        "screen_width": 2.0,
         "screen_height": 4.6,
         "screen_resolution": 384,
-        "font_size": 13,
+        "font_size": 12,
         "title_text": "Tasks",
         "background_color": [0.10, 0.12, 0.18],
         "title_color":      [0.92, 0.92, 0.85]
@@ -37,10 +39,10 @@
       "id": "idea_panel",
       "type": "ListRenderer",
       "params": {
-        "screen_width": 3.2,
+        "screen_width": 2.0,
         "screen_height": 4.6,
         "screen_resolution": 384,
-        "font_size": 13,
+        "font_size": 12,
         "title_text": "Ideas",
         "background_color": [0.10, 0.18, 0.16],
         "title_color":      [0.85, 0.95, 0.88]
@@ -51,15 +53,43 @@
       "id": "wish_panel",
       "type": "ListRenderer",
       "params": {
-        "screen_width": 3.2,
+        "screen_width": 2.0,
         "screen_height": 4.6,
         "screen_resolution": 384,
-        "font_size": 13,
+        "font_size": 12,
         "title_text": "Wishlist",
         "background_color": [0.16, 0.12, 0.18],
         "title_color":      [0.95, 0.88, 0.95]
       },
       "connections": {"source": "wishes_source"}
+    },
+    {
+      "id": "quarantine_panel",
+      "type": "ListRenderer",
+      "params": {
+        "screen_width": 2.0,
+        "screen_height": 4.6,
+        "screen_resolution": 384,
+        "font_size": 12,
+        "title_text": "Quarantine",
+        "background_color": [0.20, 0.10, 0.10],
+        "title_color":      [0.98, 0.85, 0.80]
+      },
+      "connections": {"source": "quarantine_source"}
+    },
+    {
+      "id": "trusted_senders_panel",
+      "type": "ListRenderer",
+      "params": {
+        "screen_width": 2.0,
+        "screen_height": 4.6,
+        "screen_resolution": 384,
+        "font_size": 12,
+        "title_text": "Trusted senders",
+        "background_color": [0.10, 0.16, 0.10],
+        "title_color":      [0.80, 0.98, 0.85]
+      },
+      "connections": {"source": "trusted_senders_source"}
     },
 
     {
@@ -79,6 +109,16 @@
       "id": "wishes_source",
       "type": "FileSource",
       "params": {"path": "wishlist.md", "parser_name": "wishes"}
+    },
+    {
+      "id": "quarantine_source",
+      "type": "QuarantineSource",
+      "params": {"root": ".", "state_dir": "", "user": "LHH"}
+    },
+    {
+      "id": "trusted_senders_source",
+      "type": "TrustedSendersSource",
+      "params": {"root": ".", "user": "LHH", "kind": "sender"}
     }
   ]
 }

@@ -54,6 +54,9 @@ DEFAULT_STATUS_GLYPHS = {
     "granting": "[*]",
     "superseded": "[s]",
     "resolved": "[r]",
+    "alert": "[!]",
+    "warn": "[?]",
+    "ok": "[.]",
     None: "•",
 }
 
@@ -68,6 +71,9 @@ DEFAULT_STATUS_COLORS = {
     "granting": [0.95, 0.65, 0.45],
     "superseded": [0.55, 0.55, 0.55],
     "resolved": [0.45, 0.85, 0.95],
+    "alert": [0.95, 0.45, 0.45],
+    "warn": [0.95, 0.85, 0.45],
+    "ok": [0.65, 0.85, 0.65],
     None: [0.85, 0.85, 0.85],
 }
 
@@ -221,7 +227,7 @@ def handle_action(
     at ``engine.cache["__view_state__"][node.id]``. Returning ``None``
     or ``{}`` is a no-op (action ran but did not change view-state).
 
-    Supported actions:
+    Renderer-owned actions:
 
     - ``expand`` (item-scoped) — record the item-id under
       ``expanded_item``. Subsequent ``emit`` calls render the expanded
@@ -229,9 +235,14 @@ def handle_action(
     - ``collapse`` (renderer-scoped) — clear ``expanded_item``. The
       panel returns to its list rendering.
 
-    Future renderer-author additions: add a clause here, declare the
-    verb on item.actions (or as a renderer-scoped action), and add a
-    sugar verb to ``tools/text_test.py`` if desired.
+    Source-owned actions: any verb other than ``expand`` / ``collapse``
+    is delegated to the source's action-handlers if the connected
+    DataSource provided any. A source registers handlers by including a
+    ``_action_handlers`` dict in its ``engine.cache[node_id]`` entry,
+    mapping verb-name to a callable ``(payload, engine, node) -> dict |
+    None``. This keeps the renderer generic — the trust UI (quarantine
+    promote / delete / revoke) ships its own handlers via this hook
+    without the renderer depending on the trust module.
     """
     if action_name == "expand":
         item_id = payload.get("item_id")
@@ -240,7 +251,34 @@ def handle_action(
         return {"expanded_item": item_id}
     if action_name == "collapse":
         return {"expanded_item": None}
-    return None
+    handlers = _read_source_action_handlers(engine, node)
+    handler = handlers.get(action_name)
+    if handler is None:
+        return None
+    try:
+        return handler(payload, engine, node)
+    except Exception as e:
+        engine.errors.append(
+            f"ListRenderer({node.id}) source-action {action_name!r}: {e}"
+        )
+        return None
+
+
+def _read_source_action_handlers(engine, node) -> Dict[str, Any]:
+    """Read the connected DataSource's registered action handlers, or
+    return an empty dict if none are registered.
+    """
+    if node is None or not hasattr(node, "connections"):
+        return {}
+    conn = node.connections.get("source")
+    if conn is None:
+        return {}
+    source_id = _resolve_target_id(conn)
+    cache_entry = engine.cache.get(source_id, {})
+    if not isinstance(cache_entry, dict):
+        return {}
+    handlers = cache_entry.get("_action_handlers")
+    return handlers if isinstance(handlers, dict) else {}
 
 
 # ---------------------------------------------------------------------------
