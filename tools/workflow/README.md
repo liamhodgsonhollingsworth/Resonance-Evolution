@@ -8,6 +8,10 @@ From the Apeiron repo root, with `claude` on PATH:
 
     python -m tools.workflow --scene workflow_view.json
 
+On first launch, the shell spawns an always-on workflow-management session as the default chat recipient (SPEC-002 / SPEC-003 partial). The session is seeded with the design-specification skill + the canonical SPECIFICATIONS document, so it knows how to record naturally-described features as SPEC-NNN entries and how to dispatch implementation work to worker sessions. Subsequent launches resume the same session via the persistent ID at `state/workflow/default_workflow_mgmt.txt`.
+
+Bare-text at the prompt routes to this default session — no `/spawn` required for normal chat. Pass `--no-default-session` to skip the auto-spawn (for smoke testing or when running offline).
+
 Once at the prompt, try this end-to-end loop:
 
     workflow [*]> /spawn parallel-development worker -- build a Clock node-type that renders the wall clock as a small Cube whose color shifts with the second hand
@@ -65,6 +69,7 @@ Lives under `state/` (gitignored):
 
 - `CLAUDE_BIN` — path to the `claude` CLI (default: auto-detected on PATH).
 - `ALETHEA_CC_ROOT` — path to the Alethea-cc checkout for shared inbox (default: auto-detected by walking parents of cwd).
+- `ALETHEA_ROOT` — path to the Alethea checkout. Used by the workflow-management seed prompt to locate the design-specification skill + SPECIFICATIONS document + workflow_management session-type doc. Defaults to a sibling-of-Apeiron heuristic or the canonical `C:/Users/Liam/Desktop/Alethea` path.
 
 ## Testing
 
