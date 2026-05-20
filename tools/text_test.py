@@ -992,6 +992,164 @@ def _cmd_visual_contract_resolve_icon(
     ), view
 
 
+def _cmd_spawn_button(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Spawn a ButtonNode (SPEC-077).
+
+    Usage::
+
+        spawn-button <label> <action> [target]
+        spawn-button <label> <action> [target] parent=<id> icon=<name> \\
+                     standard=true order=10 payload=<json>
+
+    The first positional arg is the button label, the second is the
+    action name dispatched on click. The optional third positional is
+    the target prefix (``panel:foo``, ``node:bar``, etc — empty for
+    self). Extra ``key=value`` pairs (with JSON-decoded values) tune
+    the optional fields.
+
+    The new node-id is auto-generated as ``button_<label-slug>_<n>``
+    so callers don't need to pass one explicitly.
+    """
+    if len(args) < 2:
+        return (
+            "ERR: spawn-button requires <label> <action> [target] [key=value ...]",
+            view,
+        )
+    label = args[0]
+    action = args[1]
+    target = args[2] if len(args) >= 3 and "=" not in args[2] else ""
+    kwarg_start = 3 if target else 2
+    params: Dict[str, Any] = {
+        "label": label,
+        "action": action,
+        "target": target,
+    }
+    for kv in args[kwarg_start:]:
+        if "=" not in kv:
+            continue
+        k, v = kv.split("=", 1)
+        try:
+            params[k] = json.loads(v)
+        except json.JSONDecodeError:
+            params[k] = v
+    slug = "".join(c if c.isalnum() else "_" for c in label.lower()) or "btn"
+    base_id = f"button_{slug}"
+    button_id = base_id
+    n = 2
+    while button_id in engine.nodes:
+        button_id = f"{base_id}_{n}"
+        n += 1
+    engine.spawn(button_id, "ButtonNode", params=params)
+    node = engine.nodes.get(button_id)
+    if node is None or node.dead:
+        err = (node.error if node else "spawn failed") or "spawn failed"
+        return f"ERR: spawn failed: {err.splitlines()[0]}", view
+    return f"OK: spawned ButtonNode#{button_id}", view
+
+
+def _cmd_list_node_history(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """List the history rows for a node (SPEC-076).
+
+    Usage::
+
+        list-node-history <node-id>
+
+    Reads ``state/node_history/<node-id>.jsonl`` via
+    :func:`tools.node_history.read_node_history`. Returns one row per
+    line, newest-first, in a compact ``ts kind summary`` shape.
+    """
+    if not args:
+        return "ERR: list-node-history requires <node-id>", view
+    from tools.node_history import read_node_history
+    rows = read_node_history(engine.root_dir, args[0], engine=engine)
+    if not rows:
+        return f"(no history for {args[0]!r})", view
+    lines = [f"history for {args[0]!r} ({len(rows)} rows, newest first):"]
+    for row in rows:
+        ts = row.get("ts", "")
+        kind = row.get("kind", "")
+        summary = row.get("summary") or row.get("payload") or ""
+        if isinstance(summary, dict):
+            summary = json.dumps(summary, separators=(",", ":"))
+        lines.append(f"  {ts}  {kind:12s} {summary}")
+    return "\n".join(lines), view
+
+
+def _cmd_list_node_connections(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """List in-edges + out-edges for a node (SPEC-076).
+
+    Usage::
+
+        list-node-connections <node-id>
+
+    Returns the dict from :func:`tools.button_view.connections_for`,
+    formatted for human-reading. Same data the Connections view
+    surfaces.
+    """
+    if not args:
+        return "ERR: list-node-connections requires <node-id>", view
+    from tools.button_view import connections_for
+    edges = connections_for(engine, args[0])
+    out_lines = [f"connections for {args[0]!r}:"]
+    out_lines.append(f"  out-edges ({len(edges['out'])}):")
+    for e in edges["out"]:
+        out_lines.append(f"    .{e['slot']} -> {e['target_id']}")
+    out_lines.append(f"  in-edges ({len(edges['in'])}):")
+    for e in edges["in"]:
+        out_lines.append(f"    {e['from_id']}.{e['slot']} -> here")
+    return "\n".join(out_lines), view
+
+
+def _cmd_node_buttons(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """List the button row for a node (SPEC-076).
+
+    Usage::
+
+        node-buttons <node-id>
+
+    Returns the derived button row — standards first (Author, History,
+    Connections) plus any maintainer-added customizations. The
+    standards have empty ``button_id`` because they're not real
+    ButtonNodes; customizations carry the real id.
+    """
+    if not args:
+        return "ERR: node-buttons requires <node-id>", view
+    from tools.button_view import button_row_for
+    row = button_row_for(engine, args[0])
+    if not row:
+        return f"(no buttons on {args[0]!r})", view
+    lines = [f"button row for {args[0]!r} ({len(row)} buttons):"]
+    for spec in row:
+        tag = "standard" if spec.standard else "custom"
+        bid = spec.button_id or "(derived)"
+        lines.append(
+            f"  [{tag}] {spec.label:14s} action={spec.action:18s} "
+            f"target={spec.target or '(self)':20s} icon={spec.icon or '-':12s} "
+            f"id={bid}"
+        )
+    return "\n".join(lines), view
+
+
+def _cmd_click_button(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Click a ButtonNode and route the resulting action (SPEC-077).
+
+    Usage::
+
+        click-button <button-node-id>
+
+    Resolves the ButtonNode's target prefix through
+    :func:`engine.actions.resolve_target`, then dispatches through
+    ``engine.actions.dispatch_action`` for the dispatchable target
+    kinds. View-prefixed targets surface a hint that the GUI shell
+    handles those.
+    """
+    if not args:
+        return "ERR: click-button requires <button-node-id>", view
+    from engine.actions import dispatch_button
+    ok, msg = dispatch_button(engine, args[0])
+    return ("OK: " if ok else "ERR: ") + msg, view
+
+
 def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     """Return the canonical command-grammar list — what verbs the CLI
     supports. Equivalent to rendering a TextRenderer-wrapped scene and
@@ -1023,6 +1181,11 @@ def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     lines.append("  visual-contract-list-icons      -- list icon names registered in the contract (SPEC-069)")
     lines.append("  visual-contract-list-fonts      -- list font aliases + size tokens with probed family (SPEC-069)")
     lines.append("  visual-contract-resolve-icon <name> [size] -- render an icon and report dimensions (SPEC-069)")
+    lines.append("  spawn-button <label> <action> [target] [k=v ...]  -- spawn a ButtonNode (SPEC-077)")
+    lines.append("  list-node-history <node-id>     -- list edit history rows for a node (SPEC-076)")
+    lines.append("  list-node-connections <node-id> -- list in-edges + out-edges for a node (SPEC-076)")
+    lines.append("  node-buttons <node-id>          -- list derived button row (standards + customizations) (SPEC-076)")
+    lines.append("  click-button <button-node-id>   -- dispatch a ButtonNode's action (SPEC-077)")
     return "\n".join(lines), view
 
 
@@ -1062,6 +1225,11 @@ _COMMANDS = {
     "visual-contract-list-icons": _cmd_visual_contract_list_icons,
     "visual-contract-list-fonts": _cmd_visual_contract_list_fonts,
     "visual-contract-resolve-icon": _cmd_visual_contract_resolve_icon,
+    "spawn-button": _cmd_spawn_button,
+    "list-node-history": _cmd_list_node_history,
+    "list-node-connections": _cmd_list_node_connections,
+    "node-buttons": _cmd_node_buttons,
+    "click-button": _cmd_click_button,
     "list-commands": _cmd_list_commands,
 }
 
