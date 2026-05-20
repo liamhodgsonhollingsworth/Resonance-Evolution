@@ -138,6 +138,56 @@ def test_archive_terminates_and_moves_record(tmp_path, monkeypatch):
     sm.shutdown()
 
 
+def test_spawn_strips_billing_mode_env_vars(tmp_path, monkeypatch):
+    """The spawned ``claude`` subprocess must NOT inherit billing-mode
+    env vars from the parent process. If ANTHROPIC_API_KEY is set in the
+    maintainer's user environment, the spawned session would use API
+    billing (charged per call) instead of the Claude Code plan (covered
+    by their subscription). The session manager strips these vars from
+    the subprocess env explicitly.
+    """
+    import subprocess as _subprocess
+
+    sm = _make_sm(tmp_path, monkeypatch)
+
+    # Inject the variables we expect to be stripped.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-should-be-stripped")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "token-should-be-stripped")
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+    monkeypatch.setenv("CLAUDE_CODE_USE_VERTEX", "1")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://corporate-proxy.example/")
+
+    captured_env = {}
+    original_popen = _subprocess.Popen
+
+    def _capture_popen(*args, **kwargs):
+        captured_env.update(kwargs.get("env") or {})
+        return original_popen(*args, **kwargs)
+
+    monkeypatch.setattr(_subprocess, "Popen", _capture_popen)
+
+    rec = sm.spawn(session_type="test", display_name="env-check")
+    _wait_for_events(sm, {"spawned"}, timeout_s=3.0)
+
+    # Billing-mode variables must be absent from the subprocess env.
+    assert "ANTHROPIC_API_KEY" not in captured_env, (
+        "ANTHROPIC_API_KEY leaked into spawned subprocess env — would force API billing"
+    )
+    assert "ANTHROPIC_AUTH_TOKEN" not in captured_env
+    assert "CLAUDE_CODE_USE_BEDROCK" not in captured_env
+    assert "CLAUDE_CODE_USE_VERTEX" not in captured_env
+
+    # ANTHROPIC_BASE_URL is preserved — it only takes effect when one of
+    # the billing-mode vars above is set, so its presence under OAuth
+    # mode is harmless and the maintainer may have set it deliberately.
+    assert captured_env.get("ANTHROPIC_BASE_URL") == "https://corporate-proxy.example/"
+
+    # Non-billing PATH/PYTHONPATH inheritance still works.
+    assert "PATH" in captured_env
+
+    sm.shutdown()
+
+
 def test_missing_claude_binary_raises(tmp_path):
     sm = SessionManager(state_dir=tmp_path, claude_bin="/no/such/claude/binary")
     with pytest.raises(SessionError):
