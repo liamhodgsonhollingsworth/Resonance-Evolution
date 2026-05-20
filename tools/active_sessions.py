@@ -151,11 +151,105 @@ def _atomic_write(path: Path, payload: List[Dict[str, Any]]) -> None:
     Uses a same-directory temp file + ``os.replace`` so a crash
     mid-write never leaves the registry partially populated. The
     parent directory is created if missing.
+
+    On TypeError (non-JSON-serializable payload) the temp file is
+    cleaned up rather than leaving an orphan ``.tmp.<pid>.<ns>``
+    behind. Bug-fix 2026-05-20 (stress-test).
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}.{time.time_ns()}")
-    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    try:
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except TypeError:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
+    # Bug-fix 2026-05-20 (stress-test): on Windows ``os.replace`` can
+    # raise PermissionError when the target is briefly held by AV /
+    # a sibling process, even under the cross-process lock. Retry
+    # with small backoff before propagating.
+    last_exc: Optional[PermissionError] = None
+    for _ in range(20):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError as exc:
+            last_exc = exc
+            time.sleep(0.01)
+    # Cleanup the orphan tmp on final failure.
+    try:
+        tmp.unlink(missing_ok=True)
+    except Exception:
+        pass
+    if last_exc is not None:
+        raise last_exc
+
+
+# ---------------------------------------------------------------------------
+# Cross-process lock for concurrent writes.
+# ---------------------------------------------------------------------------
+
+
+_LOCK_TIMEOUT_S = 5.0
+_LOCK_RETRY_S = 0.01
+
+
+def _acquire_lock(path: Path) -> Optional[int]:
+    """Acquire an exclusive cross-process lock on ``path.lock`` via
+    ``O_CREAT|O_EXCL``. Returns the file descriptor to release later,
+    or None if the lock could not be acquired within the timeout
+    (caller should retry the surrounding read-modify-write).
+
+    Bug-fix 2026-05-20 (stress-test): without locking, concurrent
+    register_session calls produced lost updates (50 threads → 2
+    surviving entries). The lock serializes the read-modify-write
+    cycle so each writer sees a consistent base before replacing.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    deadline = time.time() + _LOCK_TIMEOUT_S
+    while time.time() < deadline:
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_RDWR)
+            return fd
+        except (FileExistsError, PermissionError):
+            # FileExistsError is the POSIX shape; Windows can raise
+            # PermissionError on the same condition (especially when
+            # the lock file was just unlinked by another thread and
+            # is in the process of being released by the OS). Both
+            # mean "lock is held; retry."
+            #
+            # Check for stale lock (older than the timeout — the
+            # process that held it crashed).
+            try:
+                age = time.time() - lock_path.stat().st_mtime
+                if age > _LOCK_TIMEOUT_S * 2:
+                    lock_path.unlink(missing_ok=True)
+                    continue
+            except FileNotFoundError:
+                continue
+            except Exception:
+                pass
+            time.sleep(_LOCK_RETRY_S)
+    return None
+
+
+def _release_lock(path: Path, fd: Optional[int]) -> None:
+    """Release a lock acquired via ``_acquire_lock``. Idempotent +
+    soft-fails so a missing lock file doesn't crash the caller."""
+    if fd is None:
+        return
+    try:
+        os.close(fd)
+    except Exception:
+        pass
+    try:
+        lock_path = path.with_suffix(path.suffix + ".lock")
+        lock_path.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 def _load(path: Path) -> List[Dict[str, Any]]:
@@ -221,53 +315,68 @@ def register_session(
     updates the existing entry (focus, pid, cwd, metadata, last_seen)
     rather than producing duplicates. Returns the persisted
     ``ActiveSession``.
+
+    Bug-fix 2026-05-20 (stress-test): validates ``session_id`` is a
+    non-empty string; previously empty/None ids were silently stored
+    as orphan entries. Wraps the read-modify-write cycle in a
+    cross-process lock so concurrent writers don't lose-update each
+    other.
     """
+    if not isinstance(session_id, str) or not session_id:
+        raise ValueError(
+            f"register_session: session_id must be a non-empty str; "
+            f"got {session_id!r}"
+        )
     path = registry_path(state_dir)
-    entries = _load(path)
+    lock_fd = _acquire_lock(path)
+    try:
+        entries = _load(path)
 
-    now = _now_iso()
-    existing_idx: Optional[int] = None
-    for idx, e in enumerate(entries):
-        if e.get("id") == session_id:
-            existing_idx = idx
-            break
+        now = _now_iso()
+        existing_idx: Optional[int] = None
+        for idx, e in enumerate(entries):
+            if e.get("id") == session_id:
+                existing_idx = idx
+                break
 
-    entry = ActiveSession(
-        id=session_id,
-        project=project,
-        session_type=session_type,
-        focus=focus,
-        last_seen=now,
-        started_at=(
-            entries[existing_idx].get("started_at", now)
-            if existing_idx is not None
-            else now
-        ),
-        pid=pid if pid is not None else (
-            entries[existing_idx].get("pid") if existing_idx is not None else None
-        ),
-        cwd=cwd or (
-            entries[existing_idx].get("cwd", "") if existing_idx is not None else ""
-        ),
-        metadata=dict(metadata or (
-            entries[existing_idx].get("metadata", {}) if existing_idx is not None else {}
-        )),
-    )
+        entry = ActiveSession(
+            id=session_id,
+            project=project,
+            session_type=session_type,
+            focus=focus,
+            last_seen=now,
+            started_at=(
+                entries[existing_idx].get("started_at", now)
+                if existing_idx is not None
+                else now
+            ),
+            pid=pid if pid is not None else (
+                entries[existing_idx].get("pid") if existing_idx is not None else None
+            ),
+            cwd=cwd or (
+                entries[existing_idx].get("cwd", "") if existing_idx is not None else ""
+            ),
+            metadata=dict(metadata or (
+                entries[existing_idx].get("metadata", {}) if existing_idx is not None else {}
+            )),
+        )
 
-    if existing_idx is not None:
-        entries[existing_idx] = asdict(entry)
-    else:
-        entries.append(asdict(entry))
+        if existing_idx is not None:
+            entries[existing_idx] = asdict(entry)
+        else:
+            entries.append(asdict(entry))
 
-    # Prune stale entries on every write so the file stays bounded.
-    entries = _prune_stale(entries, stale_after_min=60)  # generous on write
-    # And make sure our just-added entry is preserved even if the
-    # prune dropped it for any clock weirdness.
-    if all(e.get("id") != session_id for e in entries):
-        entries.append(asdict(entry))
+        # Prune stale entries on every write so the file stays bounded.
+        entries = _prune_stale(entries, stale_after_min=60)  # generous on write
+        # And make sure our just-added entry is preserved even if the
+        # prune dropped it for any clock weirdness.
+        if all(e.get("id") != session_id for e in entries):
+            entries.append(asdict(entry))
 
-    _atomic_write(path, entries)
-    return entry
+        _atomic_write(path, entries)
+        return entry
+    finally:
+        _release_lock(path, lock_fd)
 
 
 def heartbeat(
@@ -280,22 +389,30 @@ def heartbeat(
 
     Returns True if the entry was found + updated; False if the id
     is not in the registry (caller may want to register_session first).
+
+    Bug-fix 2026-05-20: locks the read-modify-write cycle.
     """
-    path = registry_path(state_dir)
-    entries = _load(path)
-    found = False
-    for entry in entries:
-        if entry.get("id") == session_id:
-            entry["last_seen"] = _now_iso()
-            if focus is not None:
-                entry["focus"] = focus
-            found = True
-            break
-    if not found:
+    if not isinstance(session_id, str) or not session_id:
         return False
-    entries = _prune_stale(entries, stale_after_min=60)
-    _atomic_write(path, entries)
-    return True
+    path = registry_path(state_dir)
+    lock_fd = _acquire_lock(path)
+    try:
+        entries = _load(path)
+        found = False
+        for entry in entries:
+            if entry.get("id") == session_id:
+                entry["last_seen"] = _now_iso()
+                if focus is not None:
+                    entry["focus"] = focus
+                found = True
+                break
+        if not found:
+            return False
+        entries = _prune_stale(entries, stale_after_min=60)
+        _atomic_write(path, entries)
+        return True
+    finally:
+        _release_lock(path, lock_fd)
 
 
 def unregister_session(
@@ -307,17 +424,25 @@ def unregister_session(
 
     Returns True if the entry was found + removed; False if the id
     was not registered. No-op + return False on missing files.
+
+    Bug-fix 2026-05-20: locks the read-modify-write cycle.
     """
+    if not isinstance(session_id, str) or not session_id:
+        return False
     path = registry_path(state_dir)
     if not path.exists():
         return False
-    entries = _load(path)
-    before = len(entries)
-    entries = [e for e in entries if e.get("id") != session_id]
-    if len(entries) == before:
-        return False
-    _atomic_write(path, entries)
-    return True
+    lock_fd = _acquire_lock(path)
+    try:
+        entries = _load(path)
+        before = len(entries)
+        entries = [e for e in entries if e.get("id") != session_id]
+        if len(entries) == before:
+            return False
+        _atomic_write(path, entries)
+        return True
+    finally:
+        _release_lock(path, lock_fd)
 
 
 def list_active_sessions(
