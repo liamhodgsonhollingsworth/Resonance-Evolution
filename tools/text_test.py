@@ -474,6 +474,38 @@ def _cmd_list_views(engine: Engine, view: View, *_) -> Tuple[str, View]:
     return "\n".join(lines), view
 
 
+def _cmd_list_sessions(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """List active sessions registered on the machine (SPEC-079).
+
+    Usage::
+
+        list-sessions                    # default 10-min stale filter
+        list-sessions --include-stale    # show every entry
+
+    Each row: ``id  project=...  type=...  focus=...  last_seen=...``.
+    """
+    try:
+        from tools.active_sessions import list_active_sessions
+    except Exception as exc:
+        return f"ERR: tools.active_sessions import failed: {exc}", view
+    include_stale = "--include-stale" in args
+    state_dir = getattr(engine, "active_sessions_state_dir", None)
+    sessions = list_active_sessions(
+        state_dir=state_dir,
+        include_stale=include_stale,
+    )
+    if not sessions:
+        return "(no active sessions)", view
+    lines = [f"active sessions ({len(sessions)}):"]
+    for s in sessions:
+        stale_tag = " [stale]" if s.is_stale else ""
+        lines.append(
+            f"  {s.id}  project={s.project}  type={s.session_type}  "
+            f"focus={s.focus!r}  last_seen={s.last_seen}{stale_tag}"
+        )
+    return "\n".join(lines), view
+
+
 def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     """Return the canonical command-grammar list — what verbs the CLI
     supports. Equivalent to rendering a TextRenderer-wrapped scene and
@@ -486,6 +518,7 @@ def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     lines.append("  set-mode <node> <mode>          -- mutate a node's mode field (e.g. WorkflowView panels/full_render)")
     lines.append("  set-view <view-name>            -- activate a registered view (SPEC-067)")
     lines.append("  list-views                      -- list views from engine.view_registry (SPEC-067)")
+    lines.append("  list-sessions [--include-stale] -- list active Claude sessions on the machine (SPEC-079)")
     return "\n".join(lines), view
 
 
@@ -506,6 +539,7 @@ _COMMANDS = {
     "set-mode": _cmd_set_mode,
     "set-view": _cmd_set_view,
     "list-views": _cmd_list_views,
+    "list-sessions": _cmd_list_sessions,
     "list-commands": _cmd_list_commands,
 }
 

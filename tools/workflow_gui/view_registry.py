@@ -58,7 +58,7 @@ reachable from every other view via the same primitive.*
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +109,13 @@ class ViewSpec:
     """For ``custom`` kind: a callback taking ``(shell, central_frame)``
     that owns rendering the central pane. Reserved; not used in v1."""
 
+    items_provider: Optional[Callable[..., List[Dict[str, Any]]]] = None
+    """For ``dynamic`` kind: a callback taking ``(engine)`` that
+    returns the items list rendered as the standard list panel.
+    Lets the registry surface live data (active sessions, file
+    watcher recent events, server status, ...) without subclassing
+    the shell."""
+
 
 # ---------------------------------------------------------------------------
 # Registry.
@@ -144,7 +151,7 @@ class ViewRegistry:
         recognized kinds — catches typos at construction time rather
         than mysteriously rendering nothing in the central pane.
         """
-        VALID_KINDS = {"source", "gui_inbox", "gui_chat", "3d", "text", "custom"}
+        VALID_KINDS = {"source", "gui_inbox", "gui_chat", "3d", "text", "custom", "dynamic"}
         if spec.kind not in VALID_KINDS:
             raise ValueError(
                 f"ViewSpec.kind must be one of {sorted(VALID_KINDS)}; "
@@ -247,6 +254,8 @@ class ViewRegistry:
                 out.append((spec.name, f"_text:{spec.name}", None))
             elif spec.kind == "custom":
                 out.append((spec.name, f"_custom:{spec.name}", None))
+            elif spec.kind == "dynamic":
+                out.append((spec.name, f"_dynamic:{spec.name}", None))
         return out
 
     def help_map(self) -> Dict[str, str]:
@@ -355,9 +364,83 @@ def default_view_registry() -> ViewRegistry:
             ),
             text_body="",  # populated dynamically at render time
         ),
+        ViewSpec(
+            name="Sessions",
+            kind="dynamic",
+            description=(
+                "All active Claude Code sessions on this machine (SPEC-079). "
+                "Heartbeat-backed registry; entries older than 10 min are hidden."
+            ),
+            items_provider=_active_sessions_items_provider,
+        ),
     ):
         reg.register(spec)
     return reg
+
+
+def _active_sessions_items_provider(engine: Any) -> List[Dict[str, Any]]:
+    """Items provider for the SPEC-079 Sessions view.
+
+    Imported lazily so the registry doesn't pull in active_sessions at
+    import time (and so a test stubbing the registry doesn't need to
+    stub the active-sessions module too).
+    """
+    try:
+        from tools.active_sessions import list_active_sessions
+    except Exception as exc:
+        return [
+            {
+                "id": "sessions-import-error",
+                "title": f"(failed to import tools.active_sessions: {exc})",
+                "body": str(exc),
+                "status": "alert",
+                "actions": ["expand"],
+            }
+        ]
+    # Discover state dir from the engine if it carries one (the
+    # production shell attaches it), else fall back to ./state.
+    state_dir = getattr(engine, "active_sessions_state_dir", None)
+    sessions = list_active_sessions(state_dir=state_dir)
+    if not sessions:
+        return [
+            {
+                "id": "sessions-empty",
+                "title": "(no active sessions registered)",
+                "body": (
+                    "Sessions register themselves at startup via "
+                    "tools.active_sessions.register_session(). Empty "
+                    "list means no session has heart-beat in the past "
+                    "10 minutes."
+                ),
+                "status": "ok",
+                "actions": ["expand"],
+            }
+        ]
+    out: List[Dict[str, Any]] = []
+    for s in sessions:
+        out.append(
+            {
+                "id": s.id,
+                "title": (
+                    f"{s.session_type}  project={s.project}  "
+                    f"focus={s.focus or '(none)'}"
+                ),
+                "body": (
+                    f"id={s.id}\n"
+                    f"project={s.project}\n"
+                    f"session_type={s.session_type}\n"
+                    f"focus={s.focus}\n"
+                    f"last_seen={s.last_seen}\n"
+                    f"started_at={s.started_at}\n"
+                    f"pid={s.pid}\n"
+                    f"cwd={s.cwd}"
+                ),
+                "status": "alert" if s.is_stale else "in_progress",
+                "actions": ["expand"],
+                "meta": {"session_id": s.id, "project": s.project},
+            }
+        )
+    return out
 
 
 __all__ = [
