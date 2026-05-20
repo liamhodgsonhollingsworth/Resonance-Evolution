@@ -1480,6 +1480,84 @@ def _cmd_configure_email(engine: Engine, view: View, *args) -> Tuple[str, View]:
     )
 
 
+def _cmd_icon_for(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Return the icon name assigned to a widget id (SPEC-074).
+
+    Usage::
+
+        icon-for <widget-id>
+
+    Widget ids follow the convention ``<surface>:<id>``:
+
+    - ``sidebar:Tasks``, ``sidebar:Inbox``, ``sidebar:Browser``
+    - ``chat:Send``, ``browser:Go``, ``browser:Refresh``
+    - ``action:<panel>:<action>`` (e.g. ``action:task_panel:archive``)
+    - ``action:proto:<action>`` (prototype lookup before any panel
+      has rendered actions)
+
+    Returns ``OK: (no icon)`` when the widget has no icon assigned
+    (text-only fallback per SPEC-074). Returns ``OK: <icon-name>``
+    when one is registered.
+    """
+    if not args:
+        return "ERR: icon-for requires <widget-id>", view
+    widget_id = args[0]
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    name = shell.icon_for(widget_id)
+    if not name:
+        return f"OK: (no icon) {widget_id}", view
+    return f"OK: {name}", view
+
+
+def _cmd_tooltip_for(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Return the basic hover tooltip text for a widget id (SPEC-074).
+
+    Usage::
+
+        tooltip-for <widget-id>
+
+    Returns the tooltip text shown under plain hover. Use
+    ``extended-help-for`` to read the Ctrl-hover variant.
+    Returns ``OK: (no tooltip)`` when no tooltip is registered.
+    """
+    if not args:
+        return "ERR: tooltip-for requires <widget-id>", view
+    widget_id = args[0]
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    text = shell.tooltip_for(widget_id)
+    if not text:
+        return f"OK: (no tooltip) {widget_id}", view
+    return f"OK: {text}", view
+
+
+def _cmd_extended_help_for(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Return the Ctrl-hover extended help text for a widget id
+    (SPEC-074 + SPEC-072).
+
+    Usage::
+
+        extended-help-for <widget-id>
+
+    Returns ``OK: (no extended help)`` when none is registered; in
+    that case the Ctrl-hover would fall back to the basic
+    ``tooltip-for`` text.
+    """
+    if not args:
+        return "ERR: extended-help-for requires <widget-id>", view
+    widget_id = args[0]
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    text = shell.extended_help_for(widget_id)
+    if not text:
+        return f"OK: (no extended help) {widget_id}", view
+    return f"OK: {text}", view
+
+
 def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     """Return the canonical command-grammar list — what verbs the CLI
     supports. Equivalent to rendering a TextRenderer-wrapped scene and
@@ -1526,6 +1604,9 @@ def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     lines.append("  send-test-email [<to>] [--state-dir <p>] [--dry-run]  -- side-channel test email (SPEC-078)")
     lines.append("  list-pending-email-triggers [--state-dir <p>]         -- list suppressed email triggers (SPEC-078)")
     lines.append("  configure-email <from> <smtp_host> <smtp_port> [--to-default <a>] [--enable] -- write email_config.json (SPEC-078)")
+    lines.append("  icon-for <widget-id>            -- return the icon name assigned to a widget (SPEC-074)")
+    lines.append("  tooltip-for <widget-id>         -- return the basic hover tooltip text for a widget (SPEC-074)")
+    lines.append("  extended-help-for <widget-id>   -- return the Ctrl-hover extended help for a widget (SPEC-074)")
     return "\n".join(lines), view
 
 
@@ -1580,6 +1661,9 @@ _COMMANDS = {
     "send-test-email": _cmd_send_test_email,
     "list-pending-email-triggers": _cmd_list_pending_email_triggers,
     "configure-email": _cmd_configure_email,
+    "icon-for": _cmd_icon_for,
+    "tooltip-for": _cmd_tooltip_for,
+    "extended-help-for": _cmd_extended_help_for,
     "list-commands": _cmd_list_commands,
 }
 

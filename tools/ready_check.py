@@ -1203,6 +1203,208 @@ def _check_visual_contract(verbose: bool) -> Tuple[bool, str]:
     )
 
 
+def _check_standard_icons(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-074: every button widget in the default scene has either an
+    icon or a text fallback, every actionable widget has a tooltip, and
+    the Tooltip class binds without errors.
+
+    Probes (all headless — no Tk root required):
+
+    1. ``Tooltip`` is importable + constructs against a stub widget
+       (the construction is defensive against non-Tk widgets).
+    2. ``GuiShell`` pre-populates the widget catalog from
+       ``SIDEBAR_VIEW_ICONS`` + ``ACTION_ICONS`` + ``BUTTON_EXTENDED_HELP``
+       during ``__init__``.
+    3. Every documented sidebar view (Tasks, Ideas, Wishlist, Inbox,
+       Chat, Quarantine, Trusted Senders, 3D, Logs, Sessions, Archive)
+       has both an icon AND a tooltip registered.
+    4. Every documented action (archive, lock, unlock, copy, paste,
+       expand) has a prototype icon registered.
+    5. The free-standing chrome buttons (chat:Send, browser:Go,
+       browser:Refresh) all have tooltips, and browser:Go has an icon.
+    6. Each icon name registered in ``SIDEBAR_VIEW_ICONS`` and
+       ``ACTION_ICONS`` resolves through visual_contract — broken
+       names are surfaced in the probe message.
+    7. The ``icon-for`` / ``tooltip-for`` / ``extended-help-for``
+       text-API verbs return the right answers for a sampled widget.
+    """
+    try:
+        from tools.workflow_gui.tooltip import Tooltip
+        from tools.workflow_gui.gui_shell import (
+            ACTION_ICONS,
+            BUTTON_EXTENDED_HELP,
+            SIDEBAR_VIEW_ICONS,
+        )
+        from tools.visual_contract import list_icon_names, render_icon_image
+    except Exception as exc:
+        return False, f"standard_icons import failed: {exc}"
+
+    # Probe 1: Tooltip constructs against a stub widget without raising.
+    class _StubWidget:
+        def bind(self, _seq, _cb, **_kw):
+            return ""
+
+        def unbind(self, _seq, _bid=None):
+            return None
+
+    try:
+        tip = Tooltip(
+            widget=_StubWidget(),
+            basic_text="Archive",
+            extended_text="Archive — extended help.",
+        )
+        assert tip.text_for_state(False) == "Archive"
+        assert tip.text_for_state(True) == "Archive — extended help."
+    except Exception as exc:
+        return False, f"Tooltip construction failed: {exc}"
+
+    # Probes 2-5: spin up a headless GuiShell against stub primitives
+    # and check the registered widget catalog.
+    try:
+        from tests.test_workflow_gui import _StubEngine, _StubInbox, _StubSessionManager  # type: ignore[import-not-found]
+    except Exception:
+        # Tests aren't on sys.path at runtime; build minimal stubs
+        # inline so the probe stays self-contained.
+        class _StubEngine:  # type: ignore[no-redef]
+            def __init__(self):
+                self.cache = {}
+                self.errors = []
+
+            def precompute(self):
+                pass
+
+        class _StubInbox:  # type: ignore[no-redef]
+            def list_main(self, unread_only=False):
+                return []
+
+        class _StubSessionManager:  # type: ignore[no-redef]
+            def list(self):
+                return []
+
+            def get(self, _sid):
+                return None
+
+            def send(self, _sid, _msg):
+                pass
+
+            def shutdown(self):
+                pass
+
+            state_dir = None
+
+    try:
+        from tools.workflow_gui.gui_shell import GuiShell
+        shell = GuiShell(
+            engine=_StubEngine(),
+            session_manager=_StubSessionManager(),
+            inbox=_StubInbox(),
+            root=ROOT,
+            scene_path=None,
+            scene_root_id=None,
+        )
+    except Exception as exc:
+        return False, f"GuiShell headless construction failed: {exc}"
+
+    # Probe 3: documented sidebar views all have icon + tooltip.
+    documented_views = {
+        "Tasks", "Ideas", "Wishlist", "Inbox", "Chat",
+        "Quarantine", "Trusted Senders", "3D", "Logs",
+        "Sessions", "Archive",
+    }
+    for view_name in documented_views:
+        wid = f"sidebar:{view_name}"
+        if not shell.icon_for(wid):
+            return False, f"sidebar view {view_name!r} has no icon assigned"
+        if not shell.tooltip_for(wid):
+            return False, f"sidebar view {view_name!r} has no tooltip"
+
+    # Probe 4: action prototype icons.
+    documented_actions = {"archive", "lock", "unlock", "copy", "paste", "expand"}
+    for act in documented_actions:
+        wid = f"action:proto:{act}"
+        if not shell.icon_for(wid):
+            return False, f"action {act!r} has no prototype icon"
+
+    # Probe 5: free-standing chrome buttons.
+    if not shell.tooltip_for("chat:Send"):
+        return False, "chat:Send has no tooltip"
+    if not shell.icon_for("browser:Go"):
+        return False, "browser:Go has no icon"
+    if not shell.tooltip_for("browser:Refresh"):
+        return False, "browser:Refresh has no tooltip"
+
+    # Probe 6: every icon-name in the static maps is REGISTERED in
+    # visual_contract. We don't fail the probe on render-time failures
+    # — SPEC-074's soft-fail path catches those at button construction
+    # and falls back to text labels. A render bug is a visual_contract
+    # concern, not a SPEC-074 implementation issue.
+    registered_icons = set(list_icon_names())
+    not_registered: List[str] = []
+    render_warnings: List[str] = []
+    for name in set(SIDEBAR_VIEW_ICONS.values()) | set(ACTION_ICONS.values()):
+        if name not in registered_icons:
+            not_registered.append(name)
+            continue
+        try:
+            render_icon_image(name, size=16)
+        except Exception as exc:
+            render_warnings.append(f"{name} ({exc})")
+    if not_registered:
+        return False, (
+            f"icons named in SIDEBAR_VIEW_ICONS/ACTION_ICONS but absent "
+            f"from visual_contract registry: {sorted(not_registered)}"
+        )
+
+    # Probe 7: text-API verbs.
+    try:
+        from tools.text_test import dispatch_command
+        from engine import Engine, View, look_at
+        import numpy as np
+        e = Engine(root_dir=ROOT)
+        e.discover()
+        # Attach the shell so the verb sees it.
+        setattr(e, "gui_shell", shell)
+        v = View(
+            position=np.asarray([3.0, 2.0, 5.0]),
+            orientation=look_at(
+                np.asarray([3.0, 2.0, 5.0]), np.asarray([0.0, 0.0, 0.0])
+            ),
+            width=64, height=64, scale=1.0,
+        )
+        for verb, widget_id, expect in (
+            ("icon-for", "sidebar:Tasks", "check-square"),
+            ("tooltip-for", "sidebar:Tasks", "Tasks"),
+            ("extended-help-for", "chat:Send", "Send the chat"),
+        ):
+            result, _ = dispatch_command(e, f"{verb} {widget_id}", v)
+            if not result.startswith("OK:"):
+                return False, f"{verb} {widget_id} -> {result!r}"
+            if expect not in result:
+                return False, (
+                    f"{verb} {widget_id} -> {result!r}; expected substring {expect!r}"
+                )
+    except Exception as exc:
+        return False, f"text-API verb probe failed: {exc}"
+
+    warning_suffix = ""
+    if render_warnings:
+        # Soft-fail icons (renderer choke). The buttons fall back to
+        # text labels at construction; we surface the names here so
+        # the maintainer can see which ones are degraded.
+        warning_suffix = (
+            f"; {len(render_warnings)} icon(s) registered but "
+            f"renderer-incompatible (text-fallback engaged): "
+            f"{sorted(render_warnings)}"
+        )
+    return True, (
+        f"{len(documented_views)} sidebar views + "
+        f"{len(documented_actions)} action prototypes + 3 chrome buttons "
+        f"have icon/tooltip registrations; Tooltip class binds; "
+        f"icon-for/tooltip-for/extended-help-for verbs return correct answers"
+        f"{warning_suffix}"
+    )
+
+
 def _check_buttons_as_nodes(verbose: bool) -> Tuple[bool, str]:
     """SPEC-076 + SPEC-077: ButtonNode is a first-class node-type AND the
     derived-view button-row + connections are computed on demand.
@@ -1539,6 +1741,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("per_widget_lock", _check_per_widget_lock),
     ("paste_trust_gate", _check_paste_trust_gate),
     ("visual_contract", _check_visual_contract),
+    ("standard_icons", _check_standard_icons),
     ("buttons_as_nodes", _check_buttons_as_nodes),
     ("browser", _check_browser),
     ("email_side_channel", _check_email_side_channel),
