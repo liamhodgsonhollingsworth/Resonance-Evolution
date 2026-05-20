@@ -1150,6 +1150,86 @@ def _cmd_click_button(engine: Engine, view: View, *args) -> Tuple[str, View]:
     return ("OK: " if ok else "ERR: ") + msg, view
 
 
+def _cmd_browser_open(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Load a URL into the active Browser tab's HtmlFrame (SPEC-066).
+
+    Usage::
+
+        browser-open <url>
+
+    Requires a GuiShell with an active Browser view. Headless callers
+    (no GUI) get a clear error so the failure mode is named rather
+    than silent.
+    """
+    if not args:
+        return "ERR: browser-open requires <url>", view
+    url = " ".join(args)
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    try:
+        ok = shell.browser_open(url)
+    except Exception as exc:
+        return f"ERR: browser_open raised: {exc}", view
+    if not ok:
+        return (
+            "ERR: no active Browser frame; activate the Browser view first "
+            "via 'set-view Browser'"
+        ), view
+    return f"OK: loaded {url!r}", view
+
+
+def _cmd_browser_html(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Render an inline HTML string in the active Browser tab (SPEC-066).
+
+    Usage::
+
+        browser-html <html>
+
+    The full HTML is the whitespace-joined remainder of args. For
+    multi-line documents, write to a file and call the Python API
+    directly; this CLI form is for short snippets.
+    """
+    if not args:
+        return "ERR: browser-html requires an HTML payload", view
+    html = " ".join(args)
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    try:
+        ok = shell.browser_load_html(html)
+    except Exception as exc:
+        return f"ERR: browser_load_html raised: {exc}", view
+    if not ok:
+        return (
+            "ERR: no active Browser frame; activate the Browser view first "
+            "via 'set-view Browser'"
+        ), view
+    return f"OK: rendered inline HTML ({len(html)} chars)", view
+
+
+def _cmd_browser_current_url(engine: Engine, view: View, *_) -> Tuple[str, View]:
+    """Return the URL currently displayed in the Browser tab (SPEC-066).
+
+    Usage::
+
+        browser-current-url
+
+    Returns the placeholder "(no url)" when no Browser frame is
+    active or no page has loaded yet.
+    """
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    try:
+        url = shell.browser_current_url()
+    except Exception as exc:
+        return f"ERR: browser_current_url raised: {exc}", view
+    if not url:
+        return "OK: (no url)", view
+    return f"OK: {url}", view
+
+
 def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     """Return the canonical command-grammar list — what verbs the CLI
     supports. Equivalent to rendering a TextRenderer-wrapped scene and
@@ -1186,6 +1266,9 @@ def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     lines.append("  list-node-connections <node-id> -- list in-edges + out-edges for a node (SPEC-076)")
     lines.append("  node-buttons <node-id>          -- list derived button row (standards + customizations) (SPEC-076)")
     lines.append("  click-button <button-node-id>   -- dispatch a ButtonNode's action (SPEC-077)")
+    lines.append("  browser-open <url>              -- load URL into the active Browser view (SPEC-066)")
+    lines.append("  browser-html <html>             -- render inline HTML in the Browser view (SPEC-066)")
+    lines.append("  browser-current-url             -- read the Browser view's current URL (SPEC-066)")
     return "\n".join(lines), view
 
 
@@ -1230,6 +1313,9 @@ _COMMANDS = {
     "list-node-connections": _cmd_list_node_connections,
     "node-buttons": _cmd_node_buttons,
     "click-button": _cmd_click_button,
+    "browser-open": _cmd_browser_open,
+    "browser-html": _cmd_browser_html,
+    "browser-current-url": _cmd_browser_current_url,
     "list-commands": _cmd_list_commands,
 }
 

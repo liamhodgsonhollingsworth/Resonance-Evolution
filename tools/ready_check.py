@@ -426,6 +426,67 @@ def _check_module_clipboard(verbose: bool) -> Tuple[bool, str]:
     )
 
 
+def _check_browser(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-066: tkinterweb must be importable AND HtmlFrame
+    instantiable headless-safe. Also verifies that the
+    ``BrowserRenderer`` node-type loads through the engine's
+    discover() + trust-gate path and the ``Browser`` ViewSpec is
+    present in the default registry.
+
+    Probe shape:
+
+    1. ``tools.browser.is_available()`` returns True (catches a
+       missing tkinterweb / Tkhtml binary).
+    2. ``BrowserRenderer`` type registers through ``engine.discover``
+       with the production trust-set (catches a refactor that drops
+       the node-type from ``node_types/*.py`` glob).
+    3. ``Browser`` view spec exists in ``default_view_registry()``
+       with kind=``web`` (catches a default-registry regression).
+    """
+    try:
+        from tools.browser import is_available
+    except Exception as exc:
+        return False, f"tools.browser import failed: {exc}"
+
+    if not is_available():
+        return False, (
+            "tkinterweb not importable or HtmlFrame instantiation failed; "
+            "install with: pip install \"tkinterweb>=4.25.2,<5\""
+        )
+
+    try:
+        from engine import Engine
+        from tools.workflow.trust import render_trust_set
+        from tools.workflow_gui.view_registry import default_view_registry
+    except Exception as exc:
+        return False, f"browser probe dep import failed: {exc}"
+
+    try:
+        e = Engine(root_dir=ROOT, trust_set=render_trust_set(ROOT))
+        e.discover()
+    except Exception as exc:
+        return False, f"engine discover failed: {exc}"
+
+    if "BrowserRenderer" not in e.types:
+        return False, (
+            f"BrowserRenderer not in engine.types after discover "
+            f"(have {sorted(e.types)[:8]}...)"
+        )
+
+    reg = default_view_registry()
+    spec = reg.get("Browser")
+    if spec is None:
+        return False, "Browser view missing from default_view_registry"
+    if spec.kind != "web":
+        return False, f"Browser view kind={spec.kind!r}; expected 'web'"
+
+    return True, (
+        f"tkinterweb importable + HtmlFrame instantiable + "
+        f"BrowserRenderer registered through trust gate + Browser view "
+        f"in default registry"
+    )
+
+
 def _check_paste_trust_gate(verbose: bool) -> Tuple[bool, str]:
     """SPEC-073 follow-up (2026-05-20): paste_module runs every
     snippet's type-name through the engine's render-trust set BEFORE
@@ -1316,6 +1377,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("paste_trust_gate", _check_paste_trust_gate),
     ("visual_contract", _check_visual_contract),
     ("buttons_as_nodes", _check_buttons_as_nodes),
+    ("browser", _check_browser),
 ]
 
 
