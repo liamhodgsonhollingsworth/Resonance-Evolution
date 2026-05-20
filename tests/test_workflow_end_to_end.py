@@ -205,3 +205,70 @@ def test_shell_reload_command_invokes_engine(scratch_repo: Path, tmp_path: Path)
     shell._dispatch_slash("reload Cube")
     assert "reload(Cube)" in out.getvalue() or "reload" in out.getvalue()
     sm.shutdown()
+
+
+def test_shell_suppresses_tool_use_noise_by_default(
+    scratch_repo: Path, tmp_path: Path, monkeypatch
+):
+    """The shell's default print stream excludes `tool_use` events so the
+    spawned session's hundreds of read/grep calls don't flood the
+    terminal. The high-signal events (spawned, turn_complete,
+    communication, session_idle, session_error, silent_too_long) stay
+    visible. Setting ``APEIRON_VERBOSE_SESSIONS=1`` re-enables the
+    verbose surface for debugging.
+    """
+    from tools.workflow.session_manager import SessionEvent
+
+    engine = Engine(root_dir=scratch_repo)
+    engine.discover()
+    sm = SessionManager(state_dir=tmp_path / "state")
+    inbox = Inbox(state_dir=tmp_path / "state", alethea_cc_root=None)
+
+    out = io.StringIO()
+    err = io.StringIO()
+    shell = Shell(engine=engine, session_manager=sm, inbox=inbox, root=scratch_repo,
+                  out=out, err=err)
+
+    monkeypatch.delenv("APEIRON_VERBOSE_SESSIONS", raising=False)
+    sample_id = "0" * 36
+    shell._show_session_event(SessionEvent(
+        kind="tool_use", session_id=sample_id, session_display_name="dflt",
+        payload={"name": "Read"},
+    ))
+    shell._show_session_event(SessionEvent(
+        kind="tool_result", session_id=sample_id, session_display_name="dflt",
+        payload={"result": "ok"},
+    ))
+    shell._show_session_event(SessionEvent(
+        kind="activity", session_id=sample_id, session_display_name="dflt",
+        payload={},
+    ))
+    quiet = out.getvalue()
+    assert "tool_use" not in quiet
+    assert "tool_result" not in quiet
+    assert "activity" not in quiet
+
+    # High-signal events still print.
+    shell._show_session_event(SessionEvent(
+        kind="turn_complete", session_id=sample_id, session_display_name="dflt",
+        payload={"total_cost_usd": 0.04, "duration_ms": 1234},
+    ))
+    shell._show_session_event(SessionEvent(
+        kind="silent_too_long", session_id=sample_id, session_display_name="dflt",
+        payload={"silent_for_s": 305.2},
+    ))
+    after = out.getvalue()
+    assert "turn complete" in after
+    assert "silent for 305s" in after
+
+    # Verbose mode re-enables tool_use prints.
+    monkeypatch.setenv("APEIRON_VERBOSE_SESSIONS", "1")
+    out2 = io.StringIO()
+    shell2 = Shell(engine=engine, session_manager=sm, inbox=inbox, root=scratch_repo,
+                   out=out2, err=err)
+    shell2._show_session_event(SessionEvent(
+        kind="tool_use", session_id=sample_id, session_display_name="dflt",
+        payload={"name": "Bash"},
+    ))
+    assert "tool_use Bash" in out2.getvalue()
+    sm.shutdown()
