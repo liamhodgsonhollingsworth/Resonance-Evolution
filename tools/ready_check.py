@@ -329,6 +329,54 @@ def _check_module_clipboard(verbose: bool) -> Tuple[bool, str]:
     )
 
 
+def _check_file_source_path_confinement(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-079 follow-up (2026-05-20): FileSource confines its path
+    to a documented allow-list. A green probe confirms the gate is
+    wired AND the allow-list contains the canonical roots.
+
+    Probe: import FileSource, assert the allow-list contains the
+    project root + temp-import zone + a workspace dir, then exercise
+    a known-bad path and verify rejection."""
+    try:
+        from node_types import file_source
+        from node_types.file_source import FileSourceOutsideAllowListError
+    except Exception as exc:
+        return False, f"file_source import failed: {exc}"
+
+    roots = file_source.get_allowed_roots()
+    if ROOT not in roots:
+        return False, f"project root missing from allow-list: {roots}"
+    temp_imports = (ROOT / "state" / "temp_imports").resolve()
+    if temp_imports not in roots:
+        return False, f"temp-import zone missing from allow-list: {roots}"
+    # At least one cross-project workspace dir should be in the list.
+    home_desktop = Path.home() / "Desktop"
+    workspace_hit = any(
+        (home_desktop / name).resolve() in roots
+        for name in ("Apeiron", "Alethea", "Resonance")
+    )
+    if not workspace_hit:
+        return False, f"no workspace dir present in allow-list: {roots}"
+
+    # Exercise the rejection path with a guaranteed-outside path.
+    bad_path = "C:/Windows/System32/drivers/etc/hosts" if os.name == "nt" else "/etc/passwd"
+    try:
+        file_source.build({"path": bad_path, "parser_name": "tasks"})
+    except FileSourceOutsideAllowListError as exc:
+        msg = str(exc)
+        if "outside the allow-list" not in msg:
+            return False, f"rejection message missing 'outside': {msg[:200]}"
+    except Exception as exc:
+        return False, f"unexpected exception type: {exc!r}"
+    else:
+        return False, f"build accepted disallowed path {bad_path!r}"
+
+    return True, (
+        f"FileSource path-confinement wired: {len(roots)} allow-list roots; "
+        f"rejection raises FileSourceOutsideAllowListError"
+    )
+
+
 def _check_chat_routing(verbose: bool) -> Tuple[bool, str]:
     """SPEC-068: the workflow shell routes chat through `route_chat`
     with @-prefix + /all broadcast + bare-text-to-active semantics.
@@ -604,6 +652,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("active_sessions", _check_active_sessions),
     ("chat_routing", _check_chat_routing),
     ("module_clipboard", _check_module_clipboard),
+    ("file_source_path_confinement", _check_file_source_path_confinement),
 ]
 
 
