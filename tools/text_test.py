@@ -607,6 +607,150 @@ def _cmd_list_sessions(engine: Engine, view: View, *args) -> Tuple[str, View]:
     return "\n".join(lines), view
 
 
+def _cmd_visual_regression_capture(
+    engine: Engine, view: View, *args
+) -> Tuple[str, View]:
+    """Capture the current scene of a registered baseline (SPEC-080).
+
+    Usage::
+
+        visual-regression-capture <name>
+
+    Looks up the baseline in the default manifest, invokes its
+    renderer hook, captures the resulting Tk widget, and writes the
+    PNG to ``tests/visual_regression/baselines/<name>.png``. This is
+    the "establish a new baseline" path — overwrites any existing
+    file at the same name without prompting.
+
+    Returns an error if the baseline isn't registered, the renderer
+    raises, or the capture surface reports a headless environment.
+    Production renderer hooks are registered by SPEC-069; this PR
+    ships scaffolding only.
+    """
+    if not args:
+        return "ERR: visual-regression-capture requires <name>", view
+    name = args[0]
+    try:
+        from tools.visual_regression.manifest import default_manifest
+        from tools.visual_regression.capture import (
+            CaptureError,
+            HeadlessCaptureError,
+            capture_widget,
+        )
+        from tools.visual_regression.runner import baselines_dir
+    except Exception as exc:
+        return f"ERR: visual_regression unavailable: {exc}", view
+
+    manifest = default_manifest()
+    spec = manifest.get(name)
+    if spec is None:
+        registered = ", ".join(manifest.names()) or "(none)"
+        return (
+            f"ERR: unknown baseline {name!r}; "
+            f"registered: {registered}",
+            view,
+        )
+    try:
+        widget = spec.renderer()
+    except Exception as exc:
+        return f"ERR: renderer hook for {name!r} raised: {exc}", view
+    try:
+        img = capture_widget(widget)
+    except HeadlessCaptureError as exc:
+        return f"ERR: headless capture: {exc}", view
+    except CaptureError as exc:
+        return f"ERR: capture failed: {exc}", view
+    path = baselines_dir() / f"{name}.png"
+    try:
+        img.save(path, format="PNG")
+    except Exception as exc:
+        return f"ERR: writing baseline PNG raised: {exc}", view
+    return f"OK: captured {name!r} -> {path}", view
+
+
+def _cmd_visual_regression_compare(
+    engine: Engine, view: View, *args
+) -> Tuple[str, View]:
+    """Compare the current scene against its baseline (SPEC-080).
+
+    Usage::
+
+        visual-regression-compare <name>
+
+    Drives the capture-and-compare cycle. Returns the SSIM score
+    plus a one-line summary; failure artifacts get written to
+    ``tests/visual_regression/failures/`` per the runner contract.
+
+    Status codes the verb may surface:
+
+    - ``pass`` / ``fail`` — comparison ran; threshold cleared or not.
+    - ``baseline_missing`` — no PNG yet; record a baseline first via
+      ``visual-regression-capture``.
+    - ``unknown_baseline`` — name not in the manifest.
+    - ``headless`` / ``capture_error`` — capture surface couldn't run.
+    """
+    if not args:
+        return "ERR: visual-regression-compare requires <name>", view
+    name = args[0]
+    try:
+        from tools.visual_regression.runner import run_baseline
+    except Exception as exc:
+        return f"ERR: visual_regression unavailable: {exc}", view
+    try:
+        result = run_baseline(name)
+    except Exception as exc:
+        return f"ERR: run_baseline raised: {exc}", view
+    prefix = "OK" if result.passed else "ERR"
+    parts = [f"status={result.status}"]
+    if result.compare is not None:
+        parts.append(f"score={result.compare.score:.4f}")
+        parts.append(f"threshold={result.compare.threshold:.2f}")
+    if result.capture_path is not None:
+        parts.append(f"failure_artifact={result.capture_path}")
+    if result.error:
+        parts.append(f"reason={result.error}")
+    return f"{prefix}: {name} {' '.join(parts)}", view
+
+
+def _cmd_visual_regression_list(
+    engine: Engine, view: View, *_
+) -> Tuple[str, View]:
+    """List baselines registered in the default manifest (SPEC-080).
+
+    Usage::
+
+        visual-regression-list
+
+    One row per baseline with the slug, threshold (if set), tags,
+    and a flag indicating whether the baseline PNG exists on disk.
+    """
+    try:
+        from tools.visual_regression.manifest import default_manifest
+        from tools.visual_regression.runner import baselines_dir
+    except Exception as exc:
+        return f"ERR: visual_regression unavailable: {exc}", view
+    manifest = default_manifest()
+    if not len(manifest):
+        return (
+            "no baselines registered in the default manifest "
+            "(SPEC-069 populates production scenes)",
+            view,
+        )
+    base_dir = baselines_dir()
+    lines = [f"baselines ({len(manifest)} registered):"]
+    for spec in manifest:
+        png_path = base_dir / f"{spec.name}.png"
+        png_state = "[has PNG]" if png_path.exists() else "[no PNG yet]"
+        bits = [png_state]
+        if spec.threshold is not None:
+            bits.append(f"threshold={spec.threshold:.2f}")
+        if spec.tags:
+            bits.append(f"tags={list(spec.tags)}")
+        desc = f" — {spec.description}" if spec.description else ""
+        lines.append(f"  {spec.name:24s}  {' '.join(bits)}{desc}")
+    return "\n".join(lines), view
+
+
 def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     """Return the canonical command-grammar list — what verbs the CLI
     supports. Equivalent to rendering a TextRenderer-wrapped scene and
@@ -624,6 +768,9 @@ def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     lines.append("  set-active-session <id|name>    -- set the active chat target (SPEC-068)")
     lines.append("  copy-module <node-id>           -- serialize node + subtree to JSON text (SPEC-073)")
     lines.append("  paste-module <json>             -- instantiate module from JSON text (SPEC-073)")
+    lines.append("  visual-regression-capture <name> -- capture current scene to baseline PNG (SPEC-080)")
+    lines.append("  visual-regression-compare <name> -- compare current scene against baseline (SPEC-080)")
+    lines.append("  visual-regression-list           -- list registered baselines + their PNG state (SPEC-080)")
     return "\n".join(lines), view
 
 
@@ -649,6 +796,9 @@ _COMMANDS = {
     "set-active-session": _cmd_set_active_session,
     "copy-module": _cmd_copy_module,
     "paste-module": _cmd_paste_module,
+    "visual-regression-capture": _cmd_visual_regression_capture,
+    "visual-regression-compare": _cmd_visual_regression_compare,
+    "visual-regression-list": _cmd_visual_regression_list,
     "list-commands": _cmd_list_commands,
 }
 

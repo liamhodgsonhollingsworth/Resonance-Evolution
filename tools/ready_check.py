@@ -635,6 +635,121 @@ def _check_transcript_reader(verbose: bool) -> Tuple[bool, str]:
     )
 
 
+def _check_visual_regression(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-080: the visual-regression pipeline (PIL + scikit-image)
+    must round-trip an in-memory capture-and-compare cleanly.
+
+    Probe shape:
+
+    1. Import the package (catches missing PIL / scikit-image).
+    2. Confirm the baselines + failures directories are present /
+       creatable (catches a deleted ``tests/visual_regression/``).
+    3. Run a synthetic capture-and-compare round-trip against a
+       fixture 32x32 baseline + a stub Tk widget + a swapped grabber.
+       This exercises the whole pipeline (capture surface + compare
+       surface + runner) without needing a display, so the probe
+       runs anywhere.
+
+    Catches: dependency drift (PIL or scikit-image uninstalled), a
+    regression in the manifest contract, or the runner's path
+    resolution breaking. Headless-safe — uses the test grab-hook
+    so no display is required.
+    """
+    try:
+        from PIL import Image
+    except Exception as exc:
+        return False, f"PIL.Image import failed: {exc}"
+    try:
+        from skimage.metrics import structural_similarity  # noqa: F401
+    except Exception as exc:
+        return False, f"scikit-image import failed: {exc}"
+    try:
+        from tools.visual_regression import (
+            BaselineManifest,
+            BaselineSpec,
+            baselines_dir,
+            failures_dir,
+            run_baseline,
+        )
+        from tools.visual_regression import capture as _capture_mod
+    except Exception as exc:
+        return False, f"tools.visual_regression import failed: {exc}"
+
+    # Baselines / failures directories are creatable.
+    try:
+        baselines_dir()
+        failures_dir()
+    except Exception as exc:
+        return False, f"could not create visual-regression artifact dirs: {exc}"
+
+    # Synthetic round-trip — capture a stub widget at 32x32 via a
+    # swapped grabber, compare against an identical baseline.
+    import tempfile
+
+    class _StubWidget:
+        def winfo_rootx(self): return 0
+        def winfo_rooty(self): return 0
+        def winfo_width(self): return 32
+        def winfo_height(self): return 32
+        def update_idletasks(self): pass
+        def update(self): pass
+
+    def _fake_grab(bbox):
+        # 32x32 solid 128-gray RGB image.
+        return Image.new(
+            "RGB",
+            (bbox[2] - bbox[0], bbox[3] - bbox[1]),
+            color=(128, 128, 128),
+        )
+
+    saved_hook = _capture_mod._GRAB_HOOK
+    saved_delay = _capture_mod._PUMP_DELAY_S
+    try:
+        _capture_mod._GRAB_HOOK = _fake_grab
+        _capture_mod._PUMP_DELAY_S = 0.0
+
+        with tempfile.TemporaryDirectory() as td:
+            from pathlib import Path as _Path
+            tmp_root = _Path(td)
+            # Build a temporary manifest with a single fixture entry.
+            manifest = BaselineManifest()
+            manifest.register(
+                BaselineSpec(
+                    name="ready_check_probe",
+                    renderer=lambda: _StubWidget(),
+                    description="visual_regression probe fixture",
+                )
+            )
+            # Establish the fixture baseline.
+            baseline_path = (
+                baselines_dir(tmp_root) / "ready_check_probe.png"
+            )
+            Image.new("RGB", (32, 32), color=(128, 128, 128)).save(baseline_path)
+            # Round-trip.
+            result = run_baseline(
+                "ready_check_probe", manifest=manifest, root=tmp_root,
+            )
+    finally:
+        _capture_mod._GRAB_HOOK = saved_hook
+        _capture_mod._PUMP_DELAY_S = saved_delay
+
+    if not result.passed:
+        return False, (
+            f"synthetic round-trip failed: status={result.status} "
+            f"error={result.error!r}"
+        )
+    if result.compare is None or result.compare.score < 0.99:
+        return False, (
+            f"synthetic round-trip score unexpectedly low: "
+            f"{result.compare.score if result.compare else None!r}"
+        )
+    return True, (
+        f"visual_regression pipeline healthy: PIL + scikit-image "
+        f"available, synthetic round-trip SSIM="
+        f"{result.compare.score:.4f}"
+    )
+
+
 CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("engine_discover", _check_engine_discover),
     ("scene_precompute", _check_scene_precompute),
@@ -652,6 +767,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("active_sessions", _check_active_sessions),
     ("chat_routing", _check_chat_routing),
     ("module_clipboard", _check_module_clipboard),
+    ("visual_regression", _check_visual_regression),
     ("file_source_path_confinement", _check_file_source_path_confinement),
 ]
 
