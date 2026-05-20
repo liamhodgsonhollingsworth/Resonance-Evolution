@@ -239,14 +239,21 @@ def test_submit_chat_with_no_active_session_reports_no_route():
 
 def test_smoke_executes_every_verb_without_error():
     """The CLI smoke test must execute end-to-end without raising. This
-    is the canonical 'session validated GUI without launching' check."""
+    is the canonical 'session validated GUI without launching' check.
+    The driver must be in a clean final state: Ctrl released and the
+    initial Tasks tab active.
+    """
     drv = GuiDriver()
     report = _smoke(drv)
     assert len(report) > 5, "smoke should record multiple steps"
-    # The final step must reflect Ctrl-release.
-    last_state = report[-1]["state"]
-    assert "ctrl_held" in last_state
-    assert last_state["ctrl_held"] is False
+    # Final state-of-driver: Ctrl released and Tasks active.
+    final = drv.read_state()
+    assert final["ctrl_held"] is False
+    assert final["current_view"] == "Tasks"
+    # And the smoke must have exercised the SPEC-067 verbs.
+    step_names = [s["step"] for s in report]
+    assert any("set_view" in n for n in step_names), "smoke skipped set_view"
+    assert any("register_view" in n for n in step_names), "smoke skipped register_view"
 
 
 def test_smoke_archives_a_tab():

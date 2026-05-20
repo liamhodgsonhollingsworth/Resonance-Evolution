@@ -244,6 +244,44 @@ class GuiDriver:
         new_scale = self.shell._sidebar_scale + (delta_y / 200.0)
         return self.shell.set_sidebar_scale(new_scale)
 
+    # ----- SPEC-067 view-as-menu verbs -----
+
+    def set_view(self, name: str) -> bool:
+        """Activate a registered view (SPEC-067). Returns True on
+        success. Restores the view first if it was archived."""
+        return self.shell.set_view(name)
+
+    def current_view(self) -> Optional[str]:
+        """Name of the currently-active view, or None if no view has
+        been activated yet."""
+        return self.shell.current_view()
+
+    def list_views(self) -> List[str]:
+        """Names of visible registered views in display order."""
+        return self.shell.list_views()
+
+    def archived_views(self) -> List[str]:
+        """Names of archived (but registered) views."""
+        return self.shell.view_registry.archived_names()
+
+    def restore_view(self, name: str) -> bool:
+        """Restore a previously-archived view to the sidebar."""
+        return self.shell.restore_view(name)
+
+    def register_view(self, spec: Any) -> None:
+        """Register a new view at runtime. ``spec`` must be a
+        ``ViewSpec`` instance (imported via
+        ``tools.workflow_gui.view_registry``)."""
+        self.shell.register_view(spec)
+
+    def view_kind(self, name: str) -> Optional[str]:
+        """Return the kind of a registered view (``source``,
+        ``gui_inbox``, ``3d``, ``text``, etc.), or None if unknown."""
+        spec = self.shell.view_registry.get(name)
+        return spec.kind if spec is not None else None
+
+    # ----- chat -----
+
     def submit_chat(self, text: str, *, active_session_id: Optional[str] = None) -> Dict[str, Any]:
         """Drive the chat submit path. Returns the resulting send-log
         entry from the stub SessionManager (so callers can assert
@@ -271,6 +309,12 @@ class GuiDriver:
             "expanded_item_id": self.shell._expanded_item_id,
             "active_session_id": self.shell.active_session_id,
             "tab_count": len(self.shell._tab_order),
+            # SPEC-067 surfaces — visible + archived view names so
+            # tests can read the registry state without poking shell
+            # internals.
+            "visible_views": self.shell.view_registry.names(),
+            "archived_views": self.shell.view_registry.archived_names(),
+            "current_view": self.shell.current_view(),
         }
 
     def tab_order(self) -> List[str]:
@@ -339,6 +383,56 @@ def _smoke(drv: GuiDriver) -> List[Dict[str, Any]]:
         {"tooltip": basic, "ctrl_held": drv.read_state()["ctrl_held"]},
     )
 
+    # ----- SPEC-067 view-as-menu coverage -----
+
+    visible_before = drv.list_views()
+    step(
+        "list_views (initial)",
+        {"count": len(visible_before), "views": visible_before},
+    )
+
+    drv.set_view("Logs")
+    step(
+        "set_view('Logs') — built-in text view demonstrating one-config-away extension",
+        {"current_view": drv.current_view()},
+    )
+
+    drv.set_view("Inbox")
+    step(
+        "set_view('Inbox') — round-trip back to gui-direct view",
+        {"current_view": drv.current_view()},
+    )
+
+    # Register a fresh ad-hoc view at runtime and switch to it. Proves
+    # the registry is mutable from the driver surface (the use-case
+    # the maintainer's directive names: every node-collection is
+    # reachable as a menu, including ones added after launch).
+    from tools.workflow_gui.view_registry import ViewSpec
+
+    drv.register_view(
+        ViewSpec(
+            name="Smoke Test",
+            kind="text",
+            description="Synthetic view created mid-smoke to verify register_view + set_view.",
+            text_body="This view was registered at runtime by the gui_test_driver smoke.",
+        )
+    )
+    drv.set_view("Smoke Test")
+    step(
+        "register_view + set_view('Smoke Test') — runtime extensibility",
+        {
+            "current_view": drv.current_view(),
+            "visible_count": len(drv.list_views()),
+        },
+    )
+    # Switch back to a built-in view so the final state matches what
+    # downstream callers expect.
+    drv.set_view("Tasks")
+    step(
+        "set_view('Tasks') — restore default starting tab",
+        {"current_view": drv.current_view()},
+    )
+
     drv.close()
     return out
 
@@ -389,6 +483,17 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(drv.ctrl_drag(args.delta_y))
         elif verb_name == "submit-chat":
             print(drv.submit_chat(args.args[0], active_session_id=args.active_session))
+        elif verb_name == "set-view":
+            ok = drv.set_view(args.args[0])
+            print(f"set_view({args.args[0]!r}) -> {ok}")
+        elif verb_name == "list-views":
+            for name in drv.list_views():
+                print(name)
+        elif verb_name == "current-view":
+            print(drv.current_view())
+        elif verb_name == "restore-view":
+            ok = drv.restore_view(args.args[0])
+            print(f"restore_view({args.args[0]!r}) -> {ok}")
         else:
             sys.stderr.write(f"unknown verb: {verb_name!r}\n")
             return 2

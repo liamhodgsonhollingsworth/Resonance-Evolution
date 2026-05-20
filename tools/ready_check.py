@@ -287,6 +287,87 @@ def _check_gui_test_driver_smoke(verbose: bool) -> Tuple[bool, str]:
     return True, f"gui smoke executed {len(report)} verbs cleanly; final state nominal"
 
 
+def _check_view_registry(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-067: the workflow GUI exposes a view registry whose
+    ``set-view`` text command + gui_test_driver verbs let any caller
+    enumerate, switch, archive, and restore views without launching Tk.
+
+    Probe: load the default registry, assert every Arc K tab is
+    present, exercise set/archive/restore + register a runtime view +
+    set-view it via the text-API, then confirm legacy mirrors stay in
+    sync. Headless — no Tk root required.
+    """
+    try:
+        from tools.gui_test_driver import GuiDriver
+        from tools.text_test import dispatch_command
+        from tools.workflow_gui.view_registry import (
+            ViewSpec,
+            default_view_registry,
+        )
+    except Exception as exc:
+        return False, f"view registry import failed: {exc}"
+
+    reg = default_view_registry()
+    required = {
+        "Tasks", "Ideas", "Wishlist", "Inbox", "Chat",
+        "Quarantine", "Trusted Senders", "3D", "Logs",
+    }
+    missing = required - set(reg.names())
+    if missing:
+        return False, f"default registry missing views: {sorted(missing)}"
+
+    # Drive a fresh GuiDriver through every SPEC-067 verb.
+    drv = GuiDriver()
+    drv.build()
+    if drv.set_view("Ideas") is not True:
+        return False, "set_view('Ideas') did not activate"
+    if drv.current_view() != "Ideas":
+        return False, f"current_view() = {drv.current_view()!r} after set_view"
+
+    # Archive + restore round-trip preserves the visible list.
+    initial = list(drv.list_views())
+    drv.hold_ctrl()
+    drv.ctrl_click("Quarantine")
+    if "Quarantine" not in drv.archived_views():
+        return False, "archive did not register in archived_views"
+    drv.restore_view("Quarantine")
+    if drv.list_views() != initial:
+        return False, (
+            f"archive/restore drifted: initial={initial!r} after={drv.list_views()!r}"
+        )
+
+    # Runtime registration is one ViewSpec away.
+    drv.register_view(
+        ViewSpec(
+            name="ReadyCheckView",
+            kind="text",
+            description="probe-internal view",
+            text_body="ok",
+        )
+    )
+    if "ReadyCheckView" not in drv.list_views():
+        return False, "register_view did not surface in list_views"
+    if drv.set_view("ReadyCheckView") is not True:
+        return False, "set_view on runtime-registered view failed"
+
+    # text-API set-view command resolves end-to-end.
+    msg, _ = dispatch_command(drv.shell.engine, "set-view Tasks")
+    if not msg.startswith("OK"):
+        return False, f"text-API set-view did not return OK: {msg!r}"
+    if drv.current_view() != "Tasks":
+        return False, f"text-API set-view did not switch (current={drv.current_view()!r})"
+
+    # list-views text-API surfaces every registered view.
+    msg, _ = dispatch_command(drv.shell.engine, "list-views")
+    if "Tasks" not in msg or "Logs" not in msg:
+        return False, "list-views output missing built-in entries"
+
+    return True, (
+        f"view registry healthy: {len(drv.list_views())} visible, "
+        f"set-view + archive/restore + register_view all functional"
+    )
+
+
 def _check_workflow_gui_module(verbose: bool) -> Tuple[bool, str]:
     """SPEC-065: the 2D Tk GUI shell module must import cleanly and
     expose its tab catalog + data providers. Headless probe — does not
@@ -370,6 +451,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("transcript_reader", _check_transcript_reader),
     ("workflow_gui_module", _check_workflow_gui_module),
     ("gui_test_driver_smoke", _check_gui_test_driver_smoke),
+    ("view_registry", _check_view_registry),
 ]
 
 
