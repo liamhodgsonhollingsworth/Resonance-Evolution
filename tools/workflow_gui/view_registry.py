@@ -436,7 +436,10 @@ def _active_sessions_items_provider(engine: Any) -> List[Dict[str, Any]]:
                     f"cwd={s.cwd}"
                 ),
                 "status": "alert" if s.is_stale else "in_progress",
-                "actions": ["expand"],
+                # SPEC-068: ``target`` makes this session the active
+                # chat target. Clicking the row sets the chat input
+                # to route to this session.
+                "actions": ["expand", "target"],
                 "meta": {"session_id": s.id, "project": s.project},
             }
         )

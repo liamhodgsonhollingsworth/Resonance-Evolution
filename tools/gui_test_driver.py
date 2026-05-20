@@ -148,6 +148,14 @@ class _StubSessionManager:
         self._records.append(rec)
         return rec
 
+    def reactivate(self, sid: str) -> Optional[_StubSession]:
+        """Flip an archived/idle session back to active (SPEC-068)."""
+        for r in self._records:
+            if r.id == sid:
+                r.status = "active"
+                return r
+        return None
+
     def shutdown(self) -> None:
         self.shutdown_called = True
 
@@ -331,6 +339,31 @@ class GuiDriver:
         """Convenience: point the driver's engine at a tmp state dir
         so tests don't write into the real state directory."""
         self.shell.engine.active_sessions_state_dir = path
+
+    # ----- SPEC-068 chat routing -----
+
+    def route_chat(self, text: str) -> Dict[str, Any]:
+        """Drive the chat routing layer (SPEC-068). Returns the
+        routing decision dict the shell produced.
+
+        Bare text → active session. ``@<name|id> body`` → that
+        session, reactivating if archived. ``/all body`` → broadcast
+        to non-archived sessions. Empty body → no-op.
+        """
+        return self.shell.route_chat(text)
+
+    def set_active_session(self, sid_or_name: str) -> Optional[str]:
+        """Set the active chat target. Accepts id, display_name, or
+        id-prefix (≥4 chars). Returns the resolved id or None.
+
+        SPEC-068 acceptance: clicking a row in the Chat or Sessions
+        view selects that session as the active chat target.
+        """
+        return self.shell.set_active_session(sid_or_name)
+
+    def active_session(self) -> Optional[str]:
+        """Return the current active session id."""
+        return self.shell.active_session_id
 
     # ----- chat -----
 

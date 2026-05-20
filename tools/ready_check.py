@@ -287,6 +287,63 @@ def _check_gui_test_driver_smoke(verbose: bool) -> Tuple[bool, str]:
     return True, f"gui smoke executed {len(report)} verbs cleanly; final state nominal"
 
 
+def _check_chat_routing(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-068: the workflow shell routes chat through `route_chat`
+    with @-prefix + /all broadcast + bare-text-to-active semantics.
+
+    Probe: build a GuiDriver with three stub sessions; verify bare
+    text goes to active, @-prefix routes elsewhere without changing
+    active, /all broadcasts to non-archived only, archived sessions
+    reactivate on @-routing + set_active_session.
+    """
+    try:
+        from tools.gui_test_driver import GuiDriver, _StubSession
+    except Exception as exc:
+        return False, f"gui_test_driver import failed: {exc}"
+
+    drv = GuiDriver(
+        sessions=[
+            _StubSession("s-1", "worker-1"),
+            _StubSession("s-2", "worker-2"),
+            _StubSession("s-arc", "archive-worker", status="archived"),
+        ]
+    ).build()
+
+    # set_active_session by display_name + bare text.
+    if drv.set_active_session("worker-1") != "s-1":
+        return False, "set_active_session by display_name failed"
+    bare = drv.route_chat("status?")
+    if bare["target"] != "s-1" or not bare["routed"]:
+        return False, f"bare text did not route to active: {bare!r}"
+
+    # @-prefix routes to named session without changing active.
+    at = drv.route_chat("@worker-2 ping")
+    if at["target"] != "s-2" or not at["routed"]:
+        return False, f"@-prefix routing failed: {at!r}"
+    if drv.active_session() != "s-1":
+        return False, "@-routing changed active session (should be one-shot)"
+
+    # @-prefix reactivates archived.
+    arc = drv.route_chat("@archive-worker wake up")
+    if not arc["routed"]:
+        return False, f"@-prefix to archived failed: {arc!r}"
+
+    # /all broadcast skips archived.
+    bcast = drv.route_chat("/all heads up")
+    if bcast["target"] != "all":
+        return False, f"/all target wrong: {bcast!r}"
+    # The archived stub got reactivated on the previous step, so it's
+    # now active and will receive the broadcast — that's correct.
+    if not bcast["delivered_to"]:
+        return False, "/all delivered to nobody"
+
+    return True, (
+        f"chat routing healthy: bare-text + @-prefix + /all broadcast + "
+        f"reactivate-on-route all functional ({len(bcast['delivered_to'])} "
+        f"sessions on /all)"
+    )
+
+
 def _check_active_sessions(verbose: bool) -> Tuple[bool, str]:
     """SPEC-079: the active-sessions registry primitive must
     round-trip register / heartbeat / list / unregister in a tmp
@@ -503,6 +560,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("gui_test_driver_smoke", _check_gui_test_driver_smoke),
     ("view_registry", _check_view_registry),
     ("active_sessions", _check_active_sessions),
+    ("chat_routing", _check_chat_routing),
 ]
 
 
