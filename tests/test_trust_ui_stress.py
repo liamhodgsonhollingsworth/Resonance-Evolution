@@ -84,19 +84,58 @@ def _spawn_trusted(engine, root: Path, user: str = "LHH"):
 def test_quarantine_source_scales_to_500_messages(engine, tmp_path: Path):
     """A maintainer with a backlog of quarantined messages should still
     open the panel in a reasonable time. 500 messages here is well above
-    realistic; the actual upper bound depends on file I/O."""
+    realistic; the actual upper bound depends on file I/O.
+
+    The QuarantineSource now defaults to max_items=50 for fast launch
+    even with a backlog. This test overrides max_items to 500 to
+    explicitly probe the un-bounded scan path.
+    """
     state_dir = tmp_path / "state" / "workflow"
     ts = sender_trust_set(tmp_path, user="LHH")
     inbox = _make_inbox(state_dir, ts)
     for i in range(500):
         _post(inbox, sender=f"attacker-{i}", summary=f"msg-{i}")
+    engine.spawn(
+        "qsrc",
+        "QuarantineSource",
+        params={
+            "root": str(tmp_path),
+            "state_dir": str(state_dir),
+            "user": "LHH",
+            "alethea_cc_root": "none",
+            "max_items": 500,
+        },
+    )
+    engine.spawn(
+        "qpanel",
+        "ListRenderer",
+        params={"title_text": "Q", "screen_resolution": 96},
+        connections={"source": "qsrc"},
+    )
     t0 = time.perf_counter()
-    _spawn_quarantine(engine, tmp_path, state_dir)
+    engine.precompute()
     elapsed = time.perf_counter() - t0
     assert len(engine.cache["qsrc"]["items"]) == 500
     # 500 messages should precompute in well under 30 seconds on any
     # machine; the bound is loose so a slow CI still passes.
     assert elapsed < 30.0, f"quarantine precompute took {elapsed:.1f}s for 500 msgs"
+
+
+def test_quarantine_source_default_max_items_caps_scan(engine, tmp_path: Path):
+    """The default max_items=50 protects launch time. Even with 200
+    messages on disk, the panel surfaces only the most-recent 50."""
+    state_dir = tmp_path / "state" / "workflow"
+    ts = sender_trust_set(tmp_path, user="LHH")
+    inbox = _make_inbox(state_dir, ts)
+    for i in range(200):
+        _post(inbox, sender=f"x-{i}", summary=f"msg-{i}")
+    _spawn_quarantine(engine, tmp_path, state_dir)
+    items = engine.cache["qsrc"]["items"]
+    assert len(items) == 50, f"expected 50-item cap, got {len(items)}"
+    # The 50 surfaced should be the most-recent (highest message-index).
+    senders = {it["meta"]["sender"] for it in items}
+    assert "x-199" in senders
+    assert "x-0" not in senders
 
 
 def test_trusted_senders_source_scales_to_1000_entries(engine, tmp_path: Path):

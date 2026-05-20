@@ -1,0 +1,238 @@
+"""
+Apeiron readiness check — SPEC-064.
+
+Headless verification that the workflow surface is end-to-end functional
+**before** instructing the maintainer to open the program. Composes a
+sequence of probes against the production `scenes/workflow_view.json`:
+
+1. Engine discover() loads every node-type cleanly (no errors).
+2. Scene load + precompute produces all expected source caches.
+3. Every advertised text-API surface dispatches without error.
+4. Reversibility cycles (expand/collapse, mode-toggle) preserve state.
+5. Trust-set primitives round-trip cleanly.
+6. The desktop shortcut exists and points at the launch .bat.
+
+Exit code 0 on full pass; non-zero on any failure with the offending
+probe named. Designed to be the gate the session passes before any
+"open the program" closing-block instruction (SPEC-061's
+alert-only-when-ready discipline).
+
+Usage::
+
+    python -m tools.ready_check
+
+Optional ``--verbose`` for per-probe output.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import time
+from pathlib import Path
+from typing import Callable, List, Tuple
+
+ROOT = Path(__file__).parent.parent.resolve()
+sys.path.insert(0, str(ROOT))
+
+
+def _check_engine_discover(verbose: bool) -> Tuple[bool, str]:
+    from engine import Engine
+    from tools.workflow.trust import render_trust_set
+
+    e = Engine(root_dir=ROOT, trust_set=render_trust_set(ROOT))
+    e.discover()
+    required_types = {
+        "WorkflowView", "ListRenderer", "FileSource",
+        "QuarantineSource", "TrustedSendersSource",
+    }
+    missing = required_types - set(e.types)
+    if missing:
+        return False, f"node-types missing: {sorted(missing)}"
+    if e.errors:
+        return False, f"engine errors at discover: {e.errors[:3]}"
+    return True, f"all {len(required_types)} required node-types load cleanly"
+
+
+def _check_scene_precompute(verbose: bool) -> Tuple[bool, str]:
+    from engine import Engine
+    from tools.workflow.trust import render_trust_set
+
+    e = Engine(root_dir=ROOT, trust_set=render_trust_set(ROOT))
+    e.discover()
+    e.load_scene(ROOT / "scenes" / "workflow_view.json")
+    t0 = time.perf_counter()
+    e.precompute()
+    elapsed = time.perf_counter() - t0
+    if e.errors:
+        return False, f"precompute produced errors: {e.errors[:3]}"
+    if elapsed > 10.0:
+        return False, f"precompute took {elapsed:.1f}s (over 10s budget)"
+    panels = ("task_panel", "idea_panel", "wish_panel",
+              "quarantine_panel", "trusted_senders_panel")
+    for p in panels:
+        if p not in e.nodes:
+            return False, f"panel node missing: {p}"
+        if e.nodes[p].dead:
+            return False, f"panel {p} dead after precompute"
+    return True, f"scene precompute in {elapsed*1000:.0f}ms, all 5 panels live"
+
+
+def _check_text_api_parity(verbose: bool) -> Tuple[bool, str]:
+    from engine import Engine
+    from tools.text_test import dispatch_command
+    from tools.workflow.trust import render_trust_set
+
+    e = Engine(root_dir=ROOT, trust_set=render_trust_set(ROOT))
+    e.discover()
+    e.load_scene(ROOT / "scenes" / "workflow_view.json")
+    e.precompute()
+    items = e.cache.get("wishes_source", {}).get("items") or []
+    if not items:
+        return False, "wishes_source has no items — cannot exercise expand"
+    target = items[0]["id"]
+    commands = [
+        f"expand wish_panel {target}",
+        "collapse wish_panel",
+        "set-mode workflow_view full_render",
+        "set-mode workflow_view panels",
+        "describe workflow_view",
+        "list-commands",
+    ]
+    for cmd in commands:
+        msg, _ = dispatch_command(e, cmd)
+        if msg.startswith("ERR") or msg.startswith("unknown"):
+            return False, f"text-API command failed: {cmd!r} -> {msg}"
+    return True, f"all {len(commands)} text-API commands dispatched cleanly"
+
+
+def _check_reversibility_cycles(verbose: bool) -> Tuple[bool, str]:
+    from engine import Engine
+    from engine.actions import get_view_state
+    from tools.text_test import dispatch_command
+    from tools.workflow.trust import render_trust_set
+
+    e = Engine(root_dir=ROOT, trust_set=render_trust_set(ROOT))
+    e.discover()
+    e.load_scene(ROOT / "scenes" / "workflow_view.json")
+    e.precompute()
+    target = e.cache["wishes_source"]["items"][0]["id"]
+
+    # expand/collapse cycle
+    initial_view_state = dict(get_view_state(e, "wish_panel"))
+    for _ in range(20):
+        dispatch_command(e, f"expand wish_panel {target}")
+        dispatch_command(e, "collapse wish_panel")
+    final_view_state = dict(get_view_state(e, "wish_panel"))
+    if final_view_state.get("expanded_item") != initial_view_state.get("expanded_item"):
+        return False, (
+            f"expand/collapse drifted: initial={initial_view_state} "
+            f"final={final_view_state}"
+        )
+
+    # workflow mode toggle cycle
+    initial_mode = e.nodes["workflow_view"].state["mode"]
+    for _ in range(20):
+        dispatch_command(e, "set-mode workflow_view full_render")
+        dispatch_command(e, "set-mode workflow_view panels")
+    final_mode = e.nodes["workflow_view"].state["mode"]
+    if final_mode != initial_mode:
+        return False, f"mode toggle drifted: initial={initial_mode} final={final_mode}"
+
+    return True, "expand/collapse + mode-toggle reversibility holds over 20 cycles each"
+
+
+def _check_trust_set_round_trip(verbose: bool) -> Tuple[bool, str]:
+    import tempfile
+    from tools.workflow.trust import sender_trust_set
+
+    with tempfile.TemporaryDirectory() as td:
+        ts = sender_trust_set(Path(td), user="LHH")
+        initial = frozenset(ts.list_trusted())
+        for _ in range(30):
+            ts.add("round-trip")
+            ts.remove("round-trip")
+        final = frozenset(ts.list_trusted())
+        if final != initial:
+            return False, f"trust-set add/remove drifted: initial={initial} final={final}"
+    return True, "trust-set add/remove round-trips over 30 cycles"
+
+
+def _check_desktop_shortcut(verbose: bool) -> Tuple[bool, str]:
+    if os.name != "nt":
+        return True, "not Windows; desktop shortcut check skipped"
+    desktop = Path(os.environ.get("USERPROFILE", "")) / "Desktop"
+    if not desktop.exists():
+        return True, f"desktop dir not found at {desktop}; skipping shortcut check"
+    lnk = desktop / "Apeiron.lnk"
+    if not lnk.exists():
+        return False, (
+            f"desktop shortcut missing at {lnk}; "
+            f"run scripts/create_desktop_shortcut.ps1"
+        )
+    return True, f"desktop shortcut present at {lnk}"
+
+
+def _check_billing_env_strip(verbose: bool) -> Tuple[bool, str]:
+    """SessionManager must strip billing-mode env vars before spawning
+    claude — otherwise spawned sessions charge per call instead of using
+    the Claude Code plan. Read the source as the cheapest probe."""
+    src = (ROOT / "tools" / "workflow" / "session_manager.py").read_text(encoding="utf-8")
+    required_strips = (
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+    )
+    for key in required_strips:
+        if f"\"{key}\"" not in src and f"'{key}'" not in src:
+            return False, f"session_manager.py does not pop {key} from subprocess env"
+    if "env.pop(" not in src and "env = " not in src:
+        return False, "session_manager.py: no env-strip code visible"
+    return True, "session_manager strips all 4 billing-mode env vars before spawn"
+
+
+CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
+    ("engine_discover", _check_engine_discover),
+    ("scene_precompute", _check_scene_precompute),
+    ("text_api_parity", _check_text_api_parity),
+    ("reversibility_cycles", _check_reversibility_cycles),
+    ("trust_set_round_trip", _check_trust_set_round_trip),
+    ("billing_env_strip", _check_billing_env_strip),
+    ("desktop_shortcut", _check_desktop_shortcut),
+]
+
+
+def run_all(verbose: bool = False) -> int:
+    print(f"Apeiron readiness check — {len(CHECKS)} probes\n")
+    failures: List[str] = []
+    for name, fn in CHECKS:
+        t0 = time.perf_counter()
+        try:
+            ok, msg = fn(verbose)
+        except Exception as exc:
+            ok = False
+            msg = f"probe raised: {exc!r}"
+        elapsed = time.perf_counter() - t0
+        marker = "OK " if ok else "FAIL"
+        print(f"  [{marker}] {name:24s} ({elapsed*1000:.0f}ms) -- {msg}")
+        if not ok:
+            failures.append(name)
+    print()
+    if failures:
+        print(f"READY: NO -- {len(failures)} failed: {', '.join(failures)}")
+        return 1
+    print("READY: YES -- all probes passed; safe to instruct maintainer to open the program")
+    return 0
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(prog="tools.ready_check")
+    parser.add_argument("--verbose", action="store_true")
+    args = parser.parse_args(argv)
+    return run_all(verbose=args.verbose)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

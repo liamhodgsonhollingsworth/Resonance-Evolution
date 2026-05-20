@@ -43,11 +43,14 @@ def manifest() -> Manifest:
             "state_dir": "string",
             "user": "string",
             "alethea_cc_root": "string",
+            "max_items": "int",
         },
         outputs={"items": "list_of_dict"},
         description=(
             "Quarantined inbox messages with scan annotations. "
-            "Per-item actions: expand, promote-sender, delete."
+            "Per-item actions: expand, promote-sender, delete. "
+            "max_items bounds the per-precompute scan cost — messages "
+            "beyond the limit are listed by Inbox but not scanned."
         ),
     )
 
@@ -60,6 +63,12 @@ def build(params):
         # "" → auto-detect, "none" → skip the shared dir entirely
         # (tests pass "none" so the panel scopes to its tmp_path state).
         "alethea_cc_root": str(params.get("alethea_cc_root", "")),
+        # Bound scan cost so the workflow surface opens fast even when
+        # the maintainer has hundreds of accumulated quarantined
+        # messages. 50 covers a backlog at-a-glance; the rest still
+        # exist in the filesystem and can be inspected via direct
+        # Inbox calls or by raising this number on the panel.
+        "max_items": int(params.get("max_items", 50)),
     }
 
 
@@ -87,6 +96,13 @@ def precompute_hook(state, engine, node):
         quarantined = inbox.list_quarantine()
     except Exception as e:
         return {"items": [], "error": f"QuarantineSource: {e}"}
+
+    # Bound the scan cost. list_quarantine returns oldest-first; trim to
+    # the most-recent ``max_items`` so a backlog of hundreds doesn't
+    # explode precompute time at scene open.
+    max_items = max(1, int(state.get("max_items", 50)))
+    if len(quarantined) > max_items:
+        quarantined = quarantined[-max_items:]
 
     items: List[Dict[str, Any]] = []
     for msg in quarantined:
