@@ -1354,6 +1354,55 @@ def _run_buttons_as_nodes_probes(
     )
 
 
+def _check_email_side_channel(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-078: the email side-channel notifier is wired and probe-able.
+
+    Three probes — config readable when present, SMTP connection
+    succeeds against a dry-run flag without sending, env-var lookup
+    works.
+
+    Posture: email is optional, not a critical path. A fresh checkout
+    has no config file → probe returns ``(True, "skipped")``. A config
+    file present + ``enabled=True`` triggers the SMTP probe; auth /
+    network failures return ``(False, reason)``. The probe NEVER calls
+    ``send_message`` — only ``connect + login + quit``.
+    """
+    try:
+        from tools.email_notifier import (
+            EmailNotifierError,
+            build_notifier,
+            config_path,
+            load_config,
+        )
+    except Exception as exc:
+        return False, f"email_notifier import failed: {exc}"
+
+    # Default state dir for the running project — fall back to ROOT/state.
+    state_dir = ROOT / "state"
+    cfg_path = config_path(state_dir)
+    if not cfg_path.exists():
+        # Fresh checkout — email is optional.
+        return True, "email_config.json not present; side-channel skipped"
+
+    # Config present — must parse cleanly.
+    try:
+        cfg = load_config(state_dir)
+    except EmailNotifierError as exc:
+        return False, f"email config unreadable: {exc}"
+
+    if not cfg.enabled:
+        return True, "email_config.json present but enabled=False; side-channel skipped"
+
+    # Config present + enabled → probe SMTP connection (dry-run only).
+    try:
+        notifier = build_notifier(state_dir=state_dir)
+    except EmailNotifierError as exc:
+        return False, f"build_notifier failed: {exc}"
+
+    ok, msg = notifier.probe_connection()
+    return ok, msg
+
+
 CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("engine_discover", _check_engine_discover),
     ("scene_precompute", _check_scene_precompute),
@@ -1378,6 +1427,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("visual_contract", _check_visual_contract),
     ("buttons_as_nodes", _check_buttons_as_nodes),
     ("browser", _check_browser),
+    ("email_side_channel", _check_email_side_channel),
 ]
 
 
