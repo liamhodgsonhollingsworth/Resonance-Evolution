@@ -373,6 +373,17 @@ def default_view_registry() -> ViewRegistry:
             ),
             items_provider=_active_sessions_items_provider,
         ),
+        ViewSpec(
+            name="Archive",
+            kind="dynamic",
+            description=(
+                "Archived panels and views (SPEC-008). Right-click any "
+                "row to Restore. Restored panels reappear at their pre-"
+                "archive position; restored views return to their "
+                "registry-canonical sidebar position."
+            ),
+            items_provider=_archived_items_provider,
+        ),
     ):
         reg.register(spec)
     return reg
@@ -441,6 +452,83 @@ def _active_sessions_items_provider(engine: Any) -> List[Dict[str, Any]]:
                 # to route to this session.
                 "actions": ["expand", "target"],
                 "meta": {"session_id": s.id, "project": s.project},
+            }
+        )
+    return out
+
+
+def _archived_items_provider(engine: Any) -> List[Dict[str, Any]]:
+    """Items provider for the SPEC-008 Archive view.
+
+    Surfaces two row kinds:
+
+    - One row per archived *view* (from ``engine.view_registry``).
+      The Restore action calls ``shell.restore_view(name)``.
+    - One row per archived *panel handle* (from
+      ``engine.gui_shell._panel_handles`` where ``archived=True``).
+      The Restore action calls ``shell.restore_panel(node_id)``.
+
+    Composes with the SPEC-067 Restore mechanism: the Archive view is
+    the *surface* the maintainer uses to *find* what they archived;
+    the right-click menu on each row is the *action*.
+
+    Headless tests (no shell attached) see just the registry-level
+    archived views — gui_shell is None and the panel loop is skipped.
+    """
+    out: List[Dict[str, Any]] = []
+    reg = getattr(engine, "view_registry", None)
+    shell = getattr(engine, "gui_shell", None)
+    if reg is not None:
+        for name in reg.archived_names():
+            spec = reg.get(name)
+            out.append(
+                {
+                    "id": f"view:{name}",
+                    "title": f"[view] {name}",
+                    "body": (
+                        f"Archived view {name}.\n"
+                        f"kind: {getattr(spec, 'kind', '(unknown)')}\n"
+                        f"description: {getattr(spec, 'description', '')}\n"
+                        f"Right-click for Restore."
+                    ),
+                    "status": "cancelled",
+                    "meta": {"target_kind": "view", "target_id": name},
+                    "actions": ["expand", "restore"],
+                }
+            )
+    if shell is not None:
+        for pid, handle in shell._panel_handles.items():
+            if not handle.archived:
+                continue
+            out.append(
+                {
+                    "id": f"panel:{pid}",
+                    "title": f"[panel] {pid}  ({handle.view_name})",
+                    "body": (
+                        f"Archived panel {pid}.\n"
+                        f"view: {handle.view_name}\n"
+                        f"position: ({handle.x}, {handle.y}, "
+                        f"{handle.w}x{handle.h})\n"
+                        f"locked: {handle.locked}\n"
+                        f"Right-click for Restore."
+                    ),
+                    "status": "cancelled",
+                    "meta": {"target_kind": "panel", "target_id": pid},
+                    "actions": ["expand", "restore"],
+                }
+            )
+    if not out:
+        out.append(
+            {
+                "id": "archive-empty",
+                "title": "(nothing archived)",
+                "body": (
+                    "Archive views and panels via the right-click "
+                    "menu or Ctrl-click on a sidebar tab. Archived "
+                    "items appear here with a Restore action."
+                ),
+                "status": "ok",
+                "actions": ["expand"],
             }
         )
     return out

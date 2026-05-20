@@ -365,6 +365,49 @@ class GuiDriver:
         """Return the current active session id."""
         return self.shell.active_session_id
 
+    # ----- SPEC-007 movable / resizable / snap / lock panels -----
+
+    def move_panel(self, panel_id: str, x: int, y: int) -> Dict[str, Any]:
+        """Programmatic move (post-snap-grid math). Returns the panel
+        state dict. SPEC-007 acceptance: the resulting (x, y) is
+        snapped to the 12-px grid regardless of the input."""
+        return self.shell.move_panel(panel_id, x, y)
+
+    def resize_panel(self, panel_id: str, w: int, h: int) -> Dict[str, Any]:
+        """Programmatic resize (post-snap-grid math). SPEC-007: w/h
+        snap to 12-px and clamp to a 48 px minimum."""
+        return self.shell.resize_panel(panel_id, w, h)
+
+    def lock_panel(self, panel_id: str) -> bool:
+        """Lock a panel — subsequent move/resize verbs no-op. SPEC-007."""
+        return self.shell.lock_panel(panel_id)
+
+    def unlock_panel(self, panel_id: str) -> bool:
+        """Unlock a panel. Returns True on success."""
+        return self.shell.unlock_panel(panel_id)
+
+    def panel_state(self, panel_id: str) -> Dict[str, Any]:
+        """Return {panel_id, view_name, x, y, w, h, locked, archived}
+        for assertion. Empty dict if no handle exists."""
+        return self.shell.panel_state(panel_id)
+
+    def archive_panel(self, panel_id: str) -> bool:
+        """Archive a panel via the same code path the right-click menu
+        uses. Verifies the wiring without driving a real menu post.
+        SPEC-008."""
+        return self.shell.archive_panel(panel_id)
+
+    def restore_panel(self, panel_id: str) -> bool:
+        """Restore a previously-archived panel to its prior position."""
+        return self.shell.restore_panel(panel_id)
+
+    def ensure_panel(self, panel_id: str) -> Dict[str, Any]:
+        """Create a default-position handle for ``panel_id`` if absent.
+        Returns the resulting state. Used by tests that drive the
+        panel layer without first rendering the tab."""
+        self.shell._ensure_panel_handle(panel_id)
+        return self.shell.panel_state(panel_id)
+
     # ----- SPEC-073 copy/paste-as-text -----
 
     def copy_module(self, node_id: str) -> str:
@@ -406,6 +449,16 @@ class GuiDriver:
 
     def read_state(self) -> Dict[str, Any]:
         """Return a JSON-able snapshot of the GUI state machine."""
+        # SPEC-007 — surface the panel handle table so tests can
+        # assert move/resize/lock/archive without poking shell
+        # internals. Empty dict when no panels have been touched.
+        panel_handles: Dict[str, Dict[str, Any]] = {}
+        archived_panels: List[str] = []
+        for pid in self.shell._panel_handles:
+            state = self.shell.panel_state(pid)
+            panel_handles[pid] = state
+            if state.get("archived"):
+                archived_panels.append(pid)
         return {
             "active_tab": self.shell.active_tab,
             "ctrl_held": self.shell.ctrl_held,
@@ -420,6 +473,9 @@ class GuiDriver:
             "visible_views": self.shell.view_registry.names(),
             "archived_views": self.shell.view_registry.archived_names(),
             "current_view": self.shell.current_view(),
+            # SPEC-007 — panel positioning.
+            "panel_handles": panel_handles,
+            "archived_panels": archived_panels,
         }
 
     def tab_order(self) -> List[str]:
@@ -599,6 +655,31 @@ def main(argv: Optional[List[str]] = None) -> int:
         elif verb_name == "restore-view":
             ok = drv.restore_view(args.args[0])
             print(f"restore_view({args.args[0]!r}) -> {ok}")
+        # ----- SPEC-007 movable / resizable / snap / lock -----
+        elif verb_name == "move-panel":
+            pid, x, y = args.args[0], int(args.args[1]), int(args.args[2])
+            drv.ensure_panel(pid)
+            print(json.dumps(drv.move_panel(pid, x, y), default=str))
+        elif verb_name == "resize-panel":
+            pid, w, h = args.args[0], int(args.args[1]), int(args.args[2])
+            drv.ensure_panel(pid)
+            print(json.dumps(drv.resize_panel(pid, w, h), default=str))
+        elif verb_name == "lock-panel":
+            pid = args.args[0]
+            drv.ensure_panel(pid)
+            print(f"lock_panel({pid!r}) -> {drv.lock_panel(pid)}")
+        elif verb_name == "unlock-panel":
+            print(f"unlock_panel({args.args[0]!r}) -> {drv.unlock_panel(args.args[0])}")
+        elif verb_name == "panel-state":
+            pid = args.args[0]
+            drv.ensure_panel(pid)
+            print(json.dumps(drv.panel_state(pid), default=str))
+        elif verb_name == "archive-panel":
+            pid = args.args[0]
+            drv.ensure_panel(pid)
+            print(f"archive_panel({pid!r}) -> {drv.archive_panel(pid)}")
+        elif verb_name == "restore-panel":
+            print(f"restore_panel({args.args[0]!r}) -> {drv.restore_panel(args.args[0])}")
         else:
             sys.stderr.write(f"unknown verb: {verb_name!r}\n")
             return 2
