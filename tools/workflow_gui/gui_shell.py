@@ -627,6 +627,11 @@ class GuiShell:
             # SPEC-072 + SPEC-008: Ctrl-click archives the tab (sidebar
             # tab is hidden until restored from an archived-tabs list).
             btn.bind("<Control-Button-1>", lambda _e, n=name: self._archive_tab(n))
+            # SPEC-008 right-click context menu on sidebar buttons.
+            btn.bind("<Button-3>",
+                     lambda e, n=name: self._show_context_menu(e, "sidebar", n))
+            btn.bind("<Button-2>",
+                     lambda e, n=name: self._show_context_menu(e, "sidebar", n))
             # SPEC-072 verbatim ("holding control and dragging the
             # modules around resizes all of them inside the toolbar"):
             # Ctrl-button-press anchors the resize; Ctrl-drag scales all
@@ -1038,6 +1043,13 @@ class GuiShell:
                    lambda e, pid=panel_id: self._on_panel_drag_motion(e, pid))
             w.bind("<ButtonRelease-1>",
                    lambda e, pid=panel_id: self._on_panel_drag_release(e, pid))
+            # SPEC-008 right-click context menu. Bind both Button-3
+            # (Windows/Linux) and Button-2 (Mac default) so the menu
+            # opens regardless of platform / input device.
+            w.bind("<Button-3>",
+                   lambda e, pid=panel_id: self._show_context_menu(e, "panel", pid))
+            w.bind("<Button-2>",
+                   lambda e, pid=panel_id: self._show_context_menu(e, "panel", pid))
 
         # Action button strip (initially empty; populated when an item
         # is selected).
@@ -1321,6 +1333,202 @@ class GuiShell:
                     f"gui_shell restore_panel place: {exc}"
                 )
         return True
+
+    # ----- right-click context menu (v3) -----
+
+    def _show_context_menu(
+        self,
+        event: Any,
+        target_kind: str,
+        target_id: str,
+    ) -> Optional[Any]:
+        """Post a context menu at the cursor for a panel / sidebar /
+        treeview-row target. SPEC-008.
+
+        Items (in design-doc order):
+        1. Archive — calls archive_panel(target) for panel targets;
+           _archive_tab(target) for sidebar targets.
+        2. Restore — only enabled if the target is currently archived.
+        3. Copy module — calls copy_module_to_clipboard(target).
+        4. Paste module — calls paste_module_from_clipboard().
+        5. Lock / Unlock — toggle pair; label swaps based on is_locked.
+        6. Properties — opens a small read-only Toplevel showing the
+           panel handle dict.
+
+        Returns the constructed Menu widget (for tests) or None if
+        construction failed. The text-API test driver calls the
+        underlying methods directly; this method is what the user-
+        facing right-click actually invokes.
+        """
+        try:
+            import tkinter as tk
+        except Exception:
+            return None
+        if self.tk_root is None:
+            return None
+        menu = tk.Menu(self.tk_root, tearoff=0)
+
+        # 1. Archive.
+        if target_kind == "panel":
+            menu.add_command(
+                label="Archive panel",
+                command=lambda: self.archive_panel(target_id),
+            )
+        elif target_kind == "sidebar":
+            menu.add_command(
+                label="Archive view",
+                command=lambda: self._archive_tab(target_id),
+            )
+        else:
+            menu.add_command(label="Archive", state="disabled")
+
+        # 2. Restore — enabled only for archived targets.
+        is_archived = False
+        if target_kind == "panel":
+            handle = self._panel_handles.get(target_id)
+            is_archived = bool(handle and handle.archived)
+        elif target_kind == "sidebar":
+            is_archived = self.view_registry.is_archived(target_id)
+        if is_archived:
+            if target_kind == "panel":
+                menu.add_command(
+                    label="Restore panel",
+                    command=lambda: self.restore_panel(target_id),
+                )
+            else:
+                menu.add_command(
+                    label="Restore view",
+                    command=lambda: self.restore_view(target_id),
+                )
+        else:
+            menu.add_command(label="Restore", state="disabled")
+
+        # 3. Copy / 4. Paste — SPEC-073 wiring.
+        menu.add_separator()
+        menu.add_command(
+            label="Copy module",
+            command=lambda: self.copy_module_to_clipboard(target_id),
+        )
+        menu.add_command(
+            label="Paste module",
+            command=lambda: self.paste_module_from_clipboard(),
+        )
+
+        # 5. Lock / Unlock — only on panel targets.
+        if target_kind == "panel":
+            menu.add_separator()
+            if self.is_locked(target_id):
+                menu.add_command(
+                    label="Unlock panel",
+                    command=lambda: self.unlock_panel(target_id),
+                )
+            else:
+                menu.add_command(
+                    label="Lock panel",
+                    command=lambda: self.lock_panel(target_id),
+                )
+
+        # 6. Properties — read-only Toplevel.
+        menu.add_separator()
+        menu.add_command(
+            label="Properties",
+            command=lambda: self._show_panel_properties(target_kind, target_id),
+        )
+
+        # Post the menu at the cursor. Wrapped in try/except so a
+        # missing geometry from a synthesized event doesn't crash.
+        try:
+            menu.tk_popup(int(event.x_root), int(event.y_root))
+        except Exception:
+            pass
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+        return menu
+
+    def context_menu_items(self, target_kind: str, target_id: str) -> List[str]:
+        """Return the labels that the right-click menu would surface
+        for ``(target_kind, target_id)``. Public for tests: the verbs
+        gui_test_driver exposes drive the menu's actions, but tests
+        also need to assert which items the menu offers (e.g. that
+        "Unlock panel" appears when the target is locked).
+
+        Each entry is one of: ``"Archive panel"``, ``"Archive view"``,
+        ``"Restore panel"``, ``"Restore view"``, ``"Restore"`` (disabled
+        placeholder), ``"Copy module"``, ``"Paste module"``,
+        ``"Lock panel"``, ``"Unlock panel"``, ``"Properties"``.
+        """
+        items: List[str] = []
+        # 1. Archive.
+        if target_kind == "panel":
+            items.append("Archive panel")
+        elif target_kind == "sidebar":
+            items.append("Archive view")
+        else:
+            items.append("Archive")
+        # 2. Restore (enabled label vs disabled placeholder).
+        is_archived = False
+        if target_kind == "panel":
+            handle = self._panel_handles.get(target_id)
+            is_archived = bool(handle and handle.archived)
+        elif target_kind == "sidebar":
+            is_archived = self.view_registry.is_archived(target_id)
+        if is_archived:
+            items.append(
+                "Restore panel" if target_kind == "panel" else "Restore view"
+            )
+        else:
+            items.append("Restore")
+        # 3 + 4. Copy + Paste.
+        items.append("Copy module")
+        items.append("Paste module")
+        # 5. Lock / Unlock — panel only.
+        if target_kind == "panel":
+            items.append(
+                "Unlock panel" if self.is_locked(target_id) else "Lock panel"
+            )
+        # 6. Properties.
+        items.append("Properties")
+        return items
+
+    def _show_panel_properties(self, target_kind: str, target_id: str) -> Optional[Any]:
+        """Open a small read-only Toplevel showing the panel handle.
+
+        v1 read-only — the user can copy values out but can't edit.
+        Returns the Toplevel for tests; None on construction failure
+        or when called without a Tk root.
+        """
+        try:
+            import tkinter as tk
+        except Exception:
+            return None
+        if self.tk_root is None:
+            return None
+        win = tk.Toplevel(self.tk_root)
+        win.title(f"Properties — {target_id}")
+        win.geometry("320x220")
+        win.configure(bg="#1c1f26")
+        text = tk.Text(
+            win, bg="#15171c", fg="#e8e8ec",
+            font=("Helvetica", 10), relief="flat",
+            wrap="word",
+        )
+        if target_kind == "panel":
+            state = self.panel_state(target_id)
+            content = "\n".join(f"{k}: {v}" for k, v in state.items())
+        else:
+            spec = self.view_registry.get(target_id)
+            content = (
+                f"name: {target_id}\n"
+                f"kind: {getattr(spec, 'kind', '(unknown)')}\n"
+                f"archived: {self.view_registry.is_archived(target_id)}"
+            )
+        text.insert("1.0", content or "(no state)")
+        text.configure(state="disabled")
+        text.pack(fill="both", expand=True, padx=12, pady=12)
+        return win
 
     # ----- drag gesture handlers -----
 
@@ -1793,6 +2001,21 @@ class GuiShell:
             # makes that session the active chat target. The session
             # id is in item['id'] for both view shapes.
             self.set_active_session(iid)
+            return
+        if action == "restore":
+            # SPEC-008 — restore action on a row in the Archive view.
+            # The item's meta carries (target_kind, target_id) so the
+            # dispatch can route to the right restore method.
+            meta = item.get("meta") or {}
+            target_kind = meta.get("target_kind")
+            target_id = meta.get("target_id")
+            if target_kind == "view" and target_id:
+                self.restore_view(target_id)
+            elif target_kind == "panel" and target_id:
+                self.restore_panel(target_id)
+            # Refresh the Archive view so the restored row drops out.
+            if self.tk_root is not None:
+                self._render_active_tab()
             return
 
         panel_id = self.panel_id_for_tab(self.active_tab or "")
