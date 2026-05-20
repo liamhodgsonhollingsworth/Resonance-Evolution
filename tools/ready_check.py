@@ -287,6 +287,48 @@ def _check_gui_test_driver_smoke(verbose: bool) -> Tuple[bool, str]:
     return True, f"gui smoke executed {len(report)} verbs cleanly; final state nominal"
 
 
+def _check_module_clipboard(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-073: serialize/parse/instantiate must round-trip a real
+    scene node cleanly. Probes copy + paste against the live
+    workflow_view scene + verifies auto-rename + precompute.
+    """
+    try:
+        from engine import Engine
+        from tools.module_clipboard import (
+            paste_text_to_engine,
+            serialize_module,
+        )
+        from tools.workflow.trust import render_trust_set
+    except Exception as exc:
+        return False, f"module_clipboard import failed: {exc}"
+
+    try:
+        e = Engine(root_dir=ROOT, trust_set=render_trust_set(ROOT))
+        e.discover()
+        e.load_scene(ROOT / "scenes" / "workflow_view.json")
+        text = serialize_module(e, "task_panel", include_subtree=True)
+        new_ids = paste_text_to_engine(e, text)
+    except Exception as exc:
+        return False, f"clipboard round-trip raised: {exc}"
+
+    if "task_panel_2" not in new_ids:
+        return False, f"auto-rename did not produce task_panel_2; got {new_ids!r}"
+    if "task_panel_2" not in e.nodes:
+        return False, "pasted node not in engine.nodes"
+    # Internal connection rewriting: pasted task_panel_2's source
+    # should be tasks_source_2 (also pasted), not the original.
+    conn = e.nodes["task_panel_2"].connections.get("source")
+    if conn != "tasks_source_2":
+        return False, (
+            f"internal connection not rewritten: task_panel_2.source = {conn!r}; "
+            f"expected 'tasks_source_2'"
+        )
+    return True, (
+        f"module clipboard round-trip clean: {len(new_ids)} node(s) "
+        f"pasted with auto-rename + internal connection rewrite"
+    )
+
+
 def _check_chat_routing(verbose: bool) -> Tuple[bool, str]:
     """SPEC-068: the workflow shell routes chat through `route_chat`
     with @-prefix + /all broadcast + bare-text-to-active semantics.
@@ -561,6 +603,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("view_registry", _check_view_registry),
     ("active_sessions", _check_active_sessions),
     ("chat_routing", _check_chat_routing),
+    ("module_clipboard", _check_module_clipboard),
 ]
 
 

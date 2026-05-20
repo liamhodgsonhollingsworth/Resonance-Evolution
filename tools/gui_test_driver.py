@@ -365,6 +365,26 @@ class GuiDriver:
         """Return the current active session id."""
         return self.shell.active_session_id
 
+    # ----- SPEC-073 copy/paste-as-text -----
+
+    def copy_module(self, node_id: str) -> str:
+        """Serialize a node (and its sub-tree) to JSON text. Also
+        writes to the Tk clipboard when a root exists."""
+        return self.shell.copy_module_to_clipboard(node_id)
+
+    def paste_module(self, text: Optional[str] = None) -> List[str]:
+        """Instantiate a module from JSON text (or from the Tk
+        clipboard if ``text`` is None and a root exists). Returns
+        the new node ids."""
+        return self.shell.paste_module_from_clipboard(text)
+
+    def round_trip_module(self, node_id: str) -> List[str]:
+        """Copy a node then paste the same payload. Convenience for
+        the canonical round-trip property: pasting a copy of an
+        existing node produces a new node with an auto-renamed id."""
+        text = self.copy_module(node_id)
+        return self.paste_module(text)
+
     # ----- chat -----
 
     def submit_chat(self, text: str, *, active_session_id: Optional[str] = None) -> Dict[str, Any]:

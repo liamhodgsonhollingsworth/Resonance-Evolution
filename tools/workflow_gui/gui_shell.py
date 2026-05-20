@@ -1233,6 +1233,58 @@ class GuiShell:
         # Refresh the tab after the action so the list reflects the change.
         self._render_active_tab()
 
+    # ----- SPEC-073 copy/paste-as-text -----
+
+    def copy_module_to_clipboard(self, node_id: str) -> str:
+        """Copy a node (and its sub-tree) to the system clipboard as
+        JSON text. Returns the JSON string (also useful for tests
+        that don't have a Tk root attached).
+
+        SPEC-073: modules ARE text; Ctrl+C on a panel serializes its
+        scene-JSON to the clipboard. Composes with SPEC-072 (Ctrl is
+        the gate). Raises ``KeyError`` if ``node_id`` isn't spawned.
+        """
+        from tools.module_clipboard import serialize_module
+
+        text = serialize_module(self.engine, node_id, include_subtree=True)
+        if self.tk_root is not None:
+            try:
+                self.tk_root.clipboard_clear()
+                self.tk_root.clipboard_append(text)
+            except Exception as exc:
+                self.engine.errors.append(f"gui_shell clipboard write: {exc}")
+        return text
+
+    def paste_module_from_clipboard(self, text: Optional[str] = None) -> List[str]:
+        """Paste a module from the system clipboard (or from ``text``
+        if supplied — useful for tests + the text-API).
+
+        Returns the new node ids. Auto-renames on id collision so
+        pasting the same Tasks panel twice produces
+        ``task_panel_2``, ``task_panel_3``, etc. Raises
+        ``ValueError`` on a malformed payload.
+        """
+        from tools.module_clipboard import paste_text_to_engine
+
+        payload = text
+        if payload is None and self.tk_root is not None:
+            try:
+                payload = self.tk_root.clipboard_get()
+            except Exception as exc:
+                raise ValueError(f"clipboard read failed: {exc}") from exc
+        if payload is None:
+            raise ValueError("no payload and no Tk root to read clipboard from")
+        new_ids = paste_text_to_engine(self.engine, payload)
+        # Refresh source caches so the central pane reflects any new
+        # source nodes immediately.
+        try:
+            self.engine.precompute()
+        except Exception as exc:
+            self.engine.errors.append(f"gui_shell paste precompute: {exc}")
+        if self.tk_root is not None and self.active_tab is not None:
+            self._render_active_tab()
+        return new_ids
+
     # ----- SPEC-068 chat routing -----
 
     def set_active_session(self, sid_or_name: str) -> Optional[str]:
