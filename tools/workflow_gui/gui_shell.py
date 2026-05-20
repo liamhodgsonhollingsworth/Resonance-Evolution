@@ -350,6 +350,14 @@ class GuiShell:
         self._frame_pump_after_id: Any = None
         self._frame_budget_ms: int = 33  # ~30 FPS
 
+        # SPEC-066 Browser tab state. ``_browser_frame`` is the live
+        # tkinterweb HtmlFrame when a web view is active; cleared on
+        # tab switch so callers (browser-open verb, current-url query)
+        # can detect inactive state without poking at destroyed
+        # widgets.
+        self._browser_frame: Any = None
+        self._browser_url_var: Any = None
+
         # Chat routing.
         self.active_session_id: Optional[str] = None
 
@@ -434,6 +442,12 @@ class GuiShell:
                     ]
             if spec.kind == "custom":
                 return []
+            if spec.kind == "web":
+                # SPEC-066: web views render an HtmlFrame directly into
+                # the central pane (handled in _render_active_tab). The
+                # list-of-items surface is empty by design — the browser
+                # widget is the central pane, not a list.
+                return []
         # Legacy fallback (for tabs registered through the old TABS
         # mechanism that aren't in the registry).
         for name, source_id, _ in self._tabs:
@@ -445,7 +459,11 @@ class GuiShell:
                 return items_from_sessions(self.sm, self.active_session_id)
             if source_id == "_3d":
                 return []
-            if source_id.startswith("_text:") or source_id.startswith("_custom:"):
+            if (
+                source_id.startswith("_text:")
+                or source_id.startswith("_custom:")
+                or source_id.startswith("_web:")
+            ):
                 return []
             return items_from_engine_cache(self.engine, source_id)
         return []
@@ -934,8 +952,22 @@ class GuiShell:
             except Exception:
                 pass
         self._panel_widgets.clear()
+        # SPEC-066: clear stale browser handles so a tab switch
+        # away from Browser doesn't leave dangling references to
+        # destroyed widgets.
+        self._browser_frame = None
+        self._browser_url_var = None
         if self.active_tab == "3D":
             self._activate_3d()
+            return
+        # SPEC-066: web views own the central pane via an embedded
+        # tkinterweb HtmlFrame; the list-panel path doesn't fit (no
+        # items list to render). The shell instantiates the frame
+        # itself so the embedding lifecycle (URL load, refresh,
+        # teardown on tab switch) lives in one place.
+        spec = self.view_registry.get(self.active_tab)
+        if spec is not None and spec.kind == "web":
+            self._activate_web(spec)
             return
         # Refresh source caches on tab activation so the GUI reflects
         # external file edits + new inbox messages.
@@ -1972,6 +2004,202 @@ class GuiShell:
                 pass
             self._backend = None
         self._driver = None
+
+    # ----- web tab (SPEC-066) -----
+
+    def _activate_web(self, spec: ViewSpec) -> None:
+        """Pack a tkinterweb HtmlFrame into the central pane.
+
+        Layout: a 1-row URL entry + Go/Refresh buttons at the top,
+        the HtmlFrame filling the rest. Mirrors how _activate_3d
+        embeds the realtime canvas — same teardown discipline (the
+        widget is destroyed on tab switch because the panel host's
+        children are cleared in _render_active_tab before this method
+        runs).
+
+        Degrades gracefully when tkinterweb isn't importable: a
+        Label explains the missing dep and points at the install
+        command. The shell stays usable; only the Browser tab is
+        unavailable.
+        """
+        import tkinter as tk
+
+        host = self._panel_host if self._panel_host is not None else self._central_frame
+
+        # Probe import + instantiation before building the URL bar.
+        try:
+            from tkinterweb import HtmlFrame
+        except Exception as exc:
+            placeholder = tk.Label(
+                host,
+                text=(
+                    "Browser unavailable: tkinterweb is not installed.\n"
+                    "Install with: pip install \"tkinterweb>=4.25.2,<5\"\n"
+                    f"({exc})"
+                ),
+                bg="#2a2d34",
+                fg="#c8ccd6",
+                font=("Helvetica", 11),
+                justify="left",
+                pady=24,
+            )
+            placeholder.pack(fill="both", expand=True)
+            return
+
+        # URL bar.
+        bar = tk.Frame(host, bg="#1c1f26")
+        bar.pack(fill="x")
+
+        initial_url = spec.url or ""
+        url_var = tk.StringVar(value=initial_url)
+        self._browser_url_var = url_var
+
+        entry = tk.Entry(
+            bar,
+            textvariable=url_var,
+            bg="#2a2d34",
+            fg="#e8e8ec",
+            insertbackground="#e8e8ec",
+            relief="flat",
+            font=("Helvetica", 10),
+        )
+        entry.pack(side="left", fill="x", expand=True, padx=(12, 4), pady=8)
+
+        # HtmlFrame fills the rest of the central pane.
+        try:
+            frame = HtmlFrame(host, messages_enabled=False)
+        except Exception as exc:
+            placeholder = tk.Label(
+                host,
+                text=f"HtmlFrame instantiation failed: {exc}",
+                bg="#2a2d34",
+                fg="#c8ccd6",
+                font=("Helvetica", 11),
+                pady=24,
+            )
+            placeholder.pack(fill="both", expand=True)
+            self._browser_frame = None
+            return
+
+        self._browser_frame = frame
+
+        def _load_current() -> None:
+            url = url_var.get().strip()
+            try:
+                if spec.html_string and url == initial_url:
+                    # First load + inline HTML override beats URL.
+                    frame.load_html(spec.html_string)
+                elif url:
+                    frame.load_url(url)
+            except Exception as exc:
+                self.engine.errors.append(
+                    f"gui_shell browser load {url!r}: {exc}"
+                )
+
+        def _on_submit(_event=None) -> None:
+            _load_current()
+
+        def _on_refresh() -> None:
+            _load_current()
+
+        entry.bind("<Return>", _on_submit)
+
+        go_btn = tk.Button(
+            bar,
+            text="Go",
+            command=_on_submit,
+            bg="#3b4254",
+            fg="#e8e8ec",
+            relief="flat",
+            font=("Helvetica", 10, "bold"),
+            padx=10,
+            pady=2,
+        )
+        go_btn.pack(side="left", padx=(0, 4), pady=8)
+
+        refresh_btn = tk.Button(
+            bar,
+            text="Refresh",
+            command=_on_refresh,
+            bg="#3b4254",
+            fg="#e8e8ec",
+            relief="flat",
+            font=("Helvetica", 10),
+            padx=10,
+            pady=2,
+        )
+        refresh_btn.pack(side="left", padx=(0, 12), pady=8)
+
+        frame.pack(fill="both", expand=True)
+
+        # Trigger the initial load. Inline HTML wins over URL — the
+        # explicit override beats the network fetch.
+        if spec.html_string:
+            try:
+                frame.load_html(spec.html_string)
+            except Exception as exc:
+                self.engine.errors.append(
+                    f"gui_shell browser load_html: {exc}"
+                )
+        elif initial_url:
+            try:
+                frame.load_url(initial_url)
+            except Exception as exc:
+                self.engine.errors.append(
+                    f"gui_shell browser load_url {initial_url!r}: {exc}"
+                )
+
+    def browser_open(self, url: str) -> bool:
+        """Programmatic URL load against the active Browser view.
+
+        Returns True on success, False when the Browser tab isn't
+        active or the HtmlFrame isn't constructed. Composes with the
+        text-API ``browser-open`` verb so headless tests can drive a
+        live HtmlFrame from text without keystroke synthesis.
+        """
+        frame = getattr(self, "_browser_frame", None)
+        if frame is None:
+            return False
+        try:
+            frame.load_url(url)
+            if getattr(self, "_browser_url_var", None) is not None:
+                self._browser_url_var.set(url)
+        except Exception as exc:
+            self.engine.errors.append(
+                f"browser_open {url!r}: {exc}"
+            )
+            return False
+        return True
+
+    def browser_load_html(self, html: str) -> bool:
+        """Programmatic HTML render against the active Browser view.
+
+        Companion to ``browser_open`` for the inline-HTML path.
+        """
+        frame = getattr(self, "_browser_frame", None)
+        if frame is None:
+            return False
+        try:
+            frame.load_html(html)
+        except Exception as exc:
+            self.engine.errors.append(
+                f"browser_load_html: {exc}"
+            )
+            return False
+        return True
+
+    def browser_current_url(self) -> Optional[str]:
+        """Return the URL currently displayed in the Browser tab, or
+        None when no Browser frame is active.
+        """
+        frame = getattr(self, "_browser_frame", None)
+        if frame is None:
+            return None
+        url = getattr(frame, "current_url", None)
+        if url is None:
+            return None
+        s = str(url).strip()
+        return s or None
 
     # ----- actions + chat -----
 

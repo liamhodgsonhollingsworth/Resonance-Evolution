@@ -7,10 +7,15 @@ dependencies = [
     "numpy>=1.25",
     "Pillow>=10.0",
     "scikit-image>=0.21.0",
+    "tkinterweb>=4.25.2,<5",
 ]
 
 [project.optional-dependencies]
 test = ["pytest>=7.0"]
+# SPEC-066 3D path — headless Chromium screenshots feeding the
+# BrowserRenderer node's bitmap output. Heavy (~150-300 MB after
+# `playwright install chromium`) so opt-in rather than default.
+browser-3d = ["playwright>=1.60,<2"]
 
 [build-system]
 requires = ["setuptools>=68.0"]

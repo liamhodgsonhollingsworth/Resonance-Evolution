@@ -36,8 +36,11 @@ A view's ``kind`` determines how the central pane renders it:
 - ``"gui_chat"`` — render the SessionManager's active sessions.
 - ``"3d"`` — activate the embedded realtime renderer.
 - ``"text"`` — render a fixed text/markdown body (Logs, Help, About).
+- ``"web"`` — embed a tkinterweb ``HtmlFrame`` rendering a URL or
+  HTML string (SPEC-066). The shell owns the embedding lifecycle so
+  the per-view callback shape stays simple.
 - ``"custom"`` — caller-supplied renderer callback. Reserved for future
-  one-off views (image editor, browser embed); not used in v1.
+  one-off views (image editor); not used in v1.
 
 Adding a new view
 -----------------
@@ -116,6 +119,17 @@ class ViewSpec:
     watcher recent events, server status, ...) without subclassing
     the shell."""
 
+    url: str = ""
+    """For ``web`` kind (SPEC-066): the URL to load into the embedded
+    HtmlFrame at view-activation time. Empty string ⇒ no auto-load
+    (the URL bar opens blank until the maintainer submits a URL)."""
+
+    html_string: str = ""
+    """For ``web`` kind (SPEC-066): inline HTML to render instead of
+    a URL. Wins over ``url`` if both are present — the explicit
+    override beats the network fetch. Useful for offline demos and
+    tests."""
+
 
 # ---------------------------------------------------------------------------
 # Registry.
@@ -151,7 +165,7 @@ class ViewRegistry:
         recognized kinds — catches typos at construction time rather
         than mysteriously rendering nothing in the central pane.
         """
-        VALID_KINDS = {"source", "gui_inbox", "gui_chat", "3d", "text", "custom", "dynamic"}
+        VALID_KINDS = {"source", "gui_inbox", "gui_chat", "3d", "text", "web", "custom", "dynamic"}
         if spec.kind not in VALID_KINDS:
             raise ValueError(
                 f"ViewSpec.kind must be one of {sorted(VALID_KINDS)}; "
@@ -256,6 +270,8 @@ class ViewRegistry:
                 out.append((spec.name, f"_custom:{spec.name}", None))
             elif spec.kind == "dynamic":
                 out.append((spec.name, f"_dynamic:{spec.name}", None))
+            elif spec.kind == "web":
+                out.append((spec.name, f"_web:{spec.name}", None))
         return out
 
     def help_map(self) -> Dict[str, str]:
@@ -363,6 +379,16 @@ def default_view_registry() -> ViewRegistry:
                 "Demonstrates SPEC-067: a new view is one ViewSpec row."
             ),
             text_body="",  # populated dynamically at render time
+        ),
+        ViewSpec(
+            name="Browser",
+            kind="web",
+            description=(
+                "Embedded web browser (SPEC-066). Loads a URL or inline HTML "
+                "inside the central pane via tkinterweb's HtmlFrame. Useful "
+                "for previewing local dev servers without leaving the shell."
+            ),
+            url="about:blank",
         ),
         ViewSpec(
             name="Sessions",
