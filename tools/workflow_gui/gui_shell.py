@@ -225,6 +225,28 @@ class GuiShell:
         # shutdown).
         self.file_watcher: Optional[FileWatcher] = None
 
+        # Hold-Ctrl edit-mode state (SPEC-072). When True, hovering over a
+        # tab shows extended help instead of the basic name; Ctrl-clicking
+        # a tab archives it (SPEC-008); Ctrl-dragging within the sidebar
+        # reorders tabs (SPEC-007 / SPEC-072).
+        self.ctrl_held: bool = False
+        self._tooltip_window: Any = None
+        self._tooltip_after_id: Any = None
+        # Per-tab descriptive help text shown on Ctrl-hover (SPEC-074
+        # standard-icons-by-default + hover-name + Ctrl-hover-help).
+        self._tab_help: Dict[str, str] = {
+            "Tasks": "Tasks panel — read from tasks.md via FileSource. Ctrl+drag to reorder, Ctrl+click to archive.",
+            "Ideas": "Ideas panel — Alethea ideas via MCPSource. Ctrl+drag to reorder, Ctrl+click to archive.",
+            "Wishlist": "Wishlist panel — wishlist.md via FileSource. Ctrl+drag to reorder, Ctrl+click to archive.",
+            "Inbox": "Main inbox messages from trusted senders. Ctrl+drag to reorder, Ctrl+click to archive.",
+            "Chat": "Active Claude Code sessions; click a row to set as active chat target. Ctrl+drag to reorder.",
+            "Quarantine": "Untrusted messages awaiting promote/delete. Ctrl+drag to reorder, Ctrl+click to archive.",
+            "Trusted Senders": "Trusted-sender set with revoke/delete actions. Ctrl+drag to reorder.",
+            "3D": "Realtime renderer embedded into the central pane. Ctrl+drag to reorder; Esc inside the 3D view toggles WorkflowView mode.",
+        }
+        # Reorderable tab order (live mutation on Ctrl-drag).
+        self._tab_order: List[str] = [name for name, _, _ in TABS]
+
     # ----- data providers (testable without UI) -----
 
     def items_for_tab(self, tab_name: str) -> List[Dict[str, Any]]:
@@ -341,6 +363,14 @@ class GuiShell:
         # Default tab.
         self.select_tab(DEFAULT_TAB)
 
+        # Hold-Ctrl edit-mode key bindings (SPEC-072).
+        self.tk_root.bind_all("<Control-KeyPress>", self._on_ctrl_press)
+        self.tk_root.bind_all("<KeyRelease-Control_L>", self._on_ctrl_release)
+        self.tk_root.bind_all("<KeyRelease-Control_R>", self._on_ctrl_release)
+        # When the window loses focus, drop ctrl state so a Ctrl-down
+        # outside the window doesn't leave the GUI stuck in edit mode.
+        self.tk_root.bind("<FocusOut>", lambda _e: self._set_ctrl(False))
+
         # Graceful shutdown protocol.
         self.tk_root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -392,12 +422,166 @@ class GuiShell:
             btn.pack(fill="x")
             self._sidebar_buttons[name] = btn
 
+            # SPEC-074 + SPEC-072: hover-name (always) and Ctrl-hover help
+            # (extended). Tooltip lifecycle is keyed to the button widget
+            # so multiple buttons don't fight over the same Toplevel.
+            btn.bind("<Enter>", lambda _e, n=name, b=btn: self._on_tab_hover(n, b))
+            btn.bind("<Leave>", lambda _e: self._hide_tooltip())
+            # SPEC-072 + SPEC-008: Ctrl-click archives the tab (sidebar
+            # tab is hidden until restored from an archived-tabs list).
+            btn.bind("<Control-Button-1>", lambda _e, n=name: self._archive_tab(n))
+            # SPEC-072 + SPEC-007: Ctrl-drag reorders the sidebar tabs.
+            btn.bind("<Control-B1-Motion>", lambda e, n=name: self._on_tab_ctrl_drag(n, e))
+
     def _highlight_active_tab(self) -> None:
         for name, btn in self._sidebar_buttons.items():
             if name == self.active_tab:
                 btn.configure(bg="#3b4254", fg="#ffffff")
             else:
                 btn.configure(bg="#1c1f26", fg="#c8ccd6")
+
+    # ----- hold-Ctrl edit mode (SPEC-072, SPEC-074) -----
+
+    def _set_ctrl(self, held: bool) -> None:
+        """Update the Ctrl-held flag and refresh visual cues. Public for
+        tests of the hold-Ctrl state machine."""
+        if held == self.ctrl_held:
+            return
+        self.ctrl_held = held
+        # When releasing Ctrl, hide any extended tooltip.
+        if not held:
+            self._hide_tooltip()
+
+    def _on_ctrl_press(self, _event: Any) -> None:
+        self._set_ctrl(True)
+
+    def _on_ctrl_release(self, _event: Any) -> None:
+        self._set_ctrl(False)
+
+    def _on_tab_hover(self, tab_name: str, widget: Any) -> None:
+        """Show a tooltip for the hovered tab. Basic mode shows just
+        the tab name; Ctrl-hover shows the extended help text from
+        ``_tab_help`` (SPEC-074 hover-name + Ctrl-hover-help, SPEC-072
+        Ctrl is the gate for richer info).
+        """
+        text = tab_name
+        if self.ctrl_held:
+            extended = self._tab_help.get(tab_name)
+            if extended:
+                text = extended
+        self._show_tooltip(widget, text)
+
+    def _show_tooltip(self, anchor_widget: Any, text: str) -> None:
+        import tkinter as tk
+
+        self._hide_tooltip()
+        if not text or self.tk_root is None:
+            return
+        try:
+            x = anchor_widget.winfo_rootx() + anchor_widget.winfo_width() + 8
+            y = anchor_widget.winfo_rooty() + 4
+        except Exception:
+            return
+        tip = tk.Toplevel(self.tk_root)
+        tip.wm_overrideredirect(True)
+        tip.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(
+            tip,
+            text=text,
+            bg="#15171c",
+            fg="#e8e8ec",
+            font=("Helvetica", 9),
+            wraplength=320,
+            justify="left",
+            padx=8,
+            pady=4,
+            borderwidth=1,
+            relief="solid",
+        )
+        label.pack()
+        self._tooltip_window = tip
+
+    def _hide_tooltip(self) -> None:
+        if self._tooltip_window is not None:
+            try:
+                self._tooltip_window.destroy()
+            except Exception:
+                pass
+            self._tooltip_window = None
+
+    def _archive_tab(self, tab_name: str) -> str:
+        """Archive a tab — hide it from the sidebar. SPEC-008 + SPEC-072.
+
+        For v1 the archive is in-memory only (persists for the session);
+        restoring is via an Archive view that will land with SPEC-076's
+        button row + SPEC-067's view-as-menu generalization. Returns
+        the tab name for tests.
+        """
+        # Don't let the active tab vanish without a fallback selection.
+        if tab_name == self.active_tab:
+            fallback = next(
+                (n for n in self._tab_order if n != tab_name),
+                DEFAULT_TAB,
+            )
+            self.select_tab(fallback)
+        if tab_name in self._tab_order:
+            self._tab_order.remove(tab_name)
+        btn = self._sidebar_buttons.get(tab_name)
+        if btn is not None:
+            try:
+                btn.pack_forget()
+            except Exception:
+                pass
+        return tab_name
+
+    def _on_tab_ctrl_drag(self, tab_name: str, event: Any) -> None:
+        """Reorder sidebar tabs on Ctrl+drag. SPEC-072 (Ctrl-gate) +
+        SPEC-007 (movable).
+
+        Determines which sidebar tab the cursor is currently over and,
+        if different from ``tab_name``, swaps their positions in the
+        sidebar.
+        """
+        if not self.ctrl_held or self._sidebar_frame is None:
+            return
+        # Find the widget under the cursor inside the sidebar.
+        try:
+            target_widget = self.tk_root.winfo_containing(
+                event.x_root, event.y_root
+            )
+        except Exception:
+            return
+        if target_widget is None:
+            return
+        target_name: Optional[str] = None
+        for name, btn in self._sidebar_buttons.items():
+            if btn is target_widget:
+                target_name = name
+                break
+        if target_name is None or target_name == tab_name:
+            return
+        self._reorder_tabs(tab_name, target_name)
+
+    def _reorder_tabs(self, dragged: str, drop_target: str) -> None:
+        """Move ``dragged`` to the position currently held by
+        ``drop_target`` in the sidebar order. Public for tests."""
+        if dragged not in self._tab_order or drop_target not in self._tab_order:
+            return
+        if dragged == drop_target:
+            return
+        self._tab_order.remove(dragged)
+        idx = self._tab_order.index(drop_target)
+        self._tab_order.insert(idx, dragged)
+        # Re-pack sidebar buttons in the new order. We do this by
+        # forgetting all and re-packing in _tab_order sequence.
+        for name in self._tab_order:
+            btn = self._sidebar_buttons.get(name)
+            if btn is not None:
+                try:
+                    btn.pack_forget()
+                    btn.pack(fill="x")
+                except Exception:
+                    pass
 
     # ----- per-tab rendering -----
 
