@@ -384,6 +384,119 @@ def _check_panel_movable_resize(verbose: bool) -> Tuple[bool, str]:
     )
 
 
+def _check_per_widget_lock(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-075: WidgetLock registry round-trips lock/unlock across
+    panel and non-panel widgets; locked panels reject drag via the
+    SPEC-007 handler that consults handle.locked (which now delegates
+    to the registry); the per-widget context menu surfaces the
+    Lock/Unlock toggle pair.
+
+    Probes the public WidgetLock API + the GuiShell wrapper + the
+    PanelHandle delegating property + the text-API verbs.
+    """
+    try:
+        from tools.gui_test_driver import GuiDriver
+        from tools.text_test import dispatch_command
+        from tools.workflow_gui.widget_lock import WidgetLock
+    except Exception as exc:
+        return False, f"per_widget_lock import failed: {exc}"
+
+    # Probe 1: registry CRUD on a non-panel widget.
+    reg = WidgetLock()
+    if reg.is_widget_locked("icon_a"):
+        return False, "fresh registry reported icon_a as locked"
+    reg.lock_widget("icon_a", widget_kind="icon")
+    if not reg.is_widget_locked("icon_a"):
+        return False, "lock_widget didn't set locked=True"
+    state = reg.widget_state("icon_a")
+    if state.get("widget_kind") != "icon":
+        return False, f"widget_kind not recorded: {state!r}"
+    reg.unlock_widget("icon_a")
+    if reg.is_widget_locked("icon_a"):
+        return False, "unlock_widget didn't clear locked"
+
+    # Probe 2: list_locked_widgets returns sorted entries.
+    reg.lock_widget("b_widget", widget_kind="button")
+    reg.lock_widget("a_widget", widget_kind="button")
+    locked = reg.list_locked_widgets()
+    ids = [e["widget_id"] for e in locked]
+    if ids != ["a_widget", "b_widget"]:
+        return False, f"list_locked_widgets not sorted: {ids!r}"
+
+    # Probe 3: GuiShell-level wrapper routes panel ids to lock_panel.
+    drv = GuiDriver().build()
+    drv.ensure_panel("probe_panel")
+    drv.lock_widget("probe_panel")
+    if not drv.is_widget_locked("probe_panel"):
+        return False, "shell.is_widget_locked False for locked panel"
+    # PanelHandle.locked is the property that delegates to the
+    # registry — assert SPEC-007 reads see the same state.
+    if not drv.panel_state("probe_panel")["locked"]:
+        return False, "PanelHandle.locked property didn't delegate"
+
+    # Probe 4: locked panel rejects drag (SPEC-007 drag handler reads
+    # handle.locked which delegates through the registry).
+    pre = drv.panel_state("probe_panel")
+    drv.move_panel("probe_panel", 60, 72)
+    post = drv.panel_state("probe_panel")
+    if post["x"] != pre["x"] or post["y"] != pre["y"]:
+        return False, (
+            f"locked panel accepted drag: {pre['x']},{pre['y']} -> "
+            f"{post['x']},{post['y']}"
+        )
+
+    # Probe 5: unlocked widget accepts drag.
+    drv.unlock_widget("probe_panel")
+    if drv.is_widget_locked("probe_panel"):
+        return False, "unlock_widget didn't clear panel lock"
+    drv.move_panel("probe_panel", 48, 60)
+    state = drv.panel_state("probe_panel")
+    if state["x"] != 48 or state["y"] != 60:
+        return False, (
+            f"unlocked panel didn't accept drag: ({state['x']}, "
+            f"{state['y']}); expected (48, 60)"
+        )
+
+    # Probe 6: Ctrl-right-click menu toggle pair.
+    drv.shell.lock_widget("icon_button_1", widget_kind="icon")
+    items = drv.widget_context_menu_items("icon_button_1", "icon")
+    if items != ["Unlock"]:
+        return False, f"locked-widget menu items {items!r}; expected ['Unlock']"
+    drv.unlock_widget("icon_button_1")
+    items = drv.widget_context_menu_items("icon_button_1", "icon")
+    if items != ["Lock"]:
+        return False, f"unlocked-widget menu items {items!r}; expected ['Lock']"
+
+    # Probe 7: text-API verbs round-trip.
+    msg, _ = dispatch_command(drv.shell.engine, "lock-widget icon_42")
+    if not msg.startswith("OK"):
+        return False, f"text-API lock-widget failed: {msg}"
+    msg, _ = dispatch_command(drv.shell.engine, "widget-lock-state icon_42")
+    if "'locked': True" not in msg:
+        return False, f"text-API widget-lock-state lost lock flag: {msg}"
+    msg, _ = dispatch_command(drv.shell.engine, "list-locked-widgets")
+    if "icon_42" not in msg:
+        return False, f"text-API list-locked-widgets missing icon_42: {msg}"
+    msg, _ = dispatch_command(drv.shell.engine, "unlock-widget icon_42")
+    if not msg.startswith("OK"):
+        return False, f"text-API unlock-widget failed: {msg}"
+
+    # Probe 8: lock survives panel archive/restore (the panel handle's
+    # locked state pulls from the registry through the cycle).
+    drv.lock_widget("probe_panel")
+    drv.archive_panel("probe_panel")
+    drv.restore_panel("probe_panel")
+    if not drv.panel_state("probe_panel")["locked"]:
+        return False, "lock didn't survive archive/restore"
+
+    return True, (
+        "WidgetLock registry healthy: CRUD round-trips, "
+        "panel-handle delegates lock state, locked widgets reject "
+        "drag, context menu toggle pair correct, 4 text-API verbs "
+        "dispatch, lock survives archive/restore"
+    )
+
+
 def _check_module_clipboard(verbose: bool) -> Tuple[bool, str]:
     """SPEC-073: serialize/parse/instantiate must round-trip a real
     scene node cleanly. Probes copy + paste against the live
@@ -1423,6 +1536,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("visual_regression", _check_visual_regression),
     ("file_source_path_confinement", _check_file_source_path_confinement),
     ("panel_movable_resize", _check_panel_movable_resize),
+    ("per_widget_lock", _check_per_widget_lock),
     ("paste_trust_gate", _check_paste_trust_gate),
     ("visual_contract", _check_visual_contract),
     ("buttons_as_nodes", _check_buttons_as_nodes),

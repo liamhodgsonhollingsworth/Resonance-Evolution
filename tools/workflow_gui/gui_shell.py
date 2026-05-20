@@ -72,6 +72,7 @@ from tools.workflow_gui.view_registry import (
     ViewSpec,
     default_view_registry,
 )
+from tools.workflow_gui.widget_lock import WidgetLock
 
 
 # ---------------------------------------------------------------------------
@@ -244,15 +245,31 @@ def snap_to_grid(value: int, grid: int = SNAP_GRID_PX) -> int:
 
 @dataclass
 class PanelHandle:
-    """Per-panel position + lock state (SPEC-007).
+    """Per-panel position + lock state (SPEC-007 + SPEC-075).
 
     One handle per visible panel in the panel host. The handle is the
-    source of truth for `(x, y, w, h, locked, archived)`; the Tk widget
-    is re-positioned from the handle on every drag / resize / restore.
+    source of truth for `(x, y, w, h, archived)`. The lock flag, as of
+    SPEC-075, is NOT stored on the handle directly — it delegates to a
+    ``WidgetLock`` registry (one per ``GuiShell``) so panel-level locks
+    and per-icon / per-button locks share a single source of truth.
+
+    The ``locked`` attribute remains a property for backward compat:
+    every SPEC-007 read path (drag handlers, panel_state, archive cycle)
+    continues to use ``handle.locked`` without knowing about WidgetLock.
+    Writes through ``handle.locked = True`` route into the registry.
+
+    The registry reference is set by ``GuiShell._ensure_panel_handle``
+    immediately after construction; tests that build a PanelHandle in
+    isolation (no shell) can also set ``_lock_registry`` directly or
+    leave it None, in which case ``locked`` falls back to a private
+    per-handle bool. This keeps PanelHandle usable as a plain dataclass
+    in unit tests that don't need the shared registry semantic.
 
     Two panels of the same view (paste-as-duplicate from SPEC-073) can
     have independent handles — the dict key is the panel's node_id,
-    not the view name.
+    not the view name. With the WidgetLock registry, the panel's
+    lock state is keyed by the same id, so two paste-duplicate panels
+    lock independently as before.
     """
 
     view_name: str
@@ -262,8 +279,47 @@ class PanelHandle:
     y: int = 0
     w: int = 480
     h: int = 320
-    locked: bool = False
     archived: bool = False
+    # SPEC-075: the lock registry the handle delegates to. Set by
+    # GuiShell._ensure_panel_handle after construction; remains None
+    # for unit tests that build a PanelHandle in isolation. The
+    # property below masks the private fallback flag when a registry
+    # is wired up.
+    _lock_registry: Optional[WidgetLock] = None
+    _panel_id: Optional[str] = None
+    # Fallback bool for the no-registry case (unit tests that build
+    # PanelHandle without a GuiShell). When the registry is set, the
+    # property below ignores this field entirely.
+    _fallback_locked: bool = False
+
+    @property
+    def locked(self) -> bool:
+        """SPEC-075 delegating accessor: read from the WidgetLock
+        registry when one is attached, fall back to the per-handle bool
+        when constructed in isolation.
+        """
+        if self._lock_registry is not None and self._panel_id is not None:
+            return self._lock_registry.is_widget_locked(self._panel_id)
+        return self._fallback_locked
+
+    @locked.setter
+    def locked(self, value: bool) -> None:
+        """SPEC-075 delegating mutator: write to the WidgetLock registry
+        when one is attached. The registry's widget_kind for panel
+        handles is ``"panel"`` so list-locked-widgets can group panels
+        distinctly from icons/buttons/regions.
+        """
+        if self._lock_registry is not None and self._panel_id is not None:
+            if value:
+                self._lock_registry.lock_widget(
+                    self._panel_id,
+                    position=(self.x, self.y),
+                    widget_kind="panel",
+                )
+            else:
+                self._lock_registry.unlock_widget(self._panel_id)
+        else:
+            self._fallback_locked = bool(value)
 
 
 # ---------------------------------------------------------------------------
@@ -333,6 +389,18 @@ class GuiShell:
         self._panel_handles: Dict[str, PanelHandle] = {}
         self._panel_widgets: Dict[str, Any] = {}
         self._panel_drag: Optional[Dict[str, Any]] = None
+        # SPEC-075: per-widget lock registry. Panel-level locks delegate
+        # through here (PanelHandle.locked is a property that consults
+        # this registry). Per-icon / per-button locks live here too —
+        # there's one source of truth for "is this widget locked?".
+        # Widget construction sites register their lockable widgets so
+        # ``list-locked-widgets`` can group panel / button / icon kinds.
+        self.widget_lock: WidgetLock = WidgetLock()
+        # SPEC-075: per-widget Tk widget map so drag handlers and the
+        # context menu can locate the live widget by its widget_id.
+        # Keyed by the same id used in the registry; values are the
+        # Tk widget references registered at build time.
+        self._lockable_widgets: Dict[str, Any] = {}
         # ``_tabs`` is the legacy materialized form ``items_for_tab``
         # iterates over. Re-materialized whenever the registry changes
         # so the rendering switch keeps working without dictionary
@@ -650,6 +718,17 @@ class GuiShell:
                      lambda e, n=name: self._show_context_menu(e, "sidebar", n))
             btn.bind("<Button-2>",
                      lambda e, n=name: self._show_context_menu(e, "sidebar", n))
+            # SPEC-075 + SPEC-072: Ctrl-right-click opens the per-widget
+            # Lock/Unlock menu on sidebar buttons. The widget_id is the
+            # tab name prefixed so it can't collide with panel ids.
+            wid = f"sidebar:{name}"
+            self.register_lockable_widget(wid, btn, widget_kind="button")
+            btn.bind("<Control-Button-3>",
+                     lambda e, w=wid: self._show_widget_context_menu(
+                         e, w, "button"))
+            btn.bind("<Control-Button-2>",
+                     lambda e, w=wid: self._show_widget_context_menu(
+                         e, w, "button"))
             # SPEC-072 verbatim ("holding control and dragging the
             # modules around resizes all of them inside the toolbar"):
             # Ctrl-button-press anchors the resize; Ctrl-drag scales all
@@ -982,6 +1061,13 @@ class GuiShell:
         """Return the PanelHandle for ``panel_id``, creating it at the
         default position if absent. SPEC-007 invariant: every visible
         panel has a handle; handle creation is implicit on first render.
+
+        SPEC-075: every new handle is wired to the shell's WidgetLock
+        registry so ``handle.locked`` delegates through there. Pre-
+        registers the panel at ``widget_kind="panel"`` so
+        ``list-locked-widgets`` surfaces the panel even before it's
+        locked. The registration is monotonic: re-ensuring an existing
+        panel doesn't disturb the registry.
         """
         handle = self._panel_handles.get(panel_id)
         if handle is None:
@@ -994,8 +1080,28 @@ class GuiShell:
                 y=snap_to_grid(offset),
                 w=480,
                 h=320,
+                _lock_registry=self.widget_lock,
+                _panel_id=panel_id,
             )
             self._panel_handles[panel_id] = handle
+            # Pre-register so list-locked-widgets can disambiguate
+            # panels from per-icon entries even when no lock has fired.
+            self.widget_lock.register(panel_id, widget_kind="panel")
+        else:
+            # Defensive wiring for handles that may have been built via
+            # an older code path (or in tests that pre-create handles).
+            if handle._lock_registry is None:
+                handle._lock_registry = self.widget_lock
+                handle._panel_id = panel_id
+                # Preserve any locked state from the per-handle fallback
+                # bool into the registry so the source of truth catches up.
+                if handle._fallback_locked:
+                    self.widget_lock.lock_widget(
+                        panel_id,
+                        position=(handle.x, handle.y),
+                        widget_kind="panel",
+                    )
+                    handle._fallback_locked = False
         return handle
 
     def _render_list_panel(self, items: List[Dict[str, Any]]) -> None:
@@ -1082,6 +1188,24 @@ class GuiShell:
                    lambda e, pid=panel_id: self._show_context_menu(e, "panel", pid))
             w.bind("<Button-2>",
                    lambda e, pid=panel_id: self._show_context_menu(e, "panel", pid))
+            # SPEC-075 + SPEC-072: Ctrl-right-click surfaces the
+            # per-widget Lock / Unlock menu directly so the maintainer
+            # doesn't have to navigate through the larger SPEC-008
+            # menu when they only want to toggle a lock. Composes
+            # with SPEC-008's right-click: Ctrl-Button-3 is the
+            # per-widget gesture; bare Button-3 is the surface menu.
+            w.bind("<Control-Button-3>",
+                   lambda e, pid=panel_id: self._show_widget_context_menu(
+                       e, pid, "panel"))
+            w.bind("<Control-Button-2>",
+                   lambda e, pid=panel_id: self._show_widget_context_menu(
+                       e, pid, "panel"))
+
+        # SPEC-075: register the panel frame as a lockable widget too
+        # so list-locked-widgets reflects panel-level locks (the
+        # PanelHandle's locked flag is the source of truth, but the
+        # registry surface needs the entry to enumerate it).
+        self.register_lockable_widget(panel_id, panel_frame, widget_kind="panel")
 
         # Action button strip (initially empty; populated when an item
         # is selected).
@@ -1289,6 +1413,109 @@ class GuiShell:
         handle = self._panel_handles.get(panel_id)
         return bool(handle and handle.locked)
 
+    # ----- SPEC-075 per-widget lock API -----
+
+    def lock_widget(
+        self,
+        widget_id: str,
+        *,
+        widget_kind: str = "",
+    ) -> bool:
+        """Lock any widget by id. The widget can be a panel, a button,
+        an icon, a frame, or any other registered affordance. Returns
+        True. Lazily registers an entry in the WidgetLock registry if
+        absent so the first lock call is also the registration.
+
+        SPEC-075 acceptance: any visible widget can be locked. When the
+        widget_id matches a panel handle, the lock automatically routes
+        through the PanelHandle's delegating property so SPEC-007's
+        existing drag/resize handlers (which check ``handle.locked``)
+        see the change too.
+
+        For non-panel widgets, the registry alone holds the lock state;
+        drag handlers for those widgets consult ``is_widget_locked``
+        before mutating position. The widget's frozen position is
+        recorded from its registered Tk geometry if a widget has been
+        registered via ``register_lockable_widget``.
+        """
+        # If this widget corresponds to a panel handle, route through
+        # the panel API so the SPEC-007 invariants (returns True on
+        # existing handle, archive interactions) remain consistent.
+        if widget_id in self._panel_handles:
+            return self.lock_panel(widget_id)
+        # Otherwise: register or lock-update via the registry.
+        position: Optional[Tuple[int, int]] = None
+        live_widget = self._lockable_widgets.get(widget_id)
+        if live_widget is not None:
+            try:
+                # winfo_x / winfo_y are the live screen coordinates the
+                # geometry manager has placed the widget at. Captured at
+                # lock time as the frozen-position snapshot for v2
+                # layout-resistance.
+                position = (
+                    int(live_widget.winfo_x()),
+                    int(live_widget.winfo_y()),
+                )
+            except Exception:
+                position = None
+        self.widget_lock.lock_widget(
+            widget_id, position=position, widget_kind=widget_kind
+        )
+        return True
+
+    def unlock_widget(self, widget_id: str) -> bool:
+        """Unlock any widget by id. Returns True if an entry existed
+        (panel or non-panel) and was unlocked. Returns False if no
+        entry exists in either the panel-handle table or the registry.
+        """
+        if widget_id in self._panel_handles:
+            return self.unlock_panel(widget_id)
+        return self.widget_lock.unlock_widget(widget_id)
+
+    def is_widget_locked(self, widget_id: str) -> bool:
+        """Return True if the widget is currently locked.
+
+        Routes through the registry as the single source of truth. For
+        panel widgets, the PanelHandle.locked property already consults
+        the registry, so a single registry read covers both panel and
+        non-panel cases.
+        """
+        return self.widget_lock.is_widget_locked(widget_id)
+
+    def widget_lock_state(self, widget_id: str) -> Dict[str, Any]:
+        """Return the per-widget lock entry as a plain dict for the
+        text-API ``widget-lock-state`` verb. Empty dict when no entry
+        exists yet. Mirrors the SPEC-007 ``panel_state`` convention.
+        """
+        return self.widget_lock.widget_state(widget_id)
+
+    def list_locked_widgets(self) -> List[Dict[str, Any]]:
+        """Return the registry's currently-locked entries (panel /
+        button / icon / region kinds) as a list of dicts sorted by
+        widget_id. Used by the text-API verb of the same name and by
+        the ready-check probe to verify the registry CRUD round-trips.
+        """
+        return self.widget_lock.list_locked_widgets()
+
+    def register_lockable_widget(
+        self,
+        widget_id: str,
+        widget: Any,
+        *,
+        widget_kind: str = "",
+    ) -> None:
+        """Register a Tk widget as lockable. Called from the widget
+        construction sites in ``build_ui`` / ``_render_list_panel``
+        / ``_build_sidebar`` so the context menu and drag handlers
+        can resolve widget_id → Tk widget at lock time.
+
+        Idempotent. Re-registering the same id overwrites the widget
+        reference (the most recent construction wins, matching what the
+        rest of the shell already does for ``_panel_widgets``).
+        """
+        self._lockable_widgets[widget_id] = widget
+        self.widget_lock.register(widget_id, widget_kind=widget_kind)
+
     def panel_state(self, panel_id: str) -> Dict[str, Any]:
         """Return the panel handle as a plain dict for assertion + the
         text-API ``panel-state`` verb. Returns an empty dict when the
@@ -1479,6 +1706,79 @@ class GuiShell:
             except Exception:
                 pass
         return menu
+
+    # ----- SPEC-075 Ctrl-right-click per-widget context menu -----
+
+    def _show_widget_context_menu(
+        self,
+        event: Any,
+        widget_id: str,
+        widget_kind: str = "",
+    ) -> Optional[Any]:
+        """Post a Ctrl-right-click context menu for a non-panel
+        lockable widget. SPEC-075 + SPEC-072 composition: the menu
+        only opens when Ctrl is held at the moment of the right-click
+        (the SPEC-072 modification-gate), keeping the default cursor
+        state in consumption mode.
+
+        The menu has two items: Lock / Unlock (toggle pair based on
+        current state). Future iterations can add Properties, Reset
+        position, etc.; v1 ships the minimum needed for SPEC-075's
+        acceptance criterion.
+        """
+        if not self.ctrl_held:
+            # Gate by Ctrl-held per SPEC-072. Non-Ctrl right-clicks on
+            # lockable widgets fall through to whatever the widget's
+            # default right-click handler is (e.g. context menus on
+            # sidebar tabs already wired by _build_sidebar).
+            return None
+        try:
+            import tkinter as tk
+        except Exception:
+            return None
+        if self.tk_root is None:
+            return None
+        menu = tk.Menu(self.tk_root, tearoff=0)
+        if self.is_widget_locked(widget_id):
+            menu.add_command(
+                label="Unlock",
+                command=lambda: self.unlock_widget(widget_id),
+            )
+        else:
+            menu.add_command(
+                label="Lock",
+                command=lambda: self.lock_widget(
+                    widget_id, widget_kind=widget_kind
+                ),
+            )
+        try:
+            menu.tk_popup(int(event.x_root), int(event.y_root))
+        except Exception:
+            pass
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+        return menu
+
+    def widget_context_menu_items(
+        self,
+        widget_id: str,
+        widget_kind: str = "",
+    ) -> List[str]:
+        """Return the labels the Ctrl-right-click menu would surface
+        for ``widget_id``. Public for tests: drives the menu without
+        needing a real Tk popup. Returns the toggle label appropriate
+        to the widget's current lock state.
+
+        SPEC-075 acceptance: the menu offers exactly Lock / Unlock as
+        a toggle pair (the spec's What-behavior list). Future iterations
+        can extend; the v1 shape is two items.
+        """
+        if self.is_widget_locked(widget_id):
+            return ["Unlock"]
+        return ["Lock"]
 
     def context_menu_items(self, target_kind: str, target_id: str) -> List[str]:
         """Return the labels that the right-click menu would surface

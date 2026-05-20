@@ -408,6 +408,47 @@ class GuiDriver:
         self.shell._ensure_panel_handle(panel_id)
         return self.shell.panel_state(panel_id)
 
+    # ----- SPEC-075 per-widget lock API -----
+
+    def lock_widget(
+        self,
+        widget_id: str,
+        *,
+        widget_kind: str = "",
+    ) -> bool:
+        """Lock any widget by id. Routes through the WidgetLock
+        registry; if the widget_id matches an existing panel handle,
+        the call defers to SPEC-007's lock_panel so the panel-level
+        drag/resize handlers see the lock. SPEC-075."""
+        return self.shell.lock_widget(widget_id, widget_kind=widget_kind)
+
+    def unlock_widget(self, widget_id: str) -> bool:
+        """Unlock any widget by id. Returns True if an entry existed
+        and was unlocked. SPEC-075."""
+        return self.shell.unlock_widget(widget_id)
+
+    def is_widget_locked(self, widget_id: str) -> bool:
+        """Return True if the widget is currently locked. Routes
+        through the WidgetLock registry. SPEC-075."""
+        return self.shell.is_widget_locked(widget_id)
+
+    def widget_lock_state(self, widget_id: str) -> Dict[str, Any]:
+        """Return the per-widget lock entry as a dict. Empty when no
+        entry exists. SPEC-075."""
+        return self.shell.widget_lock_state(widget_id)
+
+    def list_locked_widgets(self) -> List[Dict[str, Any]]:
+        """Return every currently-locked widget entry sorted by id.
+        SPEC-075."""
+        return self.shell.list_locked_widgets()
+
+    def widget_context_menu_items(
+        self, widget_id: str, widget_kind: str = ""
+    ) -> List[str]:
+        """Return the labels the Ctrl-right-click context menu would
+        surface for a widget. SPEC-075."""
+        return self.shell.widget_context_menu_items(widget_id, widget_kind)
+
     # ----- SPEC-073 copy/paste-as-text -----
 
     def copy_module(self, node_id: str) -> str:
