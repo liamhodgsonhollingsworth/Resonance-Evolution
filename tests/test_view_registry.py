@@ -288,6 +288,6 @@ def test_default_registry_source_kind_has_required_fields():
 def test_default_registry_kinds_are_legal():
     """No invalid kinds slip through (catches a typo in default_view_registry)."""
     reg = default_view_registry()
-    legal = {"source", "gui_inbox", "gui_chat", "3d", "text", "custom"}
+    legal = {"source", "gui_inbox", "gui_chat", "3d", "text", "custom", "dynamic"}
     for spec in reg.list_views():
         assert spec.kind in legal, f"view {spec.name!r} has illegal kind {spec.kind!r}"

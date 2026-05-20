@@ -232,6 +232,22 @@ class SessionManager:
             self._sessions[sid] = internal
         self._persist(rec)
         self._launch(internal, seed_message=seed_message, resume=False)
+        # SPEC-079: register the session in the cross-process active
+        # registry so other sessions can discover it. Soft-fail: a
+        # registry write error must not block the spawn.
+        try:
+            from tools.active_sessions import register_session
+            register_session(
+                rec.id,
+                project=_project_slug_for_cwd(cwd_path),
+                session_type=session_type,
+                focus=display,
+                pid=internal.child.pid if internal.child is not None else None,
+                cwd=cwd_path,
+                state_dir=self.state_dir,
+            )
+        except Exception:
+            pass
         return rec
 
     def send(self, session_id: str, body: str) -> None:
@@ -283,6 +299,13 @@ class SessionManager:
         try:
             if src.exists():
                 src.replace(dst)
+        except Exception:
+            pass
+        # SPEC-079: drop the entry from the cross-process registry so
+        # other sessions see the session is gone. Soft-fail.
+        try:
+            from tools.active_sessions import unregister_session
+            unregister_session(s.record.id, state_dir=self.state_dir)
         except Exception:
             pass
         self._emit(SessionEvent(kind="archived", session_id=s.record.id,
@@ -577,6 +600,21 @@ class SessionManager:
 
 def _iso_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _project_slug_for_cwd(cwd: str) -> str:
+    """Compute a short project slug from a cwd path.
+
+    Used by the SPEC-079 active-sessions registry so spawn entries
+    carry a human-readable project field. Strategy: take the last
+    path component, lowercase, replace path-unfriendly chars. Falls
+    back to the full cwd if anything goes wrong.
+    """
+    try:
+        name = Path(cwd).name or cwd
+        return name.lower().replace(" ", "-")
+    except Exception:
+        return str(cwd)
 
 
 def _detect_claude() -> Optional[str]:

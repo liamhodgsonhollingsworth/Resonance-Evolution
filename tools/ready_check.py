@@ -287,6 +287,56 @@ def _check_gui_test_driver_smoke(verbose: bool) -> Tuple[bool, str]:
     return True, f"gui smoke executed {len(report)} verbs cleanly; final state nominal"
 
 
+def _check_active_sessions(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-079: the active-sessions registry primitive must
+    round-trip register / heartbeat / list / unregister in a tmp
+    state dir without touching production state. Also asserts the
+    Sessions view is registered in the default view registry.
+    """
+    import tempfile
+    from pathlib import Path as _Path
+
+    try:
+        from tools.active_sessions import (
+            heartbeat,
+            list_active_sessions,
+            register_session,
+            unregister_session,
+        )
+        from tools.workflow_gui.view_registry import default_view_registry
+    except Exception as exc:
+        return False, f"active_sessions import failed: {exc}"
+
+    with tempfile.TemporaryDirectory() as td:
+        path = _Path(td)
+        register_session("probe", "apeiron", "ready-check",
+                         focus="ready-check probe", state_dir=path)
+        sessions = list_active_sessions(state_dir=path)
+        if not any(s.id == "probe" for s in sessions):
+            return False, "register_session did not surface in list_active_sessions"
+        if not heartbeat("probe", focus="probe heartbeat", state_dir=path):
+            return False, "heartbeat returned False on freshly-registered session"
+        if not unregister_session("probe", state_dir=path):
+            return False, "unregister_session returned False on registered session"
+        if list_active_sessions(state_dir=path):
+            return False, "unregister did not remove the entry"
+
+    # Sessions view must be registered in the default registry.
+    reg = default_view_registry()
+    spec = reg.get("Sessions")
+    if spec is None:
+        return False, "Sessions view missing from default_view_registry"
+    if spec.kind != "dynamic":
+        return False, f"Sessions view has kind={spec.kind!r}; expected 'dynamic'"
+    if spec.items_provider is None:
+        return False, "Sessions view has no items_provider"
+
+    return True, (
+        "active-sessions registry round-trips register/heartbeat/"
+        "list/unregister cleanly; Sessions view registered in default registry"
+    )
+
+
 def _check_view_registry(verbose: bool) -> Tuple[bool, str]:
     """SPEC-067: the workflow GUI exposes a view registry whose
     ``set-view`` text command + gui_test_driver verbs let any caller
@@ -452,6 +502,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("workflow_gui_module", _check_workflow_gui_module),
     ("gui_test_driver_smoke", _check_gui_test_driver_smoke),
     ("view_registry", _check_view_registry),
+    ("active_sessions", _check_active_sessions),
 ]
 
 

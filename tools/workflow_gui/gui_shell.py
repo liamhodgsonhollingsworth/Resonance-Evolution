@@ -347,6 +347,29 @@ class GuiShell:
                 return []
             if spec.kind == "text":
                 return items_from_text_view(spec, self.engine)
+            if spec.kind == "dynamic":
+                # SPEC-067 + caller-supplied items provider. The
+                # provider is responsible for returning a list of
+                # item dicts; exceptions surface as a one-row alert
+                # so the GUI never crashes on a bad provider.
+                provider = getattr(spec, "items_provider", None)
+                if provider is None:
+                    return []
+                try:
+                    return list(provider(self.engine))
+                except Exception as exc:
+                    self.engine.errors.append(
+                        f"gui_shell dynamic view {spec.name!r}: {exc}"
+                    )
+                    return [
+                        {
+                            "id": f"dynamic-error-{spec.name}",
+                            "title": f"(provider raised: {exc})",
+                            "body": str(exc),
+                            "status": "alert",
+                            "actions": ["expand"],
+                        }
+                    ]
             if spec.kind == "custom":
                 return []
         # Legacy fallback (for tabs registered through the old TABS

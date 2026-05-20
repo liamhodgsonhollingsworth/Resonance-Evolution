@@ -280,6 +280,58 @@ class GuiDriver:
         spec = self.shell.view_registry.get(name)
         return spec.kind if spec is not None else None
 
+    # ----- SPEC-079 active-sessions surface -----
+
+    def list_active_sessions(self, *, include_stale: bool = False) -> List[Dict[str, Any]]:
+        """Return the active-sessions registry as plain dicts so
+        callers don't need to import the dataclass.
+
+        Reads from ``engine.active_sessions_state_dir`` when set,
+        else falls back to ``./state/``.
+        """
+        from tools.active_sessions import list_active_sessions as _list
+
+        state_dir = getattr(self.shell.engine, "active_sessions_state_dir", None)
+        out: List[Dict[str, Any]] = []
+        for s in _list(state_dir=state_dir, include_stale=include_stale):
+            out.append(
+                {
+                    "id": s.id,
+                    "project": s.project,
+                    "session_type": s.session_type,
+                    "focus": s.focus,
+                    "last_seen": s.last_seen,
+                    "pid": s.pid,
+                    "cwd": s.cwd,
+                    "is_stale": s.is_stale,
+                }
+            )
+        return out
+
+    def register_active_session(
+        self,
+        session_id: str,
+        project: str,
+        session_type: str,
+        *,
+        focus: str = "",
+    ) -> bool:
+        """Register a session in the active-sessions registry. Routed
+        through engine.active_sessions_state_dir."""
+        from tools.active_sessions import register_session
+
+        state_dir = getattr(self.shell.engine, "active_sessions_state_dir", None)
+        register_session(
+            session_id, project, session_type,
+            focus=focus, state_dir=state_dir,
+        )
+        return True
+
+    def use_active_sessions_state_dir(self, path: Path) -> None:
+        """Convenience: point the driver's engine at a tmp state dir
+        so tests don't write into the real state directory."""
+        self.shell.engine.active_sessions_state_dir = path
+
     # ----- chat -----
 
     def submit_chat(self, text: str, *, active_session_id: Optional[str] = None) -> Dict[str, Any]:
