@@ -94,6 +94,209 @@ def f11_toggles_fullscreen(
     return True
 
 
+def click_dispatches_on_workflow_panels(
+    event: InputEvent, driver: "RealtimeDriver"
+) -> bool:
+    """Left-click on a WorkflowView panel dispatches ``expand`` against the
+    clicked item-row.
+
+    The compositor positions each panel via the WorkflowView's
+    connection transform; this handler reverses that transform to
+    intersect the click ray with the panel's local screen rectangle,
+    converts the hit position to bitmap UV, and uses the renderer's
+    item-row layout to pick the item-id. ``engine.actions.dispatch_action``
+    is then invoked with ``expand`` and the resolved id.
+
+    Returns True only if a panel item was actually hit; non-hits return
+    False so mouse-button bindings (camera interaction) still fire on
+    non-panel clicks.
+
+    Only handles left-button press on a ``WorkflowView`` root. Other
+    root types return False — the event passes through unchanged.
+    Right-clicks and middle-clicks are also passed through; future
+    work can extend this with context-menu actions.
+    """
+    if event.kind != "mouse_button" or event.button != "left" or not event.pressed:
+        return False
+    if event.x < 0 or event.y < 0:
+        return False
+    engine = driver.engine
+    root = engine.nodes.get(driver.root_id)
+    if root is None or root.type_name != "WorkflowView":
+        return False
+    panel_id, item_id = _hit_test_workflow_panels(
+        engine=engine,
+        view=driver.view,
+        root=root,
+        click_x=event.x,
+        click_y=event.y,
+    )
+    if panel_id is None or item_id is None:
+        return False
+    from engine.actions import dispatch_action
+
+    try:
+        dispatch_action(engine, panel_id, "expand", item_id=item_id)
+    except Exception as e:
+        engine.errors.append(f"realtime click dispatch: {e}")
+    return True
+
+
+def _hit_test_workflow_panels(
+    *,
+    engine: Any,
+    view: View,
+    root,
+    click_x: int,
+    click_y: int,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Return ``(panel_id, item_id)`` for the panel item hit by a click at
+    canvas pixel ``(click_x, click_y)``, or ``(None, None)`` if no panel
+    item was hit.
+
+    The click is cast as a ray from the camera through the canvas pixel,
+    then transformed into each panel's local frame (reversing the
+    WorkflowView connection transform). A hit on z=0 within the panel's
+    ``screen_width`` × ``screen_height`` rectangle counts; the hit's UV
+    coordinates are then mapped to the panel's bitmap-pixel layout to
+    pick which item-row was clicked. The title region (above the
+    horizontal divider) returns no item.
+    """
+    canvas_w = max(1, int(getattr(view, "width", 0) or 1))
+    canvas_h = max(1, int(getattr(view, "height", 0) or 1))
+    aspect = canvas_w / canvas_h if canvas_h > 0 else 1.0
+    half_h = float(np.tan(view.fov_y_radians / 2.0))
+    half_w = half_h * aspect
+    u = (click_x / canvas_w) * 2.0 - 1.0
+    v = 1.0 - (click_y / canvas_h) * 2.0
+    dir_cam = np.array([u * half_w, v * half_h, -1.0], dtype=np.float64)
+    dir_cam /= np.linalg.norm(dir_cam)
+    dir_world = view.orientation @ dir_cam
+    origin_world = np.asarray(view.position, dtype=np.float64)
+
+    for conn_name, conn in root.connections.items():
+        if not conn_name.startswith("panel_"):
+            continue
+        target_id, transform = _resolve_panel_connection(conn)
+        if target_id is None:
+            continue
+        target_node = engine.nodes.get(target_id)
+        if target_node is None or target_node.type_name != "ListRenderer":
+            continue
+        # Transform ray into panel-local frame.
+        if transform is None:
+            local_origin = origin_world
+            local_dir = dir_world
+        else:
+            R = np.asarray(transform[:3, :3], dtype=np.float64)
+            t = np.asarray(transform[:3, 3], dtype=np.float64)
+            local_origin = R.T @ (origin_world - t)
+            local_dir = R.T @ dir_world
+        if abs(local_dir[2]) < 1e-9:
+            continue
+        ray_t = -local_origin[2] / local_dir[2]
+        if ray_t <= 0:
+            continue
+        hit_x = local_origin[0] + ray_t * local_dir[0]
+        hit_y = local_origin[1] + ray_t * local_dir[1]
+        state = target_node.state or {}
+        screen_w = float(state.get("screen_width", 3.0))
+        screen_h = float(state.get("screen_height", 4.0))
+        if abs(hit_x) > screen_w / 2.0 or abs(hit_y) > screen_h / 2.0:
+            continue
+        item_id = _panel_row_to_item_id(
+            engine=engine,
+            panel_node=target_node,
+            hit_x=hit_x,
+            hit_y=hit_y,
+            screen_w=screen_w,
+            screen_h=screen_h,
+        )
+        if item_id is not None:
+            return target_id, item_id
+    return None, None
+
+
+def _resolve_panel_connection(conn) -> Tuple[Optional[str], Optional[np.ndarray]]:
+    """Mirror of ``Engine._resolve_connection`` for the click-handler so we
+    do not import from engine.core (avoids circular imports)."""
+    if isinstance(conn, str):
+        return conn, None
+    if isinstance(conn, dict):
+        tf = conn.get("transform")
+        if tf is not None:
+            tf = np.asarray(tf, dtype=np.float64)
+        return conn.get("target"), tf
+    if isinstance(conn, list) and conn:
+        target_id = conn[0]
+        tf = np.asarray(conn[1], dtype=np.float64) if len(conn) > 1 else None
+        return target_id, tf
+    return None, None
+
+
+def _panel_row_to_item_id(
+    *,
+    engine: Any,
+    panel_node,
+    hit_x: float,
+    hit_y: float,
+    screen_w: float,
+    screen_h: float,
+) -> Optional[str]:
+    """Map a hit position inside a panel's screen rectangle to the
+    item-id of the item-row underneath that hit.
+
+    Returns ``None`` when the hit lands in the title/header strip, in an
+    empty row past the last item, or when the panel has no source data.
+    """
+    # UV in the panel's local 2D frame (0..1, top-left origin).
+    panel_u = (hit_x + screen_w / 2.0) / screen_w
+    panel_v = 1.0 - (hit_y + screen_h / 2.0) / screen_h
+    state = panel_node.state or {}
+    res_max = int(state.get("screen_resolution", 384))
+    font_size = int(state.get("font_size", 14))
+    aspect = screen_w / screen_h if screen_h > 0 else 1.0
+    if aspect >= 1.0:
+        screen_w_px = res_max
+        screen_h_px = max(1, int(round(res_max / aspect)))
+    else:
+        screen_h_px = res_max
+        screen_w_px = max(1, int(round(res_max * aspect)))
+    bitmap_y = panel_v * screen_h_px
+    margin = max(4, font_size // 3)
+    header_end_y = margin + int(font_size * 1.6)
+    if bitmap_y < header_end_y:
+        return None
+    line_h = font_size + 4
+    relative_y = bitmap_y - header_end_y
+    row_index = int(relative_y // line_h)
+    if row_index < 0:
+        return None
+    # Look up the panel's source items.
+    conn = panel_node.connections.get("source") if hasattr(panel_node, "connections") else None
+    if conn is None:
+        return None
+    if isinstance(conn, str):
+        source_id = conn
+    elif isinstance(conn, dict):
+        source_id = conn.get("target")
+    elif isinstance(conn, list) and conn:
+        source_id = conn[0]
+    else:
+        return None
+    if not source_id:
+        return None
+    cache_entry = engine.cache.get(source_id, {})
+    if not isinstance(cache_entry, dict):
+        return None
+    items = cache_entry.get("items") or []
+    scroll_offset = int(state.get("scroll_offset", 0))
+    target_index = scroll_offset + row_index
+    if target_index < 0 or target_index >= len(items):
+        return None
+    return items[target_index].get("id")
+
+
 def escape_toggles_workflow_mode_or_quits(
     event: InputEvent, driver: "RealtimeDriver"
 ) -> bool:
@@ -170,7 +373,11 @@ class RealtimeDriver:
         self.global_handlers: List[GlobalHandler] = list(
             global_handlers
             if global_handlers is not None
-            else (escape_toggles_workflow_mode_or_quits, f11_toggles_fullscreen)
+            else (
+                escape_toggles_workflow_mode_or_quits,
+                f11_toggles_fullscreen,
+                click_dispatches_on_workflow_panels,
+            )
         )
         self.frame_budget_s = float(frame_budget_s)
         self.frame_index = 0
