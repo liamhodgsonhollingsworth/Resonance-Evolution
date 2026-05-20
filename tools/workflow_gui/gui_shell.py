@@ -1196,10 +1196,12 @@ class GuiShell:
         """Dispatch a per-item action.
 
         ``expand`` and ``collapse`` are local UI state — the central
-        pane's body display toggles. Every other action dispatches
-        through ``engine.actions.dispatch_action`` against the tab's
-        renderer node-id, so trust mutations / file edits / etc. flow
-        through the same code path the 3D surface uses.
+        pane's body display toggles. ``target`` (SPEC-068) sets the
+        clicked session as the active chat target. Every other
+        action dispatches through ``engine.actions.dispatch_action``
+        against the tab's renderer node-id, so trust mutations /
+        file edits / etc. flow through the same code path the 3D
+        surface uses.
         """
         iid = str(item.get("id"))
         if action == "expand":
@@ -1210,6 +1212,12 @@ class GuiShell:
         if action == "collapse":
             self._expanded_item_id = None
             self._render_active_tab()
+            return
+        if action == "target":
+            # SPEC-068 — clicking a row in the Chat or Sessions view
+            # makes that session the active chat target. The session
+            # id is in item['id'] for both view shapes.
+            self.set_active_session(iid)
             return
 
         panel_id = self.panel_id_for_tab(self.active_tab or "")
@@ -1225,6 +1233,202 @@ class GuiShell:
         # Refresh the tab after the action so the list reflects the change.
         self._render_active_tab()
 
+    # ----- SPEC-068 chat routing -----
+
+    def set_active_session(self, sid_or_name: str) -> Optional[str]:
+        """Set the active chat target. Accepts an id OR a display_name.
+
+        SPEC-068: clicking a row in the Chat or Sessions sidebar
+        selects that session as the active target. Reactivates the
+        session if it's archived so subsequent bare-text messages
+        flow to it without a separate resume step. Returns the
+        resolved session id, or None if no match.
+        """
+        sid = self._resolve_session_id(sid_or_name)
+        if sid is None:
+            return None
+        self.active_session_id = sid
+        # Reactivate if archived/idle so the next message lands cleanly.
+        try:
+            rec = self.sm.get(sid)
+            if rec is not None and rec.status in ("archived", "idle"):
+                self.sm.reactivate(sid)
+        except Exception as exc:
+            self.engine.errors.append(f"gui_shell reactivate: {exc}")
+        # Re-render so the Chat view shows the new (active) marker.
+        if self.tk_root is not None and self.active_tab in ("Chat", "Sessions"):
+            self._render_active_tab()
+        return sid
+
+    def _resolve_session_id(self, sid_or_name: str) -> Optional[str]:
+        """Look up a session by exact id, then by display_name, then
+        by id-prefix (so the maintainer can type the first 8 chars
+        of a UUID and have it resolve). Returns None if no match."""
+        if not sid_or_name:
+            return None
+        # Exact id match.
+        try:
+            rec = self.sm.get(sid_or_name)
+        except Exception:
+            rec = None
+        if rec is not None:
+            return rec.id
+        # display_name match.
+        try:
+            for rec in self.sm.list():
+                if rec.display_name == sid_or_name:
+                    return rec.id
+            # id-prefix match (≥4 chars to avoid false hits).
+            if len(sid_or_name) >= 4:
+                for rec in self.sm.list():
+                    if rec.id.startswith(sid_or_name):
+                        return rec.id
+        except Exception:
+            pass
+        return None
+
+    def route_chat(self, text: str) -> Dict[str, Any]:
+        """Route a chat-submit body. Public for tests + the text-API.
+
+        SPEC-068 acceptance:
+        - Bare text → active session.
+        - ``@<name> text`` → that session, reactivating if archived.
+        - ``/all text`` → broadcast to every active session.
+        - Empty / whitespace-only → no-op.
+
+        Returns a dict describing the routing decision::
+
+            {"routed": True, "target": <sid|"all"|None>,
+             "delivered_to": [<sid>, ...],
+             "message": <body_sent>,
+             "reason": <human-readable note>}
+        """
+        text = (text or "").strip()
+        if not text:
+            return {
+                "routed": False,
+                "target": None,
+                "delivered_to": [],
+                "message": "",
+                "reason": "empty body",
+            }
+
+        # /all broadcast (matches "/all body" or bare "/all").
+        if text == "/all" or text.startswith("/all "):
+            body = text[len("/all"):].strip()
+            if not body:
+                return {
+                    "routed": False,
+                    "target": "all",
+                    "delivered_to": [],
+                    "message": "",
+                    "reason": "/all with empty body",
+                }
+            delivered: List[str] = []
+            errors: List[str] = []
+            try:
+                records = list(self.sm.list())
+            except Exception as exc:
+                return {
+                    "routed": False,
+                    "target": "all",
+                    "delivered_to": [],
+                    "message": body,
+                    "reason": f"sm.list failed: {exc}",
+                }
+            for rec in records:
+                if rec.status == "archived":
+                    continue  # skip archived in broadcast
+                try:
+                    self.sm.send(rec.id, body)
+                    delivered.append(rec.id)
+                except Exception as exc:
+                    errors.append(f"{rec.id}: {exc}")
+            return {
+                "routed": True,
+                "target": "all",
+                "delivered_to": delivered,
+                "message": body,
+                "reason": (
+                    f"broadcast to {len(delivered)} session(s)"
+                    + (f"; errors: {errors}" if errors else "")
+                ),
+            }
+
+        # @<name-or-id> routing.
+        if text.startswith("@"):
+            head, _, body = text[1:].partition(" ")
+            head = head.strip()
+            body = body.strip()
+            if not head or not body:
+                return {
+                    "routed": False,
+                    "target": head or None,
+                    "delivered_to": [],
+                    "message": body,
+                    "reason": "@-prefix requires `@<name> <body>`",
+                }
+            sid = self._resolve_session_id(head)
+            if sid is None:
+                return {
+                    "routed": False,
+                    "target": head,
+                    "delivered_to": [],
+                    "message": body,
+                    "reason": f"no session matched name/id {head!r}",
+                }
+            # Reactivate if archived.
+            try:
+                rec = self.sm.get(sid)
+                if rec is not None and rec.status in ("archived", "idle"):
+                    self.sm.reactivate(sid)
+            except Exception as exc:
+                self.engine.errors.append(f"gui_shell reactivate {sid}: {exc}")
+            try:
+                self.sm.send(sid, body)
+            except Exception as exc:
+                return {
+                    "routed": False,
+                    "target": sid,
+                    "delivered_to": [],
+                    "message": body,
+                    "reason": f"send failed: {exc}",
+                }
+            return {
+                "routed": True,
+                "target": sid,
+                "delivered_to": [sid],
+                "message": body,
+                "reason": f"routed via @-prefix to {sid}",
+            }
+
+        # Bare text → active session (SPEC-002).
+        if self.active_session_id is None:
+            return {
+                "routed": False,
+                "target": None,
+                "delivered_to": [],
+                "message": text,
+                "reason": "no active session — open Chat tab to pick one",
+            }
+        try:
+            self.sm.send(self.active_session_id, text)
+        except Exception as exc:
+            return {
+                "routed": False,
+                "target": self.active_session_id,
+                "delivered_to": [],
+                "message": text,
+                "reason": f"send failed: {exc}",
+            }
+        return {
+            "routed": True,
+            "target": self.active_session_id,
+            "delivered_to": [self.active_session_id],
+            "message": text,
+            "reason": f"routed to active session {self.active_session_id}",
+        }
+
     def _on_chat_submit(self) -> None:
         if self._chat_entry is None:
             return
@@ -1232,15 +1436,11 @@ class GuiShell:
         if not text:
             return
         self._chat_entry.delete(0, "end")
-        if self.active_session_id is None:
-            # No active session — show a hint by writing into the chat
-            # input as placeholder text the user can clear.
-            self._chat_entry.insert(0, "(no active session — open Chat tab to pick one)")
-            return
-        try:
-            self.sm.send(self.active_session_id, text)
-        except SessionError as exc:
-            self._chat_entry.insert(0, f"(send failed: {exc})")
+        result = self.route_chat(text)
+        if not result.get("routed"):
+            # Surface a hint by writing back into the chat input.
+            reason = result.get("reason", "send failed")
+            self._chat_entry.insert(0, f"({reason})")
             return
 
     # ----- default session bootstrap -----

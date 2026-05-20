@@ -474,6 +474,61 @@ def _cmd_list_views(engine: Engine, view: View, *_) -> Tuple[str, View]:
     return "\n".join(lines), view
 
 
+def _cmd_route_chat(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Route a chat-submit body through the workflow shell's routing
+    layer (SPEC-068).
+
+    Usage::
+
+        route-chat <body>
+        route-chat @worker-2 status?
+        route-chat /all heads up
+
+    Requires a GuiShell attached to the engine (``engine.gui_shell``).
+    Returns the routing decision as a one-line summary.
+    """
+    if not args:
+        return "ERR: route-chat requires a body", view
+    body = " ".join(args)
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    try:
+        result = shell.route_chat(body)
+    except Exception as exc:
+        return f"ERR: route_chat raised: {exc}", view
+    prefix = "OK" if result.get("routed") else "ERR"
+    target = result.get("target") or "(none)"
+    delivered = result.get("delivered_to") or []
+    return (
+        f"{prefix}: target={target}  delivered_to={delivered}  "
+        f"reason={result.get('reason', '')!r}"
+    ), view
+
+
+def _cmd_set_active_session(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Set the active chat target (SPEC-068).
+
+    Usage::
+
+        set-active-session <id-or-name>
+
+    Accepts a session id, display_name, or id-prefix (≥4 chars).
+    """
+    if not args:
+        return "ERR: set-active-session requires <id-or-name>", view
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    try:
+        sid = shell.set_active_session(args[0])
+    except Exception as exc:
+        return f"ERR: set_active_session raised: {exc}", view
+    if sid is None:
+        return f"ERR: no session matched {args[0]!r}", view
+    return f"OK: active session = {sid}", view
+
+
 def _cmd_list_sessions(engine: Engine, view: View, *args) -> Tuple[str, View]:
     """List active sessions registered on the machine (SPEC-079).
 
@@ -519,6 +574,8 @@ def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     lines.append("  set-view <view-name>            -- activate a registered view (SPEC-067)")
     lines.append("  list-views                      -- list views from engine.view_registry (SPEC-067)")
     lines.append("  list-sessions [--include-stale] -- list active Claude sessions on the machine (SPEC-079)")
+    lines.append("  route-chat <body>               -- route chat through the shell (bare/@-prefix/all) (SPEC-068)")
+    lines.append("  set-active-session <id|name>    -- set the active chat target (SPEC-068)")
     return "\n".join(lines), view
 
 
@@ -540,6 +597,8 @@ _COMMANDS = {
     "set-view": _cmd_set_view,
     "list-views": _cmd_list_views,
     "list-sessions": _cmd_list_sessions,
+    "route-chat": _cmd_route_chat,
+    "set-active-session": _cmd_set_active_session,
     "list-commands": _cmd_list_commands,
 }
 
