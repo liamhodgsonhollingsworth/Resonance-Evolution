@@ -474,6 +474,52 @@ def _cmd_list_views(engine: Engine, view: View, *_) -> Tuple[str, View]:
     return "\n".join(lines), view
 
 
+def _cmd_copy_module(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Serialize a node (and its sub-tree) to JSON text (SPEC-073).
+
+    Usage::
+
+        copy-module <node-id>
+
+    Returns the JSON text. Callers can pipe this to a file, clipboard,
+    or another `paste-module` invocation against a different engine.
+    """
+    if not args:
+        return "ERR: copy-module requires <node-id>", view
+    try:
+        from tools.module_clipboard import serialize_module
+        text = serialize_module(engine, args[0], include_subtree=True)
+    except KeyError as exc:
+        return f"ERR: {exc}", view
+    except Exception as exc:
+        return f"ERR: serialize failed: {exc}", view
+    return text, view
+
+
+def _cmd_paste_module(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Instantiate a module from JSON text (SPEC-073).
+
+    Usage::
+
+        paste-module <json>
+
+    The full json blob is taken as the concatenation of remaining
+    args (since the shell tokenizer splits on whitespace). For
+    multi-line JSON, callers should write to a file and use the
+    Python API directly; this CLI form is for short single-node
+    snippets.
+    """
+    if not args:
+        return "ERR: paste-module requires a JSON payload", view
+    text = " ".join(args)
+    try:
+        from tools.module_clipboard import paste_text_to_engine
+        new_ids = paste_text_to_engine(engine, text)
+    except Exception as exc:
+        return f"ERR: paste failed: {exc}", view
+    return f"OK: spawned {len(new_ids)} node(s): {', '.join(new_ids)}", view
+
+
 def _cmd_route_chat(engine: Engine, view: View, *args) -> Tuple[str, View]:
     """Route a chat-submit body through the workflow shell's routing
     layer (SPEC-068).
@@ -576,6 +622,8 @@ def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     lines.append("  list-sessions [--include-stale] -- list active Claude sessions on the machine (SPEC-079)")
     lines.append("  route-chat <body>               -- route chat through the shell (bare/@-prefix/all) (SPEC-068)")
     lines.append("  set-active-session <id|name>    -- set the active chat target (SPEC-068)")
+    lines.append("  copy-module <node-id>           -- serialize node + subtree to JSON text (SPEC-073)")
+    lines.append("  paste-module <json>             -- instantiate module from JSON text (SPEC-073)")
     return "\n".join(lines), view
 
 
@@ -599,6 +647,8 @@ _COMMANDS = {
     "list-sessions": _cmd_list_sessions,
     "route-chat": _cmd_route_chat,
     "set-active-session": _cmd_set_active_session,
+    "copy-module": _cmd_copy_module,
+    "paste-module": _cmd_paste_module,
     "list-commands": _cmd_list_commands,
 }
 
