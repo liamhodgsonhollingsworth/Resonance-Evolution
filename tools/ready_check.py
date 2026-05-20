@@ -159,6 +159,70 @@ def _check_trust_set_round_trip(verbose: bool) -> Tuple[bool, str]:
     return True, "trust-set add/remove round-trips over 30 cycles"
 
 
+def _check_launcher_scene_arg(verbose: bool) -> Tuple[bool, str]:
+    """Simulate the launcher's argv resolution: `--scene workflow_view`
+    (the .bat passes this) must resolve to an existing scene file.
+    Catches the bug where the shell looks for `scenes/workflow_view`
+    without the .json suffix and `--launch-realtime` then warns and
+    skips the window."""
+    # Mirror the shell's resolution logic.
+    candidate = ROOT / "scenes" / "workflow_view"
+    if candidate.exists():
+        return True, "launcher arg resolves to a real scene"
+    with_suffix = candidate.with_suffix(".json")
+    if with_suffix.exists():
+        return True, f"launcher arg resolves via .json fallback to {with_suffix.name}"
+    return False, (
+        f"launcher arg `--scene workflow_view` would fail: "
+        f"{candidate} and {with_suffix} both missing"
+    )
+
+
+def _check_claude_auth_status(verbose: bool) -> Tuple[bool, str]:
+    """Spawned sessions need OAuth login (post-API-key-strip). Probe
+    `claude auth status` and assert loggedIn=true. This catches the
+    case where the maintainer was authenticated only via
+    ANTHROPIC_API_KEY and the strip leaves them with no credentials."""
+    import json
+    import shutil
+    import subprocess
+
+    claude_bin = shutil.which("claude") or shutil.which("claude.cmd")
+    if not claude_bin:
+        return False, "claude CLI not on PATH; required for spawned sessions"
+    try:
+        # Strip API key from probe env so the status reflects post-strip state.
+        env = os.environ.copy()
+        for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+                    "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"):
+            env.pop(key, None)
+        result = subprocess.run(
+            [claude_bin, "auth", "status"],
+            capture_output=True, text=True, timeout=10, env=env,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "claude auth status timed out (>10s)"
+    # `claude auth status` exits 1 when not logged in but still emits JSON
+    # to stdout. Parse stdout regardless of exit code; only treat
+    # non-JSON output as a hard failure.
+    if not result.stdout.strip():
+        return False, (
+            f"claude auth status produced no output (exit={result.returncode}); "
+            f"stderr: {result.stderr.strip()[:200]}"
+        )
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return False, f"claude auth status returned non-JSON: {result.stdout.strip()[:200]}"
+    if not data.get("loggedIn"):
+        return False, (
+            f"not logged in (authMethod={data.get('authMethod')!r}) - "
+            f"run `claude auth login` to authenticate spawned sessions to "
+            f"the Claude Code plan"
+        )
+    return True, f"logged in via authMethod={data.get('authMethod')!r}"
+
+
 def _check_desktop_shortcut(verbose: bool) -> Tuple[bool, str]:
     if os.name != "nt":
         return True, "not Windows; desktop shortcut check skipped"
@@ -200,6 +264,8 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("reversibility_cycles", _check_reversibility_cycles),
     ("trust_set_round_trip", _check_trust_set_round_trip),
     ("billing_env_strip", _check_billing_env_strip),
+    ("launcher_scene_arg", _check_launcher_scene_arg),
+    ("claude_auth_status", _check_claude_auth_status),
     ("desktop_shortcut", _check_desktop_shortcut),
 ]
 
