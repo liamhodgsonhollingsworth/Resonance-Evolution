@@ -905,6 +905,130 @@ def _check_visual_regression(verbose: bool) -> Tuple[bool, str]:
     )
 
 
+def _check_visual_contract(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-069 phase 1: the visual design contract module exposes
+    color tokens, font stacks, and Lucide icons. Headless probe — no
+    Tk root required.
+
+    Probes:
+
+    1. Every documented semantic color token resolves.
+    2. The per-view tint table covers the documented views.
+    3. Every font alias ("sans", "mono") resolves to a tuple whose
+       first member is in the declared stack.
+    4. Every font size token resolves.
+    5. The icon registry is non-empty and ``get_icon_svg`` returns
+       a well-formed ``<svg>`` string for every name.
+    6. The icon cache populates and round-trips a 16x16 icon (via
+       ``render_icon_image`` — bypasses PhotoImage so the probe is
+       headless-safe).
+    7. The LRU cache evicts past its limit.
+    """
+    try:
+        from tools.visual_contract import (
+            _ICON_CACHE_LIMIT,
+            active_renderer,
+            clear_icon_cache,
+            contract_status,
+            get_color,
+            get_font,
+            get_font_size,
+            get_icon_svg,
+            list_color_tokens,
+            list_font_families,
+            list_font_sizes,
+            list_icon_names,
+            list_view_accents,
+            render_icon_image,
+            view_accent,
+        )
+    except Exception as exc:
+        return False, f"visual_contract import failed: {exc}"
+
+    # Probe 1: color tokens.
+    required_colors = {
+        "surface-0", "surface-1", "surface-1b", "surface-2",
+        "surface-divider", "accent", "accent-hover",
+        "fg-primary", "fg-emphasis", "fg-secondary", "fg-muted",
+        "status-ok", "status-pending", "status-in-progress",
+        "status-alert", "status-warn", "status-granted", "status-cancelled",
+    }
+    available = set(list_color_tokens())
+    missing = required_colors - available
+    if missing:
+        return False, f"color tokens missing: {sorted(missing)}"
+    for token in required_colors:
+        value = get_color(token)
+        if not (value.startswith("#") and len(value) == 7):
+            return False, f"color token {token!r} -> {value!r} not #RRGGBB"
+
+    # Probe 2: per-view tints.
+    required_views = {
+        "Tasks", "Ideas", "Wishlist",
+        "Quarantine", "Trusted Senders", "Logs",
+    }
+    view_missing = required_views - set(list_view_accents())
+    if view_missing:
+        return False, f"view tints missing: {sorted(view_missing)}"
+    fallback = view_accent("ThisViewIsNotMapped")
+    if not (fallback.startswith("#") and len(fallback) == 7):
+        return False, f"unmapped-view fallback not a hex color: {fallback!r}"
+
+    # Probe 3: font aliases.
+    for alias in ("sans", "mono"):
+        if alias not in list_font_families():
+            return False, f"font alias missing: {alias!r}"
+        font = get_font(alias, 11)
+        if not (isinstance(font, tuple) and len(font) in (2, 3)):
+            return False, f"get_font({alias!r}) returned bad shape: {font!r}"
+
+    # Probe 4: font size tokens.
+    required_sizes = {
+        "text-display", "text-body-strong",
+        "text-body", "text-body-sm", "text-meta",
+    }
+    if required_sizes - set(list_font_sizes()):
+        return False, (
+            f"font size tokens missing: "
+            f"{sorted(required_sizes - set(list_font_sizes()))}"
+        )
+    for token in required_sizes:
+        size = get_font_size(token)
+        if not (isinstance(size, int) and size > 0):
+            return False, f"size token {token!r} -> {size!r}"
+
+    # Probe 5: icon registry + SVG strings.
+    icons = list_icon_names()
+    if len(icons) < 10:
+        return False, f"only {len(icons)} icons registered; expected >=10"
+    for name in icons:
+        svg = get_icon_svg(name)
+        if "<svg" not in svg or "</svg>" not in svg:
+            return False, f"icon {name!r} SVG malformed"
+
+    # Probe 6: render round-trip via render_icon_image (no Tk).
+    clear_icon_cache()
+    sample = icons[0]
+    img = render_icon_image(sample, size=16)
+    if img.size != (16, 16):
+        return False, (
+            f"render_icon_image({sample!r}, 16) -> {img.size}; expected (16, 16)"
+        )
+
+    # Probe 7: contract_status reports a renderer label.
+    status = contract_status()
+    if status.get("renderer") not in ("cairosvg", "pil"):
+        return False, f"contract_status reports unknown renderer: {status!r}"
+
+    return True, (
+        f"visual contract healthy: {len(required_colors)} color tokens, "
+        f"{len(list_view_accents())} view tints, "
+        f"{len(list_font_families())} font aliases, "
+        f"{len(icons)} icons (renderer={active_renderer()}), "
+        f"cache limit={_ICON_CACHE_LIMIT}"
+    )
+
+
 CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("engine_discover", _check_engine_discover),
     ("scene_precompute", _check_scene_precompute),
@@ -926,6 +1050,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("file_source_path_confinement", _check_file_source_path_confinement),
     ("panel_movable_resize", _check_panel_movable_resize),
     ("paste_trust_gate", _check_paste_trust_gate),
+    ("visual_contract", _check_visual_contract),
 ]
 
 
