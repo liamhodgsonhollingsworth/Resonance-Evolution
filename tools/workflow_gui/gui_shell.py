@@ -986,6 +986,20 @@ class GuiShell:
         panel_frame.place(x=handle.x, y=handle.y, width=handle.w, height=handle.h)
         self._panel_widgets[panel_id] = panel_frame
 
+        # SPEC-007 v2 resize grip — a small square at the SE corner of
+        # the panel that drag-resizes by mutating handle.w/h. The grip
+        # uses place() with rel-anchors so it stays glued to the SE
+        # corner regardless of the panel's current (w, h).
+        grip = tk.Frame(panel_frame, bg="#3b4254", cursor="bottom_right_corner",
+                        width=14, height=14)
+        grip.place(relx=1.0, rely=1.0, anchor="se")
+        grip.bind("<ButtonPress-1>",
+                  lambda e, pid=panel_id: self._on_panel_resize_start(e, pid))
+        grip.bind("<B1-Motion>",
+                  lambda e, pid=panel_id: self._on_panel_resize_motion(e, pid))
+        grip.bind("<ButtonRelease-1>",
+                  lambda e, pid=panel_id: self._on_panel_resize_release(e, pid))
+
         header = tk.Frame(panel_frame, bg="#2a2d34", cursor="fleur")
         header.pack(fill="x", padx=12, pady=(12, 0))
 
@@ -1326,6 +1340,7 @@ class GuiShell:
         except Exception:
             return
         self._panel_drag = {
+            "kind": "move",
             "panel_id": panel_id,
             "anchor_x_root": anchor_x,
             "anchor_y_root": anchor_y,
@@ -1341,6 +1356,11 @@ class GuiShell:
         so a release commits the final position.
         """
         if self._panel_drag is None or self._panel_drag.get("panel_id") != panel_id:
+            return
+        # In v2 the move + resize handlers share _panel_drag; tag the
+        # gesture kind so the motion branches don't cross-process each
+        # other's anchors.
+        if self._panel_drag.get("kind", "move") != "move":
             return
         handle = self._panel_handles.get(panel_id)
         if handle is None or handle.locked:
@@ -1368,8 +1388,184 @@ class GuiShell:
         """Commit the drag — clears the gesture state. The handle
         already holds the final snapped position from the last motion
         event; no further mutation is required at release time.
+
+        On release, snap-to-peer-edges runs (SPEC-007 v2). The cheap
+        per-motion snap-to-grid keeps the panel grid-aligned during
+        the gesture; the release pass also pulls the panel to align
+        with peer panels' edges if they're within snap distance.
         """
+        if self._panel_drag is not None and self._panel_drag.get("panel_id") == panel_id:
+            self._apply_peer_snap(panel_id)
         self._panel_drag = None
+
+    # ----- resize gesture handlers (v2) -----
+
+    def _on_panel_resize_start(self, event: Any, panel_id: str) -> None:
+        """Anchor a resize gesture on initial mouse press at the SE
+        corner grip. Stores the cursor origin + the current handle
+        (w, h) so motion events compute deltas against the gesture
+        anchor.
+        """
+        handle = self._panel_handles.get(panel_id)
+        if handle is None or handle.locked:
+            self._panel_drag = None
+            return
+        try:
+            anchor_x = int(event.x_root)
+            anchor_y = int(event.y_root)
+        except Exception:
+            return
+        # Re-use _panel_drag for both gesture kinds; the "kind" tag
+        # distinguishes move from resize so a single release branch
+        # can dispatch correctly.
+        self._panel_drag = {
+            "kind": "resize",
+            "panel_id": panel_id,
+            "anchor_x_root": anchor_x,
+            "anchor_y_root": anchor_y,
+            "origin_w": handle.w,
+            "origin_h": handle.h,
+        }
+
+    def _on_panel_resize_motion(self, event: Any, panel_id: str) -> None:
+        """Apply a resize delta to the panel's place() dimensions.
+
+        Each motion event re-places the widget at the snapped delta
+        from the gesture anchor; the handle is updated continuously
+        so a release commits the final dimensions. Width and height
+        clamp to a 48 px minimum.
+        """
+        if self._panel_drag is None or self._panel_drag.get("panel_id") != panel_id:
+            return
+        if self._panel_drag.get("kind") != "resize":
+            return
+        handle = self._panel_handles.get(panel_id)
+        if handle is None or handle.locked:
+            return
+        try:
+            cur_x = int(event.x_root)
+            cur_y = int(event.y_root)
+        except Exception:
+            return
+        delta_x = cur_x - self._panel_drag["anchor_x_root"]
+        delta_y = cur_y - self._panel_drag["anchor_y_root"]
+        new_w = snap_to_grid(self._panel_drag["origin_w"] + delta_x)
+        new_h = snap_to_grid(self._panel_drag["origin_h"] + delta_y)
+        handle.w = max(48, new_w)
+        handle.h = max(48, new_h)
+        widget = self._panel_widgets.get(panel_id)
+        if widget is not None:
+            try:
+                widget.place(x=handle.x, y=handle.y,
+                             width=handle.w, height=handle.h)
+            except Exception:
+                pass
+
+    def _on_panel_resize_release(self, event: Any, panel_id: str) -> None:
+        """Commit the resize — clears the gesture state. Like the
+        move-release, this fires the peer-snap pass so the panel's
+        new dimensions can also align to peer edges if close enough.
+        """
+        if self._panel_drag is not None and self._panel_drag.get("panel_id") == panel_id:
+            self._apply_peer_snap(panel_id)
+        self._panel_drag = None
+
+    # ----- snap-to-edges (v2) -----
+
+    def _compute_snap(
+        self,
+        panel: PanelHandle,
+        peers: List[PanelHandle],
+        snap_distance: int = SNAP_GRID_PX,
+    ) -> Tuple[int, int]:
+        """Compute the snapped (x, y) for ``panel`` given its peers.
+
+        Snap math: for every peer P, four candidate alignments per
+        axis. On the x-axis, P's left edge can snap against the
+        panel's left or right edge (= P.x or P.x - panel.w), and
+        P's right edge similarly (= P.x + P.w or P.x + P.w - panel.w).
+        Each candidate is tested against the panel's current x; the
+        candidate with the smallest delta (and delta <= snap_distance)
+        wins. y-axis math is symmetric. x and y resolve independently
+        — a panel can snap on one axis without snapping on the other.
+
+        Public (under-prefixed but documented) for tests of the
+        snap-math without driving the full drag gesture.
+        """
+        best_x = panel.x
+        best_dx = snap_distance + 1
+        best_y = panel.y
+        best_dy = snap_distance + 1
+
+        for peer in peers:
+            if peer is panel:
+                continue
+            if peer.archived:
+                continue
+            # x-axis candidates: align this panel's left/right edge
+            # to the peer's left/right edge.
+            candidates_x = [
+                peer.x,                          # left-left
+                peer.x - panel.w,                # right-left
+                peer.x + peer.w,                 # left-right
+                peer.x + peer.w - panel.w,       # right-right
+            ]
+            for cand in candidates_x:
+                dx = abs(cand - panel.x)
+                if dx < best_dx:
+                    best_dx = dx
+                    best_x = cand
+            # y-axis candidates.
+            candidates_y = [
+                peer.y,
+                peer.y - panel.h,
+                peer.y + peer.h,
+                peer.y + peer.h - panel.h,
+            ]
+            for cand in candidates_y:
+                dy = abs(cand - panel.y)
+                if dy < best_dy:
+                    best_dy = dy
+                    best_y = cand
+
+        # Resolve: keep best only if within snap distance. Independent
+        # axes — one can snap without the other.
+        snapped_x = best_x if best_dx <= snap_distance else panel.x
+        snapped_y = best_y if best_dy <= snap_distance else panel.y
+        # Clamp to >= 0 so the snap doesn't drag the panel offscreen.
+        return max(0, snapped_x), max(0, snapped_y)
+
+    def _apply_peer_snap(self, panel_id: str) -> None:
+        """Run snap-to-edges against the panel's peers and commit the
+        snapped position via move_panel (which re-places the widget).
+
+        Called on drag/resize release so the per-motion grid-only
+        snap stays cheap; the more expensive peer-edge scan only
+        fires on commit.
+        """
+        target = self._panel_handles.get(panel_id)
+        if target is None or target.locked:
+            return
+        peers = [
+            handle for pid, handle in self._panel_handles.items()
+            if pid != panel_id and not handle.archived
+        ]
+        if not peers:
+            return
+        snapped_x, snapped_y = self._compute_snap(target, peers)
+        if snapped_x != target.x or snapped_y != target.y:
+            # Bypass move_panel's snap-to-grid (we already have the
+            # peer-snapped coordinates which may not be grid-aligned
+            # if the peer's edges weren't). Directly update + re-place.
+            target.x = snapped_x
+            target.y = snapped_y
+            widget = self._panel_widgets.get(panel_id)
+            if widget is not None:
+                try:
+                    widget.place(x=target.x, y=target.y,
+                                 width=target.w, height=target.h)
+                except Exception:
+                    pass
 
     def _show_body(self, body_frame: Any, item: Dict[str, Any]) -> None:
         import tkinter as tk

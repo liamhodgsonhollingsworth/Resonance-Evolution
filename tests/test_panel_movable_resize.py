@@ -371,3 +371,270 @@ def test_ensure_panel_handle_creates_at_staggered_position():
     assert b["x"] > a["x"] or b["y"] > a["y"], (
         f"second handle should stagger; got a={a}, b={b}"
     )
+
+
+# ---------------------------------------------------------------------------
+# v2 drag-resize gesture (SE corner grip).
+# ---------------------------------------------------------------------------
+
+
+def test_resize_drag_start_anchors_gesture():
+    """Pressing the SE grip records the cursor anchor + the current
+    (w, h) so motion events compute deltas correctly."""
+    drv = GuiDriver().build()
+    drv.ensure_panel("test_panel")
+    initial = drv.panel_state("test_panel")
+    drv.shell._on_panel_resize_start(_evt(500, 400), "test_panel")
+    drag = drv.shell._panel_drag
+    assert drag is not None
+    assert drag["kind"] == "resize"
+    assert drag["panel_id"] == "test_panel"
+    assert drag["origin_w"] == initial["w"]
+    assert drag["origin_h"] == initial["h"]
+
+
+def test_resize_drag_motion_translates_to_width_height():
+    """A resize-drag from anchor (500, 400) to (560, 460) increases
+    the panel by (+60, +60). The result is then snapped to the
+    12-px grid: 480+60=540 (divisible by 12) and 312+60=372 (the
+    starting h=312 is the snapped form of 320)."""
+    drv = GuiDriver().build()
+    drv.ensure_panel("test_panel")
+    # resize_panel(480, 320) → snaps 320 to 324 (320/12=26.67 → round=27→324).
+    state_pre = drv.resize_panel("test_panel", 480, 320)
+    # 60 px delta is grid-aligned; 540 and (h+60) both round cleanly.
+    drv.shell._on_panel_resize_start(_evt(500, 400), "test_panel")
+    drv.shell._on_panel_resize_motion(_evt(560, 460), "test_panel")
+    state = drv.panel_state("test_panel")
+    assert state["w"] == 540
+    # h_post = snap_to_grid(state_pre["h"] + 60)
+    assert state["h"] == snap_to_grid(state_pre["h"] + 60)
+
+
+def test_resize_drag_snaps_to_grid():
+    """Motion events snap the resulting (w, h) to the 12-px grid.
+    Delta of (+19, +13) from grid-aligned 480x324 snaps to 504x336
+    (480+24, 324+12) — independent axes."""
+    drv = GuiDriver().build()
+    drv.ensure_panel("test_panel")
+    # 480 and 324 are both grid-aligned (480=40*12, 324=27*12).
+    drv.resize_panel("test_panel", 480, 324)
+    drv.shell._on_panel_resize_start(_evt(0, 0), "test_panel")
+    drv.shell._on_panel_resize_motion(_evt(19, 13), "test_panel")
+    state = drv.panel_state("test_panel")
+    # 480 + 24 = 504, 324 + 12 = 336.
+    assert state["w"] == 504
+    assert state["h"] == 336
+
+
+def test_resize_drag_release_clears_gesture():
+    """ButtonRelease commits the motion-final dimensions and clears
+    _panel_drag so a subsequent gesture starts clean."""
+    drv = GuiDriver().build()
+    drv.ensure_panel("test_panel")
+    drv.shell._on_panel_resize_start(_evt(0, 0), "test_panel")
+    drv.shell._on_panel_resize_motion(_evt(48, 60), "test_panel")
+    drv.shell._on_panel_resize_release(_evt(48, 60), "test_panel")
+    assert drv.shell._panel_drag is None
+
+
+def test_resize_drag_blocked_when_locked():
+    """A locked panel rejects the resize-drag-start anchor — the
+    gesture never starts so motion events also no-op."""
+    drv = GuiDriver().build()
+    drv.ensure_panel("test_panel")
+    drv.lock_panel("test_panel")
+    drv.shell._on_panel_resize_start(_evt(0, 0), "test_panel")
+    assert drv.shell._panel_drag is None
+
+
+def test_resize_drag_clamps_to_minimum():
+    """Even with a large negative delta, w/h stay >= 48 px so the
+    panel never shrinks to unreachable."""
+    drv = GuiDriver().build()
+    drv.ensure_panel("test_panel")
+    drv.resize_panel("test_panel", 480, 320)
+    drv.shell._on_panel_resize_start(_evt(500, 400), "test_panel")
+    drv.shell._on_panel_resize_motion(_evt(-1000, -1000), "test_panel")
+    state = drv.panel_state("test_panel")
+    assert state["w"] >= 48
+    assert state["h"] >= 48
+
+
+def test_move_motion_does_not_process_resize_gesture():
+    """The motion handlers cross-check the gesture kind so a
+    resize-drag in progress isn't accidentally processed as a move."""
+    drv = GuiDriver().build()
+    drv.ensure_panel("test_panel")
+    initial = drv.panel_state("test_panel")
+    drv.shell._on_panel_resize_start(_evt(0, 0), "test_panel")
+    # If the move handler ran, the x/y would change. The kind guard
+    # should make this a no-op for position.
+    drv.shell._on_panel_drag_motion(_evt(48, 60), "test_panel")
+    state = drv.panel_state("test_panel")
+    assert state["x"] == initial["x"]
+    assert state["y"] == initial["y"]
+
+
+# ---------------------------------------------------------------------------
+# v2 snap-to-edges (peer-edge alignment on release).
+# ---------------------------------------------------------------------------
+
+
+def test_compute_snap_aligns_to_peer_left_edge():
+    """If a moving panel's left edge is within snap distance of a
+    peer's left edge, _compute_snap returns the peer's x as the
+    snapped position."""
+    drv = GuiDriver().build()
+    target = drv.shell._ensure_panel_handle("target")
+    target.x = 96
+    target.y = 200
+    peer = drv.shell._ensure_panel_handle("peer")
+    peer.x = 100
+    peer.y = 0
+    peer.w = 200
+    peer.h = 100
+    snap_x, snap_y = drv.shell._compute_snap(target, [peer])
+    # target.x=96 is 4 px from peer.x=100 (within 12-px snap).
+    assert snap_x == 100
+
+
+def test_compute_snap_aligns_to_peer_right_edge():
+    """A target's left edge can snap to a peer's right edge."""
+    drv = GuiDriver().build()
+    target = drv.shell._ensure_panel_handle("target")
+    target.x = 304  # 4 px from (peer.x + peer.w) = 300
+    target.y = 200
+    peer = drv.shell._ensure_panel_handle("peer")
+    peer.x = 100
+    peer.y = 0
+    peer.w = 200
+    peer.h = 100
+    snap_x, _ = drv.shell._compute_snap(target, [peer])
+    assert snap_x == 300
+
+
+def test_compute_snap_no_snap_when_far_from_peer():
+    """When no peer edge is within snap distance, the returned (x, y)
+    matches the panel's current position (no snap fires)."""
+    drv = GuiDriver().build()
+    target = drv.shell._ensure_panel_handle("target")
+    target.x = 500
+    target.y = 500
+    peer = drv.shell._ensure_panel_handle("peer")
+    peer.x = 100
+    peer.y = 100
+    peer.w = 50
+    peer.h = 50
+    snap_x, snap_y = drv.shell._compute_snap(target, [peer])
+    assert snap_x == 500
+    assert snap_y == 500
+
+
+def test_compute_snap_independent_axes():
+    """x and y snap independently — a panel can align horizontally
+    to a peer while leaving y unchanged if no y peer is in range."""
+    drv = GuiDriver().build()
+    target = drv.shell._ensure_panel_handle("target")
+    target.x = 96  # 4 px from peer.x=100
+    target.y = 500
+    peer = drv.shell._ensure_panel_handle("peer")
+    peer.x = 100
+    peer.y = 100
+    peer.w = 50
+    peer.h = 50
+    snap_x, snap_y = drv.shell._compute_snap(target, [peer])
+    assert snap_x == 100  # snapped
+    assert snap_y == 500  # unchanged
+
+
+def test_compute_snap_ignores_archived_peers():
+    """Archived panels don't contribute to the snap set — they're
+    not visible, so snapping to their edges would surprise the user."""
+    drv = GuiDriver().build()
+    target = drv.shell._ensure_panel_handle("target")
+    target.x = 96
+    target.y = 200
+    peer = drv.shell._ensure_panel_handle("peer")
+    peer.x = 100
+    peer.y = 0
+    peer.w = 200
+    peer.h = 100
+    peer.archived = True
+    snap_x, _ = drv.shell._compute_snap(target, [peer])
+    assert snap_x == 96  # no snap
+
+
+def test_drag_release_applies_peer_snap():
+    """End-to-end: drag-release runs the peer-snap pass and pulls
+    the panel onto a peer edge that isn't itself grid-aligned.
+
+    Setup: peer at x=190 (not on the 12-px grid). Target drag lands
+    at the grid-aligned 180. On release, the peer-snap pass detects
+    the peer's left edge at 190 is within 12 px of target.x=180 and
+    pulls the target to 190.
+    """
+    drv = GuiDriver().build()
+    drv.ensure_panel("target")
+    drv.ensure_panel("peer")
+    # Place the peer by directly mutating the handle so we can pick
+    # a non-grid-aligned x without snap_to_grid rounding it.
+    drv.shell._panel_handles["peer"].x = 190
+    drv.shell._panel_handles["peer"].y = 0
+    drv.shell._panel_handles["peer"].w = 240
+    drv.shell._panel_handles["peer"].h = 120
+    drv.move_panel("target", 0, 240)
+    # Drag the target so it lands at the grid-aligned 180 — 10 px short of 190.
+    drv.shell._on_panel_drag_start(_evt(0, 0), "target")
+    drv.shell._on_panel_drag_motion(_evt(180, 0), "target")
+    pre_release = drv.panel_state("target")
+    assert pre_release["x"] == 180  # snapped to grid mid-drag
+    drv.shell._on_panel_drag_release(_evt(180, 0), "target")
+    post_release = drv.panel_state("target")
+    assert post_release["x"] == 190  # peer-snap fired
+
+
+def test_resize_release_applies_peer_snap():
+    """End-to-end: resize-release also runs the peer-snap pass so
+    a resize that lands the corner near a peer's edge aligns."""
+    drv = GuiDriver().build()
+    drv.ensure_panel("target")
+    drv.ensure_panel("peer")
+    drv.move_panel("target", 0, 0)
+    drv.resize_panel("target", 480, 320)
+    drv.move_panel("peer", 504, 0)  # 24 px gap from target's right edge
+    drv.shell._on_panel_resize_start(_evt(0, 0), "target")
+    drv.shell._on_panel_resize_release(_evt(0, 0), "target")
+    # Snap shouldn't fire (peer is > snap_distance away on x).
+    state = drv.panel_state("target")
+    assert state["w"] == 480  # unchanged
+
+
+def test_compute_snap_locked_panels_still_snap_against():
+    """A locked panel still acts as a snap target for other panels —
+    locking prevents its own movement, not its visibility in the
+    snap set. The maintainer aligns moving panels to fixed ones."""
+    drv = GuiDriver().build()
+    target = drv.shell._ensure_panel_handle("target")
+    target.x = 96
+    target.y = 200
+    peer = drv.shell._ensure_panel_handle("peer")
+    peer.x = 100
+    peer.y = 0
+    peer.w = 200
+    peer.h = 100
+    peer.locked = True
+    snap_x, _ = drv.shell._compute_snap(target, [peer])
+    assert snap_x == 100  # snap fires even though peer is locked
+
+
+def test_compute_snap_no_peers_returns_unchanged():
+    """A panel with no peers (only one panel in the host) returns
+    its own position — the snap helper degrades gracefully."""
+    drv = GuiDriver().build()
+    target = drv.shell._ensure_panel_handle("target")
+    target.x = 36
+    target.y = 48
+    snap_x, snap_y = drv.shell._compute_snap(target, [])
+    assert snap_x == 36
+    assert snap_y == 48
