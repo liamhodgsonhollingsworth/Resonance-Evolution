@@ -868,6 +868,61 @@ def _cmd_restore_panel(engine: Engine, view: View, *args) -> Tuple[str, View]:
     return f"OK: restored {args[0]}", view
 
 
+def _cmd_lock_widget(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Lock any widget by id (SPEC-075). Routes through the generic
+    WidgetLock registry; panel widgets continue to flow through
+    lock_panel so SPEC-007's invariants hold."""
+    if not args:
+        return "ERR: lock-widget requires <widget-id>", view
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    ok = shell.lock_widget(args[0])
+    if not ok:
+        return f"ERR: lock_widget refused for {args[0]!r}", view
+    return f"OK: locked {args[0]}", view
+
+
+def _cmd_unlock_widget(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Unlock any widget by id (SPEC-075). Returns ERR if no entry
+    exists in either the panel-handle table or the registry."""
+    if not args:
+        return "ERR: unlock-widget requires <widget-id>", view
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    ok = shell.unlock_widget(args[0])
+    if not ok:
+        return f"ERR: no widget entry for {args[0]!r}", view
+    return f"OK: unlocked {args[0]}", view
+
+
+def _cmd_widget_lock_state(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Read the WidgetLock registry entry for a widget id (SPEC-075).
+    Returns ``{widget_id, locked, frozen_position, widget_kind}``."""
+    if not args:
+        return "ERR: widget-lock-state requires <widget-id>", view
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    state = shell.widget_lock_state(args[0])
+    if not state:
+        return f"ERR: no widget entry for {args[0]!r}", view
+    return f"OK: {state}", view
+
+
+def _cmd_list_locked_widgets(engine: Engine, view: View, *_) -> Tuple[str, View]:
+    """List every currently-locked widget across all kinds (SPEC-075).
+    Returns sorted-by-id entries for deterministic test assertions."""
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    locked = shell.list_locked_widgets()
+    if not locked:
+        return "OK: []", view
+    return f"OK: {locked}", view
+
+
 def _cmd_visual_contract_list_colors(
     engine: Engine, view: View, *_
 ) -> Tuple[str, View]:
@@ -1257,6 +1312,10 @@ def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     lines.append("  panel-state <pid>               -- read panel handle {x,y,w,h,locked,archived} (SPEC-007)")
     lines.append("  archive-panel <pid>             -- archive a panel (composes with SPEC-067) (SPEC-008)")
     lines.append("  restore-panel <pid>             -- restore a previously-archived panel (SPEC-008)")
+    lines.append("  lock-widget <widget-id>         -- lock any widget (panel / button / icon) (SPEC-075)")
+    lines.append("  unlock-widget <widget-id>       -- unlock any widget (SPEC-075)")
+    lines.append("  widget-lock-state <widget-id>   -- read WidgetLock registry entry (SPEC-075)")
+    lines.append("  list-locked-widgets             -- list every currently-locked widget (SPEC-075)")
     lines.append("  visual-contract-list-colors     -- list semantic color tokens + view tints (SPEC-069)")
     lines.append("  visual-contract-list-icons      -- list icon names registered in the contract (SPEC-069)")
     lines.append("  visual-contract-list-fonts      -- list font aliases + size tokens with probed family (SPEC-069)")
@@ -1304,6 +1363,10 @@ _COMMANDS = {
     "panel-state": _cmd_panel_state,
     "archive-panel": _cmd_archive_panel,
     "restore-panel": _cmd_restore_panel,
+    "lock-widget": _cmd_lock_widget,
+    "unlock-widget": _cmd_unlock_widget,
+    "widget-lock-state": _cmd_widget_lock_state,
+    "list-locked-widgets": _cmd_list_locked_widgets,
     "visual-contract-list-colors": _cmd_visual_contract_list_colors,
     "visual-contract-list-icons": _cmd_visual_contract_list_icons,
     "visual-contract-list-fonts": _cmd_visual_contract_list_fonts,
