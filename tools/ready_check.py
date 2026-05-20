@@ -257,6 +257,36 @@ def _check_billing_env_strip(verbose: bool) -> Tuple[bool, str]:
     return True, "session_manager strips all 4 billing-mode env vars before spawn"
 
 
+def _check_gui_test_driver_smoke(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-081: the text-API GUI test driver lets the session exercise
+    every GUI verb end-to-end without launching a Tk window. This probe
+    runs the canonical smoke test and asserts the expected final state
+    (scale back to 1.0, Quarantine archived, ctrl_held cleared).
+
+    Headless — runs anywhere. If this probe ever fails, a GUI feature
+    silently broke the text-API surface that future sessions depend on.
+    """
+    try:
+        from tools.gui_test_driver import GuiDriver, _smoke
+    except Exception as exc:
+        return False, f"gui_test_driver import failed: {exc}"
+    try:
+        drv = GuiDriver()
+        report = _smoke(drv)
+    except Exception as exc:
+        return False, f"gui smoke raised: {exc}"
+    if not report:
+        return False, "gui smoke produced no steps"
+    final = drv.read_state()
+    if final.get("ctrl_held") is not False:
+        return False, f"gui smoke left ctrl_held={final.get('ctrl_held')!r}"
+    if final.get("sidebar_scale") != 1.0:
+        return False, f"gui smoke left scale={final.get('sidebar_scale')!r}"
+    if "Quarantine" in drv.tab_order():
+        return False, "gui smoke archive step did not remove Quarantine"
+    return True, f"gui smoke executed {len(report)} verbs cleanly; final state nominal"
+
+
 def _check_workflow_gui_module(verbose: bool) -> Tuple[bool, str]:
     """SPEC-065: the 2D Tk GUI shell module must import cleanly and
     expose its tab catalog + data providers. Headless probe — does not
@@ -339,6 +369,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("desktop_shortcut", _check_desktop_shortcut),
     ("transcript_reader", _check_transcript_reader),
     ("workflow_gui_module", _check_workflow_gui_module),
+    ("gui_test_driver_smoke", _check_gui_test_driver_smoke),
 ]
 
 
