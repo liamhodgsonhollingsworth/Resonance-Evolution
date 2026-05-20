@@ -888,6 +888,21 @@ class Shell:
             self._show_session_event(ev)
 
     def _show_session_event(self, ev: SessionEvent) -> None:
+        """Print high-signal events; suppress the noisy fine-grained ones.
+
+        High-signal (always printed): communication, spawned, turn_complete,
+        session_idle, session_error, silent_too_long. These mark life-cycle
+        events and turns the maintainer cares about.
+
+        Suppressed by default: tool_use, tool_result, activity, archived,
+        and the catchall — these can fire hundreds of times per session
+        (the default workflow-management session emits dozens of
+        ``Read`` / ``Bash`` / ``Grep`` calls between turns, and printing
+        each one floods the terminal). Set ``APEIRON_VERBOSE_SESSIONS=1``
+        in the environment to see them. The raw JSONL log at
+        ``state/workflow/raw_logs/<session_id>.jsonl`` always carries the
+        full trace regardless of this filter.
+        """
         label = ev.session_display_name or ev.session_id[:8]
         if ev.kind == "communication":
             text = (ev.payload.get("text") or "").rstrip()
@@ -919,10 +934,11 @@ class Shell:
             silent = ev.payload.get("silent_for_s")
             self._println(f"[session/{label}] silent for {silent:.0f}s")
             return
+        if not os.environ.get("APEIRON_VERBOSE_SESSIONS"):
+            return
         if ev.kind == "tool_use":
             self._println(f"[session/{label}] tool_use {ev.payload.get('name')}")
             return
-        # activity / tool_result / archived — minimal:
         self._println(f"[session/{label}] {ev.kind} {ev.payload}")
 
     def on_file_event(self, kind: str, type_name: str, path: Path) -> None:
