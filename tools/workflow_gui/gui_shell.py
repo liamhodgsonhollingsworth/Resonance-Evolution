@@ -67,12 +67,115 @@ from tools.workflow.trust import (
     sender_trust_set,
     session_trust_set,
 )
+from tools.workflow_gui.tooltip import Tooltip
 from tools.workflow_gui.view_registry import (
     ViewRegistry,
     ViewSpec,
     default_view_registry,
 )
 from tools.workflow_gui.widget_lock import WidgetLock
+
+
+# ---------------------------------------------------------------------------
+# Icon registry — SPEC-074 standard icons by default.
+# ---------------------------------------------------------------------------
+
+
+# Per-view sidebar tab icons. Names match Lucide entries in
+# ``tools.visual_contract._LUCIDE_PATHS``. A view absent from this map
+# falls back to its text label only (soft-fail). Maintainer's spec
+# verbatim: *"in general, when making an icon for a particular menu,
+# default to the standard icons from across many UI types."*
+SIDEBAR_VIEW_ICONS: Dict[str, str] = {
+    "Tasks": "check-square",
+    "Ideas": "lightbulb",
+    "Wishlist": "star",
+    "Inbox": "inbox",
+    "Chat": "message-circle",
+    "Quarantine": "shield-alert",
+    "Trusted Senders": "shield-check",
+    "3D": "box",
+    "Logs": "file-text",
+    # Browser intentionally omitted — Lucide ships no obvious browser
+    # glyph in our bundled subset; the text label is the affordance.
+    "Sessions": "users",
+    "Archive": "archive",
+}
+
+
+# Per-action button icons (used on the action bar that appears
+# when an item is selected in a list panel). Soft-fall to the
+# action's text label when an action isn't in this map or the
+# icon name isn't registered in visual_contract.
+ACTION_ICONS: Dict[str, str] = {
+    "archive": "archive",
+    # No Lucide "clock-rewind" / "rotate-ccw" in the bundled subset;
+    # restore falls back to its text label until the iconography
+    # phase 2 migration adds one.
+    "lock": "lock",
+    "unlock": "unlock",
+    "copy": "copy",
+    "paste": "clipboard",
+    "expand": "chevron-down",
+    "collapse": "chevron-right",
+    "target": "chevron-right",
+}
+
+
+# Per-button extended help. Composes with SPEC-072: Ctrl-hover lifts
+# the tooltip from "Archive" to the full sentence below. Lookup is by
+# the same key the button is constructed under (action name for the
+# action bar; view name for sidebar; literal id for free-standing
+# buttons like "Send", "Go", "Refresh"). Empty / missing ⇒ Ctrl-hover
+# falls back to the basic hover-name.
+BUTTON_EXTENDED_HELP: Dict[str, str] = {
+    "Send": (
+        "Send the chat message to the active session. "
+        "Enter in the chat field also submits."
+    ),
+    "Go": (
+        "Browser view — load the URL in the address bar into the "
+        "embedded HtmlFrame. Enter in the URL field also submits."
+    ),
+    "Refresh": (
+        "Browser view — reload the current URL into the embedded "
+        "HtmlFrame."
+    ),
+    "archive": (
+        "Archive — move the item to the Archive view. Restore "
+        "from there by right-clicking the row."
+    ),
+    "restore": (
+        "Restore — bring a previously-archived item back to its "
+        "original surface."
+    ),
+    "lock": (
+        "Lock — pin this in place so future layout reflow leaves it "
+        "alone. Unlock with the same gesture."
+    ),
+    "unlock": (
+        "Unlock — return this to its parent's layout authority."
+    ),
+    "copy": (
+        "Copy module — serialize this node + its subtree to JSON "
+        "on the system clipboard. Paste anywhere else in the shell."
+    ),
+    "paste": (
+        "Paste module — instantiate a node from clipboard JSON at "
+        "this surface's default paste location."
+    ),
+    "expand": (
+        "Expand — show this item's body below the list. Double-click "
+        "to toggle without using the button."
+    ),
+    "collapse": (
+        "Collapse — hide this item's body."
+    ),
+    "target": (
+        "Target — set this session as the active chat recipient. "
+        "Unqualified chat messages route here."
+    ),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -460,6 +563,222 @@ class GuiShell:
         self._resize_anchor_y: Optional[int] = None
         self._resize_anchor_scale: float = 1.0
 
+        # SPEC-074 widget catalog. Each registered widget has a stable
+        # text-API id (``"sidebar:Tasks"``, ``"chat:Send"``,
+        # ``"action:Tasks:archive"``, etc.) that the
+        # ``icon-for`` / ``tooltip-for`` / ``extended-help-for``
+        # verbs look up. Three parallel dicts so the verbs are
+        # one-lookup-each rather than walking a list of tuples.
+        self._widget_icons: Dict[str, str] = {}
+        self._widget_tooltips_basic: Dict[str, str] = {}
+        self._widget_tooltips_extended: Dict[str, str] = {}
+        # Live Tooltip instances keyed by widget id so the shell can
+        # tear them down on rebuild and tests can poke at the
+        # lifecycle.
+        self._tooltips: Dict[str, Tooltip] = {}
+        # PhotoImage refs the shell holds to prevent Tk's GC dropping
+        # icon images. SPEC-069 documents this footgun: an unreferenced
+        # PhotoImage disappears on the next event loop tick.
+        self._icon_images: Dict[str, Any] = {}
+        # Icon names that failed to resolve at construction time
+        # (visual_contract missing, KeyError, or a render error). Surfaced
+        # in the ``standard_icons`` ready-check probe so the maintainer
+        # can see at a glance which names are broken.
+        self._icon_failures: List[str] = []
+
+        # Pre-populate the widget-icon + tooltip catalog from the
+        # static maps so the text-API verbs answer correctly without
+        # ``build_ui`` ever running.
+        self.register_default_widgets()
+
+    # ----- SPEC-074 widget registry surface -----
+
+    def register_default_widgets(self) -> None:
+        """Pre-populate the widget-icon + tooltip registries from the
+        static catalog so headless callers can answer ``icon-for`` /
+        ``tooltip-for`` / ``extended-help-for`` without ``build_ui``
+        ever running.
+
+        The full ``Tooltip`` instances + PhotoImage refs are still
+        created lazily inside ``build_ui`` (they need a Tk root); this
+        method just covers the lookup-by-id path that powers the
+        text-API verbs and the ready-check probe.
+
+        Idempotent: re-calling is a no-op (the dict assignments
+        overwrite themselves with identical values).
+        """
+        # Sidebar tab icons + tooltips (one per registered view).
+        for view_name in self.view_registry.names():
+            icon_name = SIDEBAR_VIEW_ICONS.get(view_name, "")
+            if icon_name:
+                self.register_widget_icon(f"sidebar:{view_name}", icon_name)
+            extended = self._tab_help.get(view_name, "")
+            self.register_widget_tooltip(
+                f"sidebar:{view_name}",
+                basic_text=view_name,
+                extended_text=extended,
+            )
+        # Free-standing chrome buttons.
+        self.register_widget_tooltip(
+            "chat:Send",
+            basic_text="Send",
+            extended_text=BUTTON_EXTENDED_HELP.get("Send", ""),
+        )
+        self.register_widget_icon("browser:Go", "chevron-right")
+        self.register_widget_tooltip(
+            "browser:Go",
+            basic_text="Go",
+            extended_text=BUTTON_EXTENDED_HELP.get("Go", ""),
+        )
+        self.register_widget_tooltip(
+            "browser:Refresh",
+            basic_text="Refresh",
+            extended_text=BUTTON_EXTENDED_HELP.get("Refresh", ""),
+        )
+        # Action buttons — one prototype per known action. Real action
+        # widgets get spawned dynamically when an item is selected
+        # (``render_actions_for``), but the prototype registration
+        # gives the text-API verbs something to look up via
+        # ``action:<panel>:<act>`` if the panel id is known. For tests
+        # of the assignment table specifically, ``action:proto:<act>``
+        # serves as a stable lookup key.
+        for act, icon_name in ACTION_ICONS.items():
+            self.register_widget_icon(f"action:proto:{act}", icon_name)
+            self.register_widget_tooltip(
+                f"action:proto:{act}",
+                basic_text=act.title(),
+                extended_text=BUTTON_EXTENDED_HELP.get(act, ""),
+            )
+
+    def register_widget_icon(self, widget_id: str, icon_name: str) -> None:
+        """Record that ``widget_id`` has been assigned ``icon_name``.
+
+        Idempotent; re-registering the same id with the same name is
+        a no-op. ``icon-for <widget-id>`` in the text-API reads from
+        this map.
+        """
+        self._widget_icons[widget_id] = icon_name
+
+    def register_widget_tooltip(
+        self,
+        widget_id: str,
+        basic_text: str,
+        extended_text: str = "",
+    ) -> None:
+        """Record the tooltip text (basic + extended) for ``widget_id``.
+
+        ``tooltip-for <widget-id>`` reads ``basic_text``;
+        ``extended-help-for <widget-id>`` reads ``extended_text``.
+        These verbs serve as the headless text-API surface so tests
+        and ready-check probes can verify which widgets have
+        tooltips without launching Tk.
+        """
+        self._widget_tooltips_basic[widget_id] = basic_text
+        if extended_text:
+            self._widget_tooltips_extended[widget_id] = extended_text
+
+    def icon_for(self, widget_id: str) -> str:
+        """Return the icon name assigned to ``widget_id``, or empty.
+
+        Empty-string return == no icon assigned (the widget uses its
+        text label instead, per SPEC-074's soft-fail). Public for the
+        ``icon-for`` text-API verb.
+        """
+        return self._widget_icons.get(widget_id, "")
+
+    def tooltip_for(self, widget_id: str) -> str:
+        """Return the basic hover-name tooltip for ``widget_id``."""
+        return self._widget_tooltips_basic.get(widget_id, "")
+
+    def extended_help_for(self, widget_id: str) -> str:
+        """Return the Ctrl-hover extended help for ``widget_id``."""
+        return self._widget_tooltips_extended.get(widget_id, "")
+
+    def list_registered_widgets(self) -> List[str]:
+        """Names of every widget id registered with an icon OR tooltip.
+
+        Used by the ``standard_icons`` ready-check probe + tests of
+        coverage. Sorted for determinism.
+        """
+        names: set = set()
+        names.update(self._widget_icons)
+        names.update(self._widget_tooltips_basic)
+        return sorted(names)
+
+    def _resolve_icon_image(self, icon_name: str, size: int = 16) -> Any:
+        """Build a Tk PhotoImage for ``icon_name`` from visual_contract.
+
+        Returns ``None`` on any failure (visual_contract import error,
+        unknown icon name, missing Tk root, render error). The caller
+        renders the button with a text fallback in that case. Cached
+        PhotoImage refs are held in ``self._icon_images`` so Tk's GC
+        doesn't drop them on the next event loop tick.
+        """
+        if not icon_name:
+            return None
+        cache_key = f"{icon_name}@{size}"
+        cached = self._icon_images.get(cache_key)
+        if cached is not None:
+            return cached
+        try:
+            from tools.visual_contract import get_icon
+        except Exception as exc:
+            if icon_name not in self._icon_failures:
+                self._icon_failures.append(f"{icon_name} (visual_contract import: {exc})")
+            return None
+        try:
+            photo = get_icon(icon_name, size=size)
+        except Exception as exc:
+            if icon_name not in self._icon_failures:
+                self._icon_failures.append(f"{icon_name} ({exc})")
+            return None
+        self._icon_images[cache_key] = photo
+        return photo
+
+    def icon_failures(self) -> List[str]:
+        """Return the list of icon names that failed to resolve.
+
+        Empty when everything wired up cleanly. The ``standard_icons``
+        ready-check probe surfaces this so the maintainer's report
+        names any missing icons.
+        """
+        return list(self._icon_failures)
+
+    def _attach_tooltip(
+        self,
+        widget: Any,
+        widget_id: str,
+        basic_text: str,
+        extended_text: str = "",
+    ) -> Optional[Tooltip]:
+        """Bind a ``Tooltip`` to ``widget`` and remember it.
+
+        Also records the texts in the widget-registry so the text-API
+        verbs can find them by id even when the widget isn't visible.
+        Returns the constructed ``Tooltip`` (or ``None`` if Tk isn't
+        reachable).
+        """
+        self.register_widget_tooltip(widget_id, basic_text, extended_text)
+        # Tear down a prior tooltip on the same id (sidebar rebuild
+        # constructs fresh widgets but keeps the same widget_id).
+        prior = self._tooltips.get(widget_id)
+        if prior is not None:
+            try:
+                prior.unbind()
+            except Exception:
+                pass
+        try:
+            tip = Tooltip(
+                widget=widget,
+                basic_text=basic_text,
+                extended_text=extended_text,
+                ctrl_held_getter=lambda: self.ctrl_held,
+            )
+        except Exception:
+            return None
+        self._tooltips[widget_id] = tip
+        return tip
+
     # ----- data providers (testable without UI) -----
 
     def items_for_tab(self, tab_name: str) -> List[Dict[str, Any]]:
@@ -583,6 +902,18 @@ class GuiShell:
             except Exception:
                 pass
 
+        # PhotoImage refs are tied to a specific Tk interpreter. Test
+        # suites that destroy + recreate roots leave dead PhotoImages
+        # in the visual_contract LRU and in our local cache; the new
+        # root then hits "image pyimageN doesn't exist". Clear both
+        # caches every build_ui so the new root gets fresh images.
+        self._icon_images.clear()
+        try:
+            from tools.visual_contract import clear_icon_cache
+            clear_icon_cache()
+        except Exception:
+            pass
+
         self.tk_root = tk.Tk()
         self.tk_root.title("Apeiron — Workflow")
         self.tk_root.geometry("1100x700")
@@ -630,6 +961,10 @@ class GuiShell:
         self._chat_entry.grid(row=0, column=0, sticky="ew", padx=(12, 8), pady=14)
         self._chat_entry.bind("<Return>", lambda _e: self._on_chat_submit())
 
+        # SPEC-074: Send button stays text-labelled (no Lucide glyph
+        # fits "send the chat" cleanly in our bundled subset); the
+        # tooltip + extended-help still register so the text-API
+        # ``tooltip-for chat:Send`` returns the right answer.
         send_btn = tk.Button(
             chat_bar,
             text="Send",
@@ -642,6 +977,12 @@ class GuiShell:
             pady=4,
         )
         send_btn.grid(row=0, column=1, padx=(0, 12), pady=14)
+        self._attach_tooltip(
+            widget=send_btn,
+            widget_id="chat:Send",
+            basic_text="Send",
+            extended_text=BUTTON_EXTENDED_HELP.get("Send", ""),
+        )
 
         # Default tab.
         self.select_tab(DEFAULT_TAB)
@@ -688,9 +1029,13 @@ class GuiShell:
 
         # Tab buttons.
         for name, _, _ in self._tabs:
-            btn = tk.Button(
-                self._sidebar_frame,
-                text=name,
+            # SPEC-074: resolve the per-view icon (soft-fail to text-only
+            # when the icon isn't registered in visual_contract).
+            icon_name = SIDEBAR_VIEW_ICONS.get(name, "")
+            photo = self._resolve_icon_image(icon_name) if icon_name else None
+
+            btn_kwargs = dict(
+                master=self._sidebar_frame,
                 anchor="w",
                 bg="#1c1f26",
                 fg="#c8ccd6",
@@ -702,14 +1047,29 @@ class GuiShell:
                 pady=8,
                 command=lambda n=name: self.select_tab(n),
             )
+            if photo is not None:
+                # Icon-with-text: maintainer's spec says default to the
+                # icon when one fits; we keep the label adjacent so the
+                # sidebar tab stays self-identifying without hover. The
+                # tooltip + Ctrl-hover supply the always-by-name surface
+                # the spec requires.
+                btn = tk.Button(text=name, image=photo, compound="left", **btn_kwargs)
+                self.register_widget_icon(f"sidebar:{name}", icon_name)
+            else:
+                btn = tk.Button(text=name, **btn_kwargs)
             btn.pack(fill="x")
             self._sidebar_buttons[name] = btn
 
-            # SPEC-074 + SPEC-072: hover-name (always) and Ctrl-hover help
-            # (extended). Tooltip lifecycle is keyed to the button widget
-            # so multiple buttons don't fight over the same Toplevel.
-            btn.bind("<Enter>", lambda _e, n=name, b=btn: self._on_tab_hover(n, b))
-            btn.bind("<Leave>", lambda _e: self._hide_tooltip())
+            # SPEC-074 + SPEC-072: hover-name (always) + Ctrl-hover help
+            # (extended). The Tooltip class consults ``self.ctrl_held``
+            # via the closure so the gate logic stays single-sourced.
+            extended = self._tab_help.get(name, "")
+            self._attach_tooltip(
+                widget=btn,
+                widget_id=f"sidebar:{name}",
+                basic_text=name,
+                extended_text=extended,
+            )
             # SPEC-072 + SPEC-008: Ctrl-click archives the tab (sidebar
             # tab is hidden until restored from an archived-tabs list).
             btn.bind("<Control-Button-1>", lambda _e, n=name: self._archive_tab(n))
@@ -751,9 +1111,17 @@ class GuiShell:
         if held == self.ctrl_held:
             return
         self.ctrl_held = held
-        # When releasing Ctrl, hide any extended tooltip.
+        # When releasing Ctrl, hide every extended tooltip — the
+        # current hover should drop back to basic on next show, but
+        # any live Toplevel still showing extended text needs to be
+        # closed cleanly.
         if not held:
             self._hide_tooltip()
+            for tip in list(self._tooltips.values()):
+                try:
+                    tip.hide()
+                except Exception:
+                    pass
 
     def _on_ctrl_press(self, _event: Any) -> None:
         self._set_ctrl(True)
@@ -766,6 +1134,10 @@ class GuiShell:
         the tab name; Ctrl-hover shows the extended help text from
         ``_tab_help`` (SPEC-074 hover-name + Ctrl-hover-help, SPEC-072
         Ctrl is the gate for richer info).
+
+        Retained for backward-compat (existing tests + manual call
+        paths); production sidebar hovers go through the ``Tooltip``
+        class registered in ``_build_sidebar``.
         """
         text = tab_name
         if self.ctrl_held:
@@ -1283,9 +1655,14 @@ class GuiShell:
                     pass
             actions = item.get("actions") or ["expand"]
             for act in actions:
-                btn = tk.Button(
-                    action_bar,
-                    text=act,
+                # SPEC-074: resolve a standard icon for the action.
+                # Soft-fail to text-only when the action isn't in
+                # ACTION_ICONS or the icon doesn't render.
+                icon_name = ACTION_ICONS.get(act, "")
+                photo = self._resolve_icon_image(icon_name) if icon_name else None
+
+                btn_kwargs = dict(
+                    master=action_bar,
                     bg="#3b4254",
                     fg="#e8e8ec",
                     activebackground="#4d566d",
@@ -1296,7 +1673,23 @@ class GuiShell:
                     pady=2,
                     command=lambda a=act, it=item: self._on_action(a, it),
                 )
+                widget_id = f"action:{panel_id}:{act}"
+                if photo is not None:
+                    # Spec verbatim: *"Buttons should default to just
+                    # being the icon for the thing, if a clear icon
+                    # exists"*. The text label is suppressed when an
+                    # icon resolves; the tooltip carries the name.
+                    btn = tk.Button(image=photo, **btn_kwargs)
+                    self.register_widget_icon(widget_id, icon_name)
+                else:
+                    btn = tk.Button(text=act, **btn_kwargs)
                 btn.pack(side="left", padx=(0, 6))
+                self._attach_tooltip(
+                    widget=btn,
+                    widget_id=widget_id,
+                    basic_text=act.title(),
+                    extended_text=BUTTON_EXTENDED_HELP.get(act, ""),
+                )
 
         def on_select(_event: Any) -> None:
             sel = tree.selection()
@@ -2404,9 +2797,12 @@ class GuiShell:
 
         entry.bind("<Return>", _on_submit)
 
-        go_btn = tk.Button(
-            bar,
-            text="Go",
+        # SPEC-074: Go button gets a chevron-right icon; Refresh stays
+        # text-labelled (no Lucide refresh glyph ships in our bundled
+        # subset). Tooltips registered either way.
+        go_icon = self._resolve_icon_image("chevron-right")
+        go_kwargs = dict(
+            master=bar,
             command=_on_submit,
             bg="#3b4254",
             fg="#e8e8ec",
@@ -2415,7 +2811,18 @@ class GuiShell:
             padx=10,
             pady=2,
         )
+        if go_icon is not None:
+            go_btn = tk.Button(image=go_icon, **go_kwargs)
+            self.register_widget_icon("browser:Go", "chevron-right")
+        else:
+            go_btn = tk.Button(text="Go", **go_kwargs)
         go_btn.pack(side="left", padx=(0, 4), pady=8)
+        self._attach_tooltip(
+            widget=go_btn,
+            widget_id="browser:Go",
+            basic_text="Go",
+            extended_text=BUTTON_EXTENDED_HELP.get("Go", ""),
+        )
 
         refresh_btn = tk.Button(
             bar,
@@ -2429,6 +2836,12 @@ class GuiShell:
             pady=2,
         )
         refresh_btn.pack(side="left", padx=(0, 12), pady=8)
+        self._attach_tooltip(
+            widget=refresh_btn,
+            widget_id="browser:Refresh",
+            basic_text="Refresh",
+            extended_text=BUTTON_EXTENDED_HELP.get("Refresh", ""),
+        )
 
         frame.pack(fill="both", expand=True)
 
