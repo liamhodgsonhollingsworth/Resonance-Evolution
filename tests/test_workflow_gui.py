@@ -622,3 +622,128 @@ def test_gui_shell_precompute_called_on_tab_switch():
     shell.select_tab("Wishlist")
     assert engine.precompute_calls > initial_calls
     shell._on_close()
+
+
+# ---------------------------------------------------------------------------
+# Hold-Ctrl edit mode (SPEC-072) + hover-help (SPEC-074).
+# ---------------------------------------------------------------------------
+
+
+def test_ctrl_held_flag_starts_false():
+    shell = _make_shell()
+    assert shell.ctrl_held is False
+
+
+def test_set_ctrl_flips_flag():
+    shell = _make_shell()
+    shell._set_ctrl(True)
+    assert shell.ctrl_held is True
+    shell._set_ctrl(False)
+    assert shell.ctrl_held is False
+
+
+def test_tab_help_has_entry_for_every_tab():
+    """SPEC-074 requires hover-help for every visible icon/tab. The
+    catalog must cover every entry in TABS."""
+    shell = _make_shell()
+    for name, _, _ in TABS:
+        assert name in shell._tab_help, f"missing help for tab: {name}"
+
+
+def test_tab_order_initialized_from_tabs():
+    """The reorderable tab order starts as a flat copy of TABS' names."""
+    shell = _make_shell()
+    assert shell._tab_order == [name for name, _, _ in TABS]
+
+
+def test_reorder_tabs_moves_dragged_to_drop_target_position():
+    shell = _make_shell()
+    original = list(shell._tab_order)
+    # Move "3D" to the position currently held by "Tasks" (index 0).
+    shell._reorder_tabs("3D", "Tasks")
+    assert shell._tab_order.index("3D") == 0
+    # Verify length preserved.
+    assert len(shell._tab_order) == len(original)
+    # Verify all elements preserved.
+    assert sorted(shell._tab_order) == sorted(original)
+
+
+def test_reorder_tabs_no_op_when_dragged_equals_drop_target():
+    shell = _make_shell()
+    original = list(shell._tab_order)
+    shell._reorder_tabs("Tasks", "Tasks")
+    assert shell._tab_order == original
+
+
+def test_reorder_tabs_no_op_when_unknown_name():
+    shell = _make_shell()
+    original = list(shell._tab_order)
+    shell._reorder_tabs("NotATab", "Tasks")
+    assert shell._tab_order == original
+
+
+def test_archive_tab_removes_from_tab_order():
+    shell = _make_shell()
+    shell._tab_order = ["Tasks", "Ideas", "Wishlist"]
+    shell.active_tab = "Tasks"
+    # _archive_tab tries to pack_forget the button; since UI isn't built,
+    # the missing button is OK — the order-list mutation must still happen.
+    result = shell._archive_tab("Ideas")
+    assert result == "Ideas"
+    assert "Ideas" not in shell._tab_order
+    assert shell._tab_order == ["Tasks", "Wishlist"]
+
+
+def test_archive_tab_falls_back_to_other_tab_when_archiving_active():
+    """SPEC-072: archiving the active tab must select a fallback so the
+    central pane doesn't display a now-archived surface."""
+    shell = _make_shell()
+    shell._tab_order = ["Tasks", "Ideas", "Wishlist"]
+    shell.active_tab = "Tasks"
+    shell._archive_tab("Tasks")
+    assert shell.active_tab in shell._tab_order
+    assert shell.active_tab != "Tasks"
+
+
+def test_set_ctrl_false_hides_tooltip():
+    """Releasing Ctrl after being held drops any extended tooltip
+    currently shown — without this, an extended (Ctrl-hover) tooltip
+    can persist into normal-mode after the modifier is released."""
+    shell = _make_shell()
+    # Establish ctrl-held state first (mimicking a real Ctrl-press).
+    shell._set_ctrl(True)
+    assert shell.ctrl_held is True
+
+    class _Stub:
+        def destroy(self):
+            pass
+
+    shell._tooltip_window = _Stub()  # type: ignore[assignment]
+    shell._set_ctrl(False)  # release; should hide tooltip
+    assert shell._tooltip_window is None
+    assert shell.ctrl_held is False
+
+
+def test_hold_ctrl_does_not_flip_when_already_held():
+    """Idempotent: setting True when already True is a no-op (no double
+    state changes, no duplicate tooltip lifecycle)."""
+    shell = _make_shell()
+    shell._set_ctrl(True)
+    assert shell.ctrl_held is True
+    shell._set_ctrl(True)
+    assert shell.ctrl_held is True
+
+
+def test_gui_shell_build_ui_registers_ctrl_bindings():
+    """SPEC-072 acceptance: Ctrl-key bindings exist on the root window
+    after build_ui."""
+    _require_tk()
+    shell = _make_shell()
+    shell.build_ui()
+    # bind_all returns a string of registered bindings; non-empty means
+    # something is registered for that sequence.
+    pressed = shell.tk_root.bind_all("<Control-KeyPress>")
+    released_l = shell.tk_root.bind_all("<KeyRelease-Control_L>")
+    assert pressed, "Control-KeyPress binding missing"
+    assert released_l, "KeyRelease-Control_L binding missing"
+    shell._on_close()
