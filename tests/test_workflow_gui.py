@@ -656,30 +656,46 @@ def test_tab_order_initialized_from_tabs():
     assert shell._tab_order == [name for name, _, _ in TABS]
 
 
-def test_reorder_tabs_moves_dragged_to_drop_target_position():
+def test_sidebar_scale_default_is_one():
+    """SPEC-072 baseline: toolbar is at 1.0x scale before any Ctrl-drag."""
     shell = _make_shell()
-    original = list(shell._tab_order)
-    # Move "3D" to the position currently held by "Tasks" (index 0).
-    shell._reorder_tabs("3D", "Tasks")
-    assert shell._tab_order.index("3D") == 0
-    # Verify length preserved.
-    assert len(shell._tab_order) == len(original)
-    # Verify all elements preserved.
-    assert sorted(shell._tab_order) == sorted(original)
+    assert shell._sidebar_scale == 1.0
 
 
-def test_reorder_tabs_no_op_when_dragged_equals_drop_target():
+def test_set_sidebar_scale_changes_state():
     shell = _make_shell()
-    original = list(shell._tab_order)
-    shell._reorder_tabs("Tasks", "Tasks")
-    assert shell._tab_order == original
+    result = shell.set_sidebar_scale(1.5)
+    assert result == 1.5
+    assert shell._sidebar_scale == 1.5
 
 
-def test_reorder_tabs_no_op_when_unknown_name():
+def test_set_sidebar_scale_clamps_to_max():
+    """SPEC-072 acceptance: scale cannot exceed 2.5 (toolbar can't eat
+    central pane)."""
     shell = _make_shell()
-    original = list(shell._tab_order)
-    shell._reorder_tabs("NotATab", "Tasks")
-    assert shell._tab_order == original
+    result = shell.set_sidebar_scale(10.0)
+    assert result == 2.5
+    assert shell._sidebar_scale == 2.5
+
+
+def test_set_sidebar_scale_clamps_to_min():
+    """SPEC-072 acceptance: scale cannot fall below 0.6 (toolbar can't
+    vanish)."""
+    shell = _make_shell()
+    result = shell.set_sidebar_scale(0.1)
+    assert result == 0.6
+    assert shell._sidebar_scale == 0.6
+
+
+def test_set_sidebar_scale_idempotent_no_op():
+    """Setting the same scale twice does not re-render — callers can
+    use the return value to detect whether the call actually changed
+    state."""
+    shell = _make_shell()
+    shell.set_sidebar_scale(1.5)
+    # Re-set to the same value; should still return the same value.
+    result = shell.set_sidebar_scale(1.5)
+    assert result == 1.5
 
 
 def test_archive_tab_removes_from_tab_order():

@@ -225,27 +225,39 @@ class GuiShell:
         # shutdown).
         self.file_watcher: Optional[FileWatcher] = None
 
-        # Hold-Ctrl edit-mode state (SPEC-072). When True, hovering over a
-        # tab shows extended help instead of the basic name; Ctrl-clicking
-        # a tab archives it (SPEC-008); Ctrl-dragging within the sidebar
-        # reorders tabs (SPEC-007 / SPEC-072).
+        # Hold-Ctrl edit-mode state (SPEC-072). When True, hovering a tab
+        # shows extended help instead of basic name; Ctrl-clicking a tab
+        # archives it (SPEC-008); Ctrl-dragging RESIZES all modules in
+        # the toolbar (SPEC-072 verbatim: "holding control and dragging
+        # the modules around resizes all of them inside the toolbar").
         self.ctrl_held: bool = False
         self._tooltip_window: Any = None
         self._tooltip_after_id: Any = None
         # Per-tab descriptive help text shown on Ctrl-hover (SPEC-074
         # standard-icons-by-default + hover-name + Ctrl-hover-help).
         self._tab_help: Dict[str, str] = {
-            "Tasks": "Tasks panel — read from tasks.md via FileSource. Ctrl+drag to reorder, Ctrl+click to archive.",
-            "Ideas": "Ideas panel — Alethea ideas via MCPSource. Ctrl+drag to reorder, Ctrl+click to archive.",
-            "Wishlist": "Wishlist panel — wishlist.md via FileSource. Ctrl+drag to reorder, Ctrl+click to archive.",
-            "Inbox": "Main inbox messages from trusted senders. Ctrl+drag to reorder, Ctrl+click to archive.",
-            "Chat": "Active Claude Code sessions; click a row to set as active chat target. Ctrl+drag to reorder.",
-            "Quarantine": "Untrusted messages awaiting promote/delete. Ctrl+drag to reorder, Ctrl+click to archive.",
-            "Trusted Senders": "Trusted-sender set with revoke/delete actions. Ctrl+drag to reorder.",
-            "3D": "Realtime renderer embedded into the central pane. Ctrl+drag to reorder; Esc inside the 3D view toggles WorkflowView mode.",
+            "Tasks": "Tasks panel — read from tasks.md via FileSource. Ctrl+click archives; Ctrl+drag resizes all toolbar modules together.",
+            "Ideas": "Ideas panel — Alethea ideas via MCPSource. Ctrl+click archives; Ctrl+drag resizes all toolbar modules together.",
+            "Wishlist": "Wishlist panel — wishlist.md via FileSource. Ctrl+click archives; Ctrl+drag resizes all toolbar modules.",
+            "Inbox": "Main inbox messages from trusted senders. Ctrl+click archives; Ctrl+drag resizes all toolbar modules.",
+            "Chat": "Active Claude Code sessions; click a row to set as active chat target. Ctrl+drag resizes all toolbar modules.",
+            "Quarantine": "Untrusted messages awaiting promote/delete. Ctrl+click archives; Ctrl+drag resizes all toolbar modules.",
+            "Trusted Senders": "Trusted-sender set with revoke/delete actions. Ctrl+drag resizes all toolbar modules.",
+            "3D": "Realtime renderer embedded into the central pane. Ctrl+drag resizes all toolbar modules; Esc inside the 3D view toggles WorkflowView mode.",
         }
-        # Reorderable tab order (live mutation on Ctrl-drag).
+        # Tab order (currently fixed at TABS sequence; future SPEC-067
+        # generalizes this into a view-as-menu node collection).
         self._tab_order: List[str] = [name for name, _, _ in TABS]
+        # Sidebar resize state (SPEC-072 Ctrl-drag = resize toolbar
+        # modules). _base_font_size and _base_pady are the at-rest
+        # values; _sidebar_scale is the live multiplier mutated on
+        # Ctrl-drag. Scale clamps to [0.6, 2.5] so the toolbar never
+        # vanishes or eats the central pane.
+        self._base_font_size: int = 11
+        self._base_pady: int = 8
+        self._sidebar_scale: float = 1.0
+        self._resize_anchor_y: Optional[int] = None
+        self._resize_anchor_scale: float = 1.0
 
     # ----- data providers (testable without UI) -----
 
@@ -430,8 +442,12 @@ class GuiShell:
             # SPEC-072 + SPEC-008: Ctrl-click archives the tab (sidebar
             # tab is hidden until restored from an archived-tabs list).
             btn.bind("<Control-Button-1>", lambda _e, n=name: self._archive_tab(n))
-            # SPEC-072 + SPEC-007: Ctrl-drag reorders the sidebar tabs.
-            btn.bind("<Control-B1-Motion>", lambda e, n=name: self._on_tab_ctrl_drag(n, e))
+            # SPEC-072 verbatim ("holding control and dragging the
+            # modules around resizes all of them inside the toolbar"):
+            # Ctrl-button-press anchors the resize; Ctrl-drag scales all
+            # toolbar modules together; release commits.
+            btn.bind("<Control-ButtonPress-1>", lambda e: self._on_toolbar_resize_start(e))
+            btn.bind("<Control-B1-Motion>", lambda e: self._on_toolbar_resize_drag(e))
 
     def _highlight_active_tab(self) -> None:
         for name, btn in self._sidebar_buttons.items():
@@ -534,54 +550,73 @@ class GuiShell:
                 pass
         return tab_name
 
-    def _on_tab_ctrl_drag(self, tab_name: str, event: Any) -> None:
-        """Reorder sidebar tabs on Ctrl+drag. SPEC-072 (Ctrl-gate) +
-        SPEC-007 (movable).
+    def _on_toolbar_resize_start(self, event: Any) -> None:
+        """Anchor the Ctrl-drag resize gesture on initial press.
 
-        Determines which sidebar tab the cursor is currently over and,
-        if different from ``tab_name``, swaps their positions in the
-        sidebar.
+        SPEC-072 verbatim: *holding control and dragging the modules
+        around resizes all of them inside the toolbar*. The anchor
+        captures the start y position + the current scale so subsequent
+        motion events can compute a delta relative to the gesture
+        origin rather than the previous motion event (which would
+        compound errors).
         """
-        if not self.ctrl_held or self._sidebar_frame is None:
+        if not self.ctrl_held:
             return
-        # Find the widget under the cursor inside the sidebar.
         try:
-            target_widget = self.tk_root.winfo_containing(
-                event.x_root, event.y_root
-            )
+            self._resize_anchor_y = int(event.y_root)
+        except Exception:
+            self._resize_anchor_y = None
+            return
+        self._resize_anchor_scale = self._sidebar_scale
+
+    def _on_toolbar_resize_drag(self, event: Any) -> None:
+        """Apply Ctrl-drag delta as a uniform scale on all toolbar modules.
+
+        Scale formula: ``new_scale = anchor_scale + delta_y / 200``.
+        Positive y delta (drag down) grows the modules; negative shrinks.
+        Clamped to [0.6, 2.5] so the toolbar can't vanish or eat the
+        central pane.
+        """
+        if not self.ctrl_held or self._resize_anchor_y is None:
+            return
+        try:
+            current_y = int(event.y_root)
         except Exception:
             return
-        if target_widget is None:
-            return
-        target_name: Optional[str] = None
-        for name, btn in self._sidebar_buttons.items():
-            if btn is target_widget:
-                target_name = name
-                break
-        if target_name is None or target_name == tab_name:
-            return
-        self._reorder_tabs(tab_name, target_name)
+        delta_y = current_y - self._resize_anchor_y
+        new_scale = self._resize_anchor_scale + (delta_y / 200.0)
+        self.set_sidebar_scale(new_scale)
 
-    def _reorder_tabs(self, dragged: str, drop_target: str) -> None:
-        """Move ``dragged`` to the position currently held by
-        ``drop_target`` in the sidebar order. Public for tests."""
-        if dragged not in self._tab_order or drop_target not in self._tab_order:
-            return
-        if dragged == drop_target:
-            return
-        self._tab_order.remove(dragged)
-        idx = self._tab_order.index(drop_target)
-        self._tab_order.insert(idx, dragged)
-        # Re-pack sidebar buttons in the new order. We do this by
-        # forgetting all and re-packing in _tab_order sequence.
-        for name in self._tab_order:
-            btn = self._sidebar_buttons.get(name)
-            if btn is not None:
-                try:
-                    btn.pack_forget()
-                    btn.pack(fill="x")
-                except Exception:
-                    pass
+    def set_sidebar_scale(self, scale: float) -> float:
+        """Set the toolbar scale and re-render every sidebar button.
+
+        SPEC-072 acceptance: every module in the toolbar resizes
+        together; one drag changes all of them uniformly. Returns the
+        clamped scale (caller can compare to its input to detect
+        clamp). Public for tests + the text-API driver.
+        """
+        clamped = max(0.6, min(2.5, float(scale)))
+        if abs(clamped - self._sidebar_scale) < 1e-6:
+            return clamped
+        self._sidebar_scale = clamped
+        self._apply_sidebar_scale()
+        return clamped
+
+    def _apply_sidebar_scale(self) -> None:
+        """Re-render sidebar buttons at the current scale factor.
+
+        Font size and vertical padding both scale; horizontal padding
+        held at the base value so the sidebar width stays approximately
+        constant unless the maintainer explicitly resizes the column.
+        """
+        new_font_size = max(7, int(round(self._base_font_size * self._sidebar_scale)))
+        new_pady = max(2, int(round(self._base_pady * self._sidebar_scale)))
+        font = ("Helvetica", new_font_size)
+        for btn in self._sidebar_buttons.values():
+            try:
+                btn.configure(font=font, pady=new_pady)
+            except Exception:
+                pass
 
     # ----- per-tab rendering -----
 
