@@ -1230,6 +1230,201 @@ def _cmd_browser_current_url(engine: Engine, view: View, *_) -> Tuple[str, View]
     return f"OK: {url}", view
 
 
+def _parse_state_dir_flag(args: Tuple[str, ...]) -> Tuple[Optional[Path], Tuple[str, ...]]:
+    """Extract a ``--state-dir <path>`` flag from a verb's args.
+
+    Returns ``(state_dir, remaining_args)``. Verbs use this to thread
+    a per-call state directory through without parsing argparse — the
+    text-API surface stays whitespace-token simple.
+    """
+    out: list = []
+    state_dir: Optional[Path] = None
+    skip_next = False
+    for i, tok in enumerate(args):
+        if skip_next:
+            skip_next = False
+            continue
+        if tok == "--state-dir" and i + 1 < len(args):
+            state_dir = Path(args[i + 1])
+            skip_next = True
+            continue
+        out.append(tok)
+    return state_dir, tuple(out)
+
+
+def _cmd_send_test_email(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Send a test email through the side-channel notifier (SPEC-078).
+
+    Usage::
+
+        send-test-email [<to>] [--state-dir <path>] [--dry-run]
+
+    No-args form sends to ``config.to_default``. ``--dry-run`` resolves
+    the SMTP connection but does not dispatch a message (used by the
+    GUI test driver + ready-check verification).
+
+    Returns:
+        ``OK: ...`` on send / dry-run success; ``ERR: ...`` with a
+        named reason on failure (``disabled``, ``env-disabled``, auth
+        failure, missing config).
+    """
+    state_dir, remaining = _parse_state_dir_flag(args)
+    dry_run = "--dry-run" in remaining
+    positional = tuple(a for a in remaining if a != "--dry-run")
+    to_addr = positional[0] if positional else ""
+
+    try:
+        from tools.email_notifier import (
+            EmailNotifierError,
+            HEADS_UP,
+            _now_iso,
+            load_config,
+            EmailNotifier,
+        )
+    except Exception as exc:
+        return f"ERR: email_notifier import failed: {exc}", view
+
+    try:
+        cfg = load_config(state_dir)
+    except EmailNotifierError as exc:
+        return f"ERR: {exc}", view
+    if not cfg.enabled and not dry_run:
+        return (
+            "ERR: email notifier disabled in config (enabled=false); "
+            "pass --dry-run to probe without enabling",
+            view,
+        )
+    notifier = EmailNotifier(cfg, state_dir=state_dir)
+    body = (
+        "This is a test email from the Apeiron side-channel notifier "
+        "(SPEC-078).\n\n"
+        f"Sent at: {_now_iso()}\n"
+    )
+    try:
+        result = notifier.send(
+            HEADS_UP,
+            "test email from apeiron notifier",
+            body,
+            to_addr=to_addr or None,
+            dry_run=dry_run,
+            source="text-api:send-test-email",
+        )
+    except EmailNotifierError as exc:
+        return f"ERR: {exc}", view
+    prefix = "OK" if (result.sent or dry_run) else "ERR"
+    return (
+        f"{prefix}: subject={result.subject!r} sent={result.sent} "
+        f"reason={result.reason!r}",
+        view,
+    )
+
+
+def _cmd_list_pending_email_triggers(
+    engine: Engine, view: View, *args
+) -> Tuple[str, View]:
+    """List pending email triggers (SPEC-078).
+
+    Usage::
+
+        list-pending-email-triggers [--state-dir <path>]
+
+    Returns one row per suppressed trigger — events that would have
+    fired email but were blocked by disabled config, env-disable, or
+    dry-run. Useful for verifying trigger wiring without actually
+    sending email.
+    """
+    state_dir, _ = _parse_state_dir_flag(args)
+    try:
+        from tools.email_notifier import list_pending_email_triggers
+    except Exception as exc:
+        return f"ERR: email_notifier import failed: {exc}", view
+    pending = list_pending_email_triggers(state_dir)
+    if not pending:
+        return "(no pending email triggers)", view
+    lines = [f"pending email triggers ({len(pending)}):"]
+    for entry in pending:
+        lines.append(
+            f"  {entry.ts}  [apeiron:{entry.subject_prefix}] "
+            f"reason={entry.reason!r}  source={entry.source!r}  "
+            f"body={entry.subject_body!r}"
+        )
+    return "\n".join(lines), view
+
+
+def _cmd_configure_email(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Write ``state/email_config.json`` (SPEC-078).
+
+    Usage::
+
+        configure-email <from_addr> <smtp_host> <smtp_port> [--state-dir <path>]
+                        [--to-default <addr>] [--password-env <name>] [--enable]
+
+    Password is NEVER stored in the JSON; only the env var name is
+    recorded. Defaults: ``smtp_user=from_addr``,
+    ``password_env=APEIRON_SMTP_PASSWORD``, ``enabled=False`` (the
+    maintainer flips after a successful test send).
+    """
+    state_dir, remaining = _parse_state_dir_flag(args)
+    if len(remaining) < 3:
+        return (
+            "ERR: configure-email requires <from_addr> <smtp_host> <smtp_port> "
+            "[--to-default <addr>] [--password-env <name>] [--enable]",
+            view,
+        )
+    from_addr, smtp_host, smtp_port_s = remaining[0], remaining[1], remaining[2]
+    rest = list(remaining[3:])
+
+    to_default = ""
+    password_env: Optional[str] = None
+    enable = False
+    i = 0
+    while i < len(rest):
+        tok = rest[i]
+        if tok == "--to-default" and i + 1 < len(rest):
+            to_default = rest[i + 1]
+            i += 2
+            continue
+        if tok == "--password-env" and i + 1 < len(rest):
+            password_env = rest[i + 1]
+            i += 2
+            continue
+        if tok == "--enable":
+            enable = True
+            i += 1
+            continue
+        return f"ERR: unknown flag in configure-email: {tok!r}", view
+
+    try:
+        smtp_port = int(smtp_port_s)
+    except ValueError:
+        return f"ERR: smtp_port must be int, got {smtp_port_s!r}", view
+
+    try:
+        from tools.email_notifier import (
+            DEFAULT_PASSWORD_ENV,
+            EmailConfig,
+            save_config,
+        )
+    except Exception as exc:
+        return f"ERR: email_notifier import failed: {exc}", view
+
+    cfg = EmailConfig(
+        from_addr=from_addr,
+        smtp_host=smtp_host,
+        smtp_port=smtp_port,
+        smtp_user=from_addr,
+        smtp_password_env=password_env or DEFAULT_PASSWORD_ENV,
+        to_default=to_default,
+        enabled=enable,
+    )
+    path = save_config(cfg, state_dir=state_dir)
+    return (
+        f"OK: wrote {path}  smtp={cfg.smtp_user}@{cfg.smtp_host}:{cfg.smtp_port} "
+        f"enabled={cfg.enabled}",
+        view,
+    )
+
+
 def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     """Return the canonical command-grammar list — what verbs the CLI
     supports. Equivalent to rendering a TextRenderer-wrapped scene and
@@ -1269,6 +1464,9 @@ def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     lines.append("  browser-open <url>              -- load URL into the active Browser view (SPEC-066)")
     lines.append("  browser-html <html>             -- render inline HTML in the Browser view (SPEC-066)")
     lines.append("  browser-current-url             -- read the Browser view's current URL (SPEC-066)")
+    lines.append("  send-test-email [<to>] [--state-dir <p>] [--dry-run]  -- side-channel test email (SPEC-078)")
+    lines.append("  list-pending-email-triggers [--state-dir <p>]         -- list suppressed email triggers (SPEC-078)")
+    lines.append("  configure-email <from> <smtp_host> <smtp_port> [--to-default <a>] [--enable] -- write email_config.json (SPEC-078)")
     return "\n".join(lines), view
 
 
@@ -1316,6 +1514,9 @@ _COMMANDS = {
     "browser-open": _cmd_browser_open,
     "browser-html": _cmd_browser_html,
     "browser-current-url": _cmd_browser_current_url,
+    "send-test-email": _cmd_send_test_email,
+    "list-pending-email-triggers": _cmd_list_pending_email_triggers,
+    "configure-email": _cmd_configure_email,
     "list-commands": _cmd_list_commands,
 }
 
