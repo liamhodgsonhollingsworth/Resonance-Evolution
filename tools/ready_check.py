@@ -257,6 +257,48 @@ def _check_billing_env_strip(verbose: bool) -> Tuple[bool, str]:
     return True, "session_manager strips all 4 billing-mode env vars before spawn"
 
 
+def _check_workflow_gui_module(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-065: the 2D Tk GUI shell module must import cleanly and
+    expose its tab catalog + data providers. Headless probe — does not
+    open a Tk window, so it runs anywhere the regular suite runs.
+
+    What this catches: a refactor that breaks the data-provider
+    signatures, a tab dropped from the catalog, or a circular import
+    introduced by future cross-module coupling.
+    """
+    try:
+        from tools.workflow_gui.gui_shell import (
+            DEFAULT_TAB,
+            GuiShell,
+            TABS,
+            items_from_engine_cache,
+            items_from_inbox,
+            items_from_sessions,
+            main,
+        )
+    except Exception as exc:
+        return False, f"workflow_gui import failed: {exc}"
+    required_tabs = {
+        "Tasks", "Ideas", "Wishlist", "Inbox", "Chat",
+        "Quarantine", "Trusted Senders", "3D",
+    }
+    tab_names = {name for name, _, _ in TABS}
+    missing = required_tabs - tab_names
+    if missing:
+        return False, f"workflow_gui TABS missing: {sorted(missing)}"
+    if DEFAULT_TAB not in tab_names:
+        return False, f"workflow_gui DEFAULT_TAB {DEFAULT_TAB!r} not in TABS"
+    # Light callable check on the providers + main entry — confirms the
+    # surface a caller depends on still exists.
+    for fn in (items_from_engine_cache, items_from_inbox, items_from_sessions, main):
+        if not callable(fn):
+            return False, f"workflow_gui surface broken: {fn!r} not callable"
+    return True, (
+        f"workflow_gui import clean, {len(tab_names)} tabs registered, "
+        f"default={DEFAULT_TAB!r}"
+    )
+
+
 def _check_transcript_reader(verbose: bool) -> Tuple[bool, str]:
     """SPEC-070: the transcript reader must locate and render at least
     one real on-disk session cleanly. Probes the parser end-to-end
@@ -296,6 +338,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("claude_auth_status", _check_claude_auth_status),
     ("desktop_shortcut", _check_desktop_shortcut),
     ("transcript_reader", _check_transcript_reader),
+    ("workflow_gui_module", _check_workflow_gui_module),
 ]
 
 
