@@ -868,6 +868,130 @@ def _cmd_restore_panel(engine: Engine, view: View, *args) -> Tuple[str, View]:
     return f"OK: restored {args[0]}", view
 
 
+def _cmd_visual_contract_list_colors(
+    engine: Engine, view: View, *_
+) -> Tuple[str, View]:
+    """List every semantic color token + its hex value (SPEC-069).
+
+    Includes per-view tints under a ``view-accent::<name>``
+    pseudo-prefix so the text-API surfaces both palettes.
+    """
+    try:
+        from tools.visual_contract import (
+            get_color,
+            list_color_tokens,
+            list_view_accents,
+            view_accent,
+        )
+    except Exception as exc:
+        return f"ERR: visual_contract import failed: {exc}", view
+    lines = [f"color tokens ({len(list_color_tokens())}):"]
+    for token in list_color_tokens():
+        lines.append(f"  {token:20s}  {get_color(token)}")
+    accents = list_view_accents()
+    if accents:
+        lines.append(f"view accents ({len(accents)}):")
+        for name in accents:
+            lines.append(f"  view-accent::{name:18s} {view_accent(name)}")
+    return "\n".join(lines), view
+
+
+def _cmd_visual_contract_list_icons(
+    engine: Engine, view: View, *_
+) -> Tuple[str, View]:
+    """List every icon name registered in the contract (SPEC-069)."""
+    try:
+        from tools.visual_contract import (
+            active_renderer,
+            list_icon_names,
+        )
+    except Exception as exc:
+        return f"ERR: visual_contract import failed: {exc}", view
+    names = list_icon_names()
+    lines = [
+        f"icons ({len(names)}, renderer={active_renderer()}):",
+    ]
+    for name in names:
+        lines.append(f"  {name}")
+    return "\n".join(lines), view
+
+
+def _cmd_visual_contract_list_fonts(
+    engine: Engine, view: View, *_
+) -> Tuple[str, View]:
+    """List font aliases + size tokens (SPEC-069).
+
+    Reports the *probed* family for each alias (i.e. the first
+    available in the stack) and the full stack so the maintainer can
+    see why a particular family was chosen.
+    """
+    try:
+        from tools.visual_contract import (
+            font_stack,
+            get_font,
+            get_font_size,
+            list_font_families,
+            list_font_sizes,
+        )
+    except Exception as exc:
+        return f"ERR: visual_contract import failed: {exc}", view
+    lines = ["font aliases:"]
+    for alias in list_font_families():
+        chosen_family = get_font(alias)[0]
+        stack = " -> ".join(font_stack(alias))
+        lines.append(
+            f"  {alias:6s}  probed={chosen_family!r}  stack={stack}"
+        )
+    lines.append("size tokens:")
+    for token in list_font_sizes():
+        lines.append(f"  {token:20s}  {get_font_size(token)}pt")
+    return "\n".join(lines), view
+
+
+def _cmd_visual_contract_resolve_icon(
+    engine: Engine, view: View, *args
+) -> Tuple[str, View]:
+    """Render an icon to PIL and report its dimensions (SPEC-069).
+
+    Usage::
+
+        visual-contract-resolve-icon <name> [size]
+
+    Returns ``OK: <name> rendered (<w>x<h>) via <renderer>`` on
+    success. ``ERR`` with a clear message on unknown name, bad
+    size, or render failure. The PhotoImage cache is bypassed —
+    headless callers don't need a Tk root.
+    """
+    if not args:
+        return "ERR: visual-contract-resolve-icon requires <name> [size]", view
+    name = args[0]
+    size = 16
+    if len(args) >= 2:
+        try:
+            size = int(args[1])
+        except ValueError:
+            return f"ERR: size must be an integer, got {args[1]!r}", view
+    try:
+        from tools.visual_contract import (
+            active_renderer,
+            render_icon_image,
+        )
+    except Exception as exc:
+        return f"ERR: visual_contract import failed: {exc}", view
+    try:
+        img = render_icon_image(name, size=size)
+    except KeyError as exc:
+        return f"ERR: {exc}", view
+    except ValueError as exc:
+        return f"ERR: {exc}", view
+    except Exception as exc:
+        return f"ERR: render failed: {exc}", view
+    return (
+        f"OK: {name} rendered ({img.size[0]}x{img.size[1]}) "
+        f"via {active_renderer()}"
+    ), view
+
+
 def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     """Return the canonical command-grammar list — what verbs the CLI
     supports. Equivalent to rendering a TextRenderer-wrapped scene and
@@ -895,6 +1019,10 @@ def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     lines.append("  panel-state <pid>               -- read panel handle {x,y,w,h,locked,archived} (SPEC-007)")
     lines.append("  archive-panel <pid>             -- archive a panel (composes with SPEC-067) (SPEC-008)")
     lines.append("  restore-panel <pid>             -- restore a previously-archived panel (SPEC-008)")
+    lines.append("  visual-contract-list-colors     -- list semantic color tokens + view tints (SPEC-069)")
+    lines.append("  visual-contract-list-icons      -- list icon names registered in the contract (SPEC-069)")
+    lines.append("  visual-contract-list-fonts      -- list font aliases + size tokens with probed family (SPEC-069)")
+    lines.append("  visual-contract-resolve-icon <name> [size] -- render an icon and report dimensions (SPEC-069)")
     return "\n".join(lines), view
 
 
@@ -930,6 +1058,10 @@ _COMMANDS = {
     "panel-state": _cmd_panel_state,
     "archive-panel": _cmd_archive_panel,
     "restore-panel": _cmd_restore_panel,
+    "visual-contract-list-colors": _cmd_visual_contract_list_colors,
+    "visual-contract-list-icons": _cmd_visual_contract_list_icons,
+    "visual-contract-list-fonts": _cmd_visual_contract_list_fonts,
+    "visual-contract-resolve-icon": _cmd_visual_contract_resolve_icon,
     "list-commands": _cmd_list_commands,
 }
 
