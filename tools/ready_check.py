@@ -329,6 +329,64 @@ def _check_module_clipboard(verbose: bool) -> Tuple[bool, str]:
     )
 
 
+def _check_paste_trust_gate(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-073 follow-up (2026-05-20): paste_module runs every
+    snippet's type-name through the engine's render-trust set BEFORE
+    spawning. Untrusted nodes raise ``UntrustedNodeInPasteError`` and
+    the entire paste is rolled back atomically.
+
+    Probe: build an engine with the production trust-set, attempt to
+    paste a snippet asking for an unknown type-name, verify
+    rejection + zero nodes added."""
+    try:
+        from engine import Engine
+        from tools.module_clipboard import (
+            UntrustedNodeInPasteError,
+            paste_text_to_engine,
+        )
+        from tools.workflow.trust import render_trust_set
+    except Exception as exc:
+        return False, f"paste trust-gate import failed: {exc}"
+
+    import json as _json
+    try:
+        e = Engine(root_dir=ROOT, trust_set=render_trust_set(ROOT))
+        e.discover()
+        e.load_scene(ROOT / "scenes" / "workflow_view.json")
+    except Exception as exc:
+        return False, f"engine init failed: {exc}"
+
+    before_count = len(e.nodes)
+    snippet = _json.dumps({
+        "module": [
+            {
+                "id": "ready_check_paste_probe",
+                "type": "NotARegisteredType_ReadyCheck",
+                "params": {},
+                "connections": {},
+            }
+        ]
+    })
+    try:
+        paste_text_to_engine(e, snippet)
+    except UntrustedNodeInPasteError as exc:
+        if "NotARegisteredType_ReadyCheck" not in exc.offending_types:
+            return False, f"offending_types missing the rejected name: {exc.offending_types}"
+        if len(e.nodes) != before_count:
+            return False, (
+                f"atomic rollback failed: {before_count} -> {len(e.nodes)} after rejection"
+            )
+    except Exception as exc:
+        return False, f"unexpected exception type: {exc!r}"
+    else:
+        return False, "untrusted paste was accepted; trust gate not wired"
+
+    return True, (
+        "paste trust-gate enforced: untrusted type rejected with "
+        "UntrustedNodeInPasteError, zero nodes spawned"
+    )
+
+
 def _check_file_source_path_confinement(verbose: bool) -> Tuple[bool, str]:
     """SPEC-079 follow-up (2026-05-20): FileSource confines its path
     to a documented allow-list. A green probe confirms the gate is
@@ -769,6 +827,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("module_clipboard", _check_module_clipboard),
     ("visual_regression", _check_visual_regression),
     ("file_source_path_confinement", _check_file_source_path_confinement),
+    ("paste_trust_gate", _check_paste_trust_gate),
 ]
 
 
