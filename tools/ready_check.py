@@ -257,6 +257,34 @@ def _check_billing_env_strip(verbose: bool) -> Tuple[bool, str]:
     return True, "session_manager strips all 4 billing-mode env vars before spawn"
 
 
+def _check_transcript_reader(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-070: the transcript reader must locate and render at least
+    one real on-disk session cleanly. Probes the parser end-to-end
+    against the most-recently-modified session JSONL — a session that
+    exists is the only precondition; the reader handles any size/shape."""
+    from tools.transcript_reader import (
+        list_all_sessions, parse_transcript, render_markdown,
+    )
+
+    sessions = list_all_sessions()
+    if not sessions:
+        # No transcripts on disk yet — not a failure, just nothing to probe.
+        return True, "no session JSONLs on disk yet; reader is wired in"
+    sessions.sort(key=lambda s: s["mtime"], reverse=True)
+    target = Path(sessions[0]["path"])
+    try:
+        transcript = parse_transcript(target)
+        rendered = render_markdown(transcript)
+    except Exception as exc:  # pragma: no cover - defensive
+        return False, f"transcript reader crashed on {target.name}: {exc}"
+    if not rendered.startswith("# Session "):
+        return False, "rendered transcript missing session header"
+    return True, (
+        f"reader parsed {target.name} -> {len(transcript.turns)} turns, "
+        f"{len(rendered)} chars"
+    )
+
+
 CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("engine_discover", _check_engine_discover),
     ("scene_precompute", _check_scene_precompute),
@@ -267,6 +295,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("launcher_scene_arg", _check_launcher_scene_arg),
     ("claude_auth_status", _check_claude_auth_status),
     ("desktop_shortcut", _check_desktop_shortcut),
+    ("transcript_reader", _check_transcript_reader),
 ]
 
 
