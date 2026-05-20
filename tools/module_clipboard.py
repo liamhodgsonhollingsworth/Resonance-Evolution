@@ -66,6 +66,98 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
+# Trust gate (SPEC-073 + SPEC-054 composition, 2026-05-20 follow-up).
+# ---------------------------------------------------------------------------
+
+
+class UntrustedNodeInPasteError(Exception):
+    """Raised by :func:`instantiate_module` when a paste contains one
+    or more nodes whose type-name has a source-id that is NOT in the
+    engine's render-trust set.
+
+    The exception ``offending_types`` attribute lists the type-names
+    that failed the check (in declaration order, deduplicated) so the
+    caller can either grant trust to those sources or strip the
+    offending nodes from the snippet before retrying.
+
+    Composes SPEC-054 (render-trust on source files) with SPEC-073
+    (paste surface). Before this gate the trust set governed only
+    ``discover()``; a malicious paste could spawn any already-loaded
+    type, including types loaded from sources the trust set would
+    otherwise reject if re-introduced through hot-reload.
+    """
+
+    def __init__(self, message: str, offending_types: List[str]):
+        super().__init__(message)
+        self.offending_types = list(offending_types)
+
+
+def _check_trust(engine: Any, module: List[Dict[str, Any]]) -> None:
+    """Raise :class:`UntrustedNodeInPasteError` if any node's type-name
+    fails the render-trust check.
+
+    When the engine has no ``trust_set`` (the default in tests + pre-
+    trust callers), the check is a no-op — backward compatibility is
+    preserved. When a trust set is wired:
+
+    - Unknown type-names (not in ``engine.types``) are rejected outright.
+      A paste asking to spawn ``"NotAType"`` would otherwise spawn a
+      dead-but-registered node; with the gate, the entire paste fails
+      and nothing is added.
+    - Known type-names are looked up in ``engine.type_sources`` to get
+      their source-id, then checked against ``engine.trust_set.is_trusted``.
+
+    The two failure modes share the same exception so callers can react
+    uniformly (display "these types failed", let the maintainer choose
+    to grant trust or strip them).
+    """
+    trust_set = getattr(engine, "trust_set", None)
+    if trust_set is None:
+        return
+    type_sources = getattr(engine, "type_sources", {}) or {}
+    known_types = set(getattr(engine, "types", {}) or {})
+    offending: List[str] = []
+    seen: set = set()
+    for entry in module:
+        type_name = entry.get("type")
+        if not isinstance(type_name, str) or not type_name:
+            # parse_module already requires "type"; defensive guard.
+            continue
+        if type_name in seen:
+            continue
+        seen.add(type_name)
+        if type_name not in known_types:
+            # Unknown type — pre-gate this was a silently dead-on-arrival
+            # spawn; under the trust gate it's a hard rejection so a
+            # malicious payload can't trickle in arbitrary type-name
+            # strings.
+            offending.append(type_name)
+            continue
+        source_id = type_sources.get(type_name)
+        if source_id is None:
+            # Type is registered but the engine doesn't know its
+            # source-id. Conservative: treat as untrusted.
+            offending.append(type_name)
+            continue
+        try:
+            trusted = trust_set.is_trusted(source_id)
+        except Exception:
+            # Trust-set errors are treated as rejection — a broken
+            # trust store must not silently let pastes through.
+            offending.append(type_name)
+            continue
+        if not trusted:
+            offending.append(type_name)
+    if offending:
+        raise UntrustedNodeInPasteError(
+            f"paste rejected: untrusted node-types {sorted(set(offending))}; "
+            f"grant trust to their source paths in state/trusted_sources.json "
+            f"or remove them from the snippet before retrying",
+            offending_types=offending,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Serialize.
 # ---------------------------------------------------------------------------
 
@@ -178,6 +270,7 @@ def instantiate_module(
     module: List[Dict[str, Any]],
     *,
     auto_rename: bool = True,
+    enforce_trust: bool = True,
 ) -> List[str]:
     """Spawn every node in ``module`` into ``engine``.
 
@@ -191,6 +284,15 @@ def instantiate_module(
     paste behavior; callers wanting strict insertion (e.g. restoring
     an archived view) can opt out.
 
+    Trust gate (SPEC-073 + SPEC-054 composition, 2026-05-20 follow-up):
+    when ``enforce_trust`` is True (the default), every type-name in
+    the snippet is checked against the engine's render-trust set
+    BEFORE any spawn happens. If any node fails, :class:`UntrustedNodeInPasteError`
+    is raised and zero nodes are added — the paste is atomic. Callers
+    that want the old behaviour (paste-everything-or-collide) can pass
+    ``enforce_trust=False``; this is used by trusted internal callers
+    (e.g. scene restoration where types are already known-good).
+
     Bug-fix 2026-05-20 (stress-test): the rename map is now keyed by
     snippet INDEX, not by original id. A snippet containing the same
     original id twice (e.g. ``[{id:'X'}, {id:'X'}]``) used to overwrite
@@ -202,6 +304,12 @@ def instantiate_module(
     (positional convention — duplicates in the same snippet are an
     unusual case but the first-occurrence rule is unambiguous).
     """
+    # Trust gate: check every type-name against the engine's render-
+    # trust set BEFORE doing any planning. If any node fails, raise
+    # and add nothing — atomic semantics.
+    if enforce_trust:
+        _check_trust(engine, module)
+
     # Per-index resolution. ``planned_ids[i]`` is the resolved id for
     # ``module[i]`` after collision handling. We track ``used`` across
     # both pre-existing engine ids and ids we've planned in this call.
@@ -288,9 +396,16 @@ def copy_node_to_text(engine: Any, node_id: str) -> str:
 
 def paste_text_to_engine(engine: Any, text: str) -> List[str]:
     """Convenience: parse + instantiate in one call. Returns the
-    new node ids."""
+    new node ids.
+
+    Enforces the SPEC-054 render-trust gate by default — see
+    :func:`instantiate_module` for the atomic-rollback semantics.
+    Callers wanting to bypass the gate (e.g. scene restoration)
+    should call :func:`instantiate_module` directly with
+    ``enforce_trust=False``.
+    """
     module = parse_module(text)
-    return instantiate_module(engine, module, auto_rename=True)
+    return instantiate_module(engine, module, auto_rename=True, enforce_trust=True)
 
 
 __all__ = [
@@ -299,4 +414,5 @@ __all__ = [
     "instantiate_module",
     "copy_node_to_text",
     "paste_text_to_engine",
+    "UntrustedNodeInPasteError",
 ]
