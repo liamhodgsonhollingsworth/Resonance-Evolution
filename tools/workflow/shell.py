@@ -196,6 +196,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     initial_scene_path: Optional[Path] = None
     if args.scene:
         scene_path = (root / "scenes" / args.scene) if not Path(args.scene).is_absolute() else Path(args.scene)
+        # Allow `--scene workflow_view` as shorthand for the .json file —
+        # the maintainer's desktop shortcut launcher passes the bare name
+        # and shouldn't have to know about file extensions.
+        if not scene_path.exists() and scene_path.suffix != ".json":
+            with_suffix = scene_path.with_suffix(".json")
+            if with_suffix.exists():
+                scene_path = with_suffix
         if scene_path.exists():
             initial_scene_root = engine.load_scene(scene_path)
             initial_scene_path = scene_path
