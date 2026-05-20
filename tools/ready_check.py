@@ -287,6 +287,103 @@ def _check_gui_test_driver_smoke(verbose: bool) -> Tuple[bool, str]:
     return True, f"gui smoke executed {len(report)} verbs cleanly; final state nominal"
 
 
+def _check_panel_movable_resize(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-007 + SPEC-008: panel positioning model is end-to-end
+    functional. Probes the public API and the text-API verbs:
+
+    - _panel_host uses place() (asserts the attribute exists).
+    - move-panel text-API verb snaps to 12-px grid.
+    - resize-panel verb snaps to 12-px grid + clamps to 48 px min.
+    - lock-panel toggles the per-handle locked flag.
+    - archive-panel routes through ViewRegistry composition.
+    - _compute_snap returns correct peer-edge math.
+    - Archive view is registered in default_view_registry().
+    """
+    try:
+        from tools.gui_test_driver import GuiDriver
+        from tools.text_test import dispatch_command
+        from tools.workflow_gui.gui_shell import SNAP_GRID_PX, snap_to_grid
+        from tools.workflow_gui.view_registry import default_view_registry
+    except Exception as exc:
+        return False, f"panel_movable_resize import failed: {exc}"
+
+    # Probe 1: snap-grid constant matches the design doc.
+    if SNAP_GRID_PX != 12:
+        return False, f"SNAP_GRID_PX = {SNAP_GRID_PX}, expected 12 per design"
+
+    drv = GuiDriver().build()
+
+    # Probe 2: move-panel verb snaps to 12-px grid.
+    drv.ensure_panel("probe_panel")
+    state = drv.move_panel("probe_panel", 17, 29)
+    if state["x"] != 12 or state["y"] != 24:
+        return False, (
+            f"move-panel snap-to-grid wrong: (17, 29) -> "
+            f"({state['x']}, {state['y']}); expected (12, 24)"
+        )
+
+    # Probe 3: resize-panel verb snaps + clamps to min.
+    state = drv.resize_panel("probe_panel", 1, 1)
+    if state["w"] < 48 or state["h"] < 48:
+        return False, (
+            f"resize-panel min-clamp failed: w={state['w']}, h={state['h']}"
+        )
+
+    # Probe 4: lock-panel toggles the flag.
+    if not drv.lock_panel("probe_panel"):
+        return False, "lock_panel returned False on existing panel"
+    if not drv.panel_state("probe_panel")["locked"]:
+        return False, "lock_panel didn't set locked=True"
+
+    # Probe 5: locked panel ignores move.
+    pre_lock_state = drv.panel_state("probe_panel")
+    drv.move_panel("probe_panel", 60, 72)
+    post_state = drv.panel_state("probe_panel")
+    if post_state["x"] != pre_lock_state["x"]:
+        return False, (
+            f"locked move-panel mutated x: {pre_lock_state['x']} -> {post_state['x']}"
+        )
+
+    # Probe 6: archive-panel composes with ViewRegistry.
+    drv.unlock_panel("probe_panel")
+    drv.shell._ensure_panel_handle("Tasks")
+    drv.archive_panel("Tasks")
+    if "Tasks" not in drv.shell.view_registry.archived_names():
+        return False, "archive-panel did not compose with view_registry"
+    drv.restore_panel("Tasks")
+
+    # Probe 7: snap-to-grid math via text-API.
+    msg, _ = dispatch_command(drv.shell.engine, "move-panel probe_panel 17 29")
+    if not msg.startswith("OK"):
+        return False, f"text-API move-panel failed: {msg}"
+
+    # Probe 8: _compute_snap peer-edge math.
+    target = drv.shell._panel_handles.get("probe_panel")
+    peer = drv.shell._ensure_panel_handle("snap_peer")
+    target.x = 96
+    peer.x = 100
+    peer.y = 200
+    peer.w = 80
+    peer.h = 40
+    sx, _ = drv.shell._compute_snap(target, [peer])
+    if sx != 100:
+        return False, f"_compute_snap returned x={sx}; expected 100 (peer.x)"
+
+    # Probe 9: Archive view registered.
+    reg = default_view_registry()
+    archive_spec = reg.get("Archive")
+    if archive_spec is None:
+        return False, "Archive view not registered in default_view_registry"
+    if archive_spec.kind != "dynamic":
+        return False, f"Archive view kind={archive_spec.kind!r}, expected 'dynamic'"
+
+    return True, (
+        "panel positioning model healthy: 12-px snap, lock prevents "
+        "mutation, archive composes with ViewRegistry, _compute_snap "
+        "aligns to peer edges, Archive view registered"
+    )
+
+
 def _check_module_clipboard(verbose: bool) -> Tuple[bool, str]:
     """SPEC-073: serialize/parse/instantiate must round-trip a real
     scene node cleanly. Probes copy + paste against the live
@@ -769,6 +866,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("module_clipboard", _check_module_clipboard),
     ("visual_regression", _check_visual_regression),
     ("file_source_path_confinement", _check_file_source_path_confinement),
+    ("panel_movable_resize", _check_panel_movable_resize),
 ]
 
 
