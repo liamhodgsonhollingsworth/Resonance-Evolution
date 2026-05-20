@@ -751,6 +751,123 @@ def _cmd_visual_regression_list(
     return "\n".join(lines), view
 
 
+def _cmd_move_panel(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Move a panel to (x, y) — snapped to the 12-px grid (SPEC-007).
+
+    Usage::
+
+        move-panel <panel-id> <x> <y>
+
+    Requires a GuiShell attached to the engine. Returns the resulting
+    panel state {panel_id, view_name, x, y, w, h, locked, archived}.
+    """
+    if len(args) < 3:
+        return "ERR: move-panel requires <panel-id> <x> <y>", view
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    try:
+        pid, x, y = args[0], int(args[1]), int(args[2])
+    except ValueError:
+        return "ERR: x and y must be integers", view
+    try:
+        state = shell.move_panel(pid, x, y)
+    except Exception as exc:
+        return f"ERR: move_panel raised: {exc}", view
+    return f"OK: {state}", view
+
+
+def _cmd_resize_panel(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Resize a panel to (w, h) — snapped to the 12-px grid (SPEC-007).
+
+    Usage::
+
+        resize-panel <panel-id> <w> <h>
+
+    Width/height clamp to a 48 px minimum.
+    """
+    if len(args) < 3:
+        return "ERR: resize-panel requires <panel-id> <w> <h>", view
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    try:
+        pid, w, h = args[0], int(args[1]), int(args[2])
+    except ValueError:
+        return "ERR: w and h must be integers", view
+    try:
+        state = shell.resize_panel(pid, w, h)
+    except Exception as exc:
+        return f"ERR: resize_panel raised: {exc}", view
+    return f"OK: {state}", view
+
+
+def _cmd_lock_panel(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Lock a panel — subsequent move/resize calls no-op (SPEC-007)."""
+    if not args:
+        return "ERR: lock-panel requires <panel-id>", view
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    ok = shell.lock_panel(args[0])
+    if not ok:
+        return f"ERR: no panel handle for {args[0]!r}", view
+    return f"OK: locked {args[0]}", view
+
+
+def _cmd_unlock_panel(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Unlock a panel (SPEC-007)."""
+    if not args:
+        return "ERR: unlock-panel requires <panel-id>", view
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    ok = shell.unlock_panel(args[0])
+    if not ok:
+        return f"ERR: no panel handle for {args[0]!r}", view
+    return f"OK: unlocked {args[0]}", view
+
+
+def _cmd_panel_state(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Read the (x, y, w, h, locked, archived) state of a panel."""
+    if not args:
+        return "ERR: panel-state requires <panel-id>", view
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    state = shell.panel_state(args[0])
+    if not state:
+        return f"ERR: no panel handle for {args[0]!r}", view
+    return f"OK: {state}", view
+
+
+def _cmd_archive_panel(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Archive a panel via the same code path the right-click menu
+    uses (SPEC-008). Verifies the wiring without driving a real menu."""
+    if not args:
+        return "ERR: archive-panel requires <panel-id>", view
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    ok = shell.archive_panel(args[0])
+    if not ok:
+        return f"ERR: no panel handle for {args[0]!r}", view
+    return f"OK: archived {args[0]}", view
+
+
+def _cmd_restore_panel(engine: Engine, view: View, *args) -> Tuple[str, View]:
+    """Restore a previously-archived panel (SPEC-008)."""
+    if not args:
+        return "ERR: restore-panel requires <panel-id>", view
+    shell = getattr(engine, "gui_shell", None)
+    if shell is None:
+        return "ERR: no gui_shell attached to engine", view
+    ok = shell.restore_panel(args[0])
+    if not ok:
+        return f"ERR: no panel handle for {args[0]!r}", view
+    return f"OK: restored {args[0]}", view
+
+
 def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     """Return the canonical command-grammar list — what verbs the CLI
     supports. Equivalent to rendering a TextRenderer-wrapped scene and
@@ -771,6 +888,13 @@ def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     lines.append("  visual-regression-capture <name> -- capture current scene to baseline PNG (SPEC-080)")
     lines.append("  visual-regression-compare <name> -- compare current scene against baseline (SPEC-080)")
     lines.append("  visual-regression-list           -- list registered baselines + their PNG state (SPEC-080)")
+    lines.append("  move-panel <pid> <x> <y>        -- move a panel; snapped to 12-px grid (SPEC-007)")
+    lines.append("  resize-panel <pid> <w> <h>      -- resize a panel; snapped to 12-px grid (SPEC-007)")
+    lines.append("  lock-panel <pid>                -- lock a panel (move/resize no-op) (SPEC-007)")
+    lines.append("  unlock-panel <pid>              -- unlock a panel (SPEC-007)")
+    lines.append("  panel-state <pid>               -- read panel handle {x,y,w,h,locked,archived} (SPEC-007)")
+    lines.append("  archive-panel <pid>             -- archive a panel (composes with SPEC-067) (SPEC-008)")
+    lines.append("  restore-panel <pid>             -- restore a previously-archived panel (SPEC-008)")
     return "\n".join(lines), view
 
 
@@ -799,6 +923,13 @@ _COMMANDS = {
     "visual-regression-capture": _cmd_visual_regression_capture,
     "visual-regression-compare": _cmd_visual_regression_compare,
     "visual-regression-list": _cmd_visual_regression_list,
+    "move-panel": _cmd_move_panel,
+    "resize-panel": _cmd_resize_panel,
+    "lock-panel": _cmd_lock_panel,
+    "unlock-panel": _cmd_unlock_panel,
+    "panel-state": _cmd_panel_state,
+    "archive-panel": _cmd_archive_panel,
+    "restore-panel": _cmd_restore_panel,
     "list-commands": _cmd_list_commands,
 }
 

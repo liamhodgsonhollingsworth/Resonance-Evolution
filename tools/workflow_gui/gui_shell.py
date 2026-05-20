@@ -52,6 +52,7 @@ import argparse
 import os
 import sys
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -218,6 +219,54 @@ def items_from_text_view(spec: Any, engine: Engine) -> List[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# Panel positioning model (SPEC-007).
+# ---------------------------------------------------------------------------
+
+
+# Snap-grid resolution in pixels. Every panel move/resize through the
+# text-API + drag handlers rounds to this grid so panels align cleanly
+# along visible columns. 12 px is the design-doc value (the cockpit
+# original used 8; bumped for Tk's coarser place-drag granularity).
+SNAP_GRID_PX = 12
+
+
+def snap_to_grid(value: int, grid: int = SNAP_GRID_PX) -> int:
+    """Round ``value`` to the nearest ``grid`` multiple. Public for tests.
+
+    Negative values round toward 0 (not toward -infinity) so a panel
+    dragged slightly past the top-left edge clamps to (0, 0) rather
+    than (-grid, -grid).
+    """
+    if grid <= 0:
+        return int(value)
+    return int(round(value / grid) * grid)
+
+
+@dataclass
+class PanelHandle:
+    """Per-panel position + lock state (SPEC-007).
+
+    One handle per visible panel in the panel host. The handle is the
+    source of truth for `(x, y, w, h, locked, archived)`; the Tk widget
+    is re-positioned from the handle on every drag / resize / restore.
+
+    Two panels of the same view (paste-as-duplicate from SPEC-073) can
+    have independent handles — the dict key is the panel's node_id,
+    not the view name.
+    """
+
+    view_name: str
+    """The view the panel renders (the registry name, not the widget name)."""
+
+    x: int = 0
+    y: int = 0
+    w: int = 480
+    h: int = 320
+    locked: bool = False
+    archived: bool = False
+
+
+# ---------------------------------------------------------------------------
 # The shell.
 # ---------------------------------------------------------------------------
 
@@ -268,9 +317,22 @@ class GuiShell:
         # GUI state — set when ``build_ui`` is called.
         self.tk_root: Any = None
         self._central_frame: Any = None
+        self._panel_host: Any = None
         self._sidebar_frame: Any = None
         self._chat_entry: Any = None
         self._sidebar_buttons: Dict[str, Any] = {}
+
+        # SPEC-007 panel positioning model. `_panel_handles` holds one
+        # PanelHandle per visible panel, keyed by panel node id (which
+        # for the v1 single-panel-per-tab case is the tab name). The
+        # central pane uses `place()` to position panels at the handle's
+        # (x, y, w, h). `_panel_widgets` tracks the live Tk Frame so the
+        # drag / resize / lock handlers can re-place it from the handle.
+        # `_panel_drag` is the per-drag-gesture state (anchor coords +
+        # original handle x/y) so motion events can compute deltas.
+        self._panel_handles: Dict[str, PanelHandle] = {}
+        self._panel_widgets: Dict[str, Any] = {}
+        self._panel_drag: Optional[Dict[str, Any]] = None
         # ``_tabs`` is the legacy materialized form ``items_for_tab``
         # iterates over. Re-materialized whenever the registry changes
         # so the rendering switch keeps working without dictionary
@@ -454,6 +516,16 @@ class GuiShell:
         # Central pane.
         self._central_frame = tk.Frame(self.tk_root, bg="#2a2d34")
         self._central_frame.grid(row=0, column=1, sticky="nsew")
+
+        # SPEC-007 panel host. A child frame of the central pane that
+        # uses `place()` for absolute (x, y, w, h) positioning of panel
+        # widgets. The host itself fills the central pane; panels are
+        # placed inside via PanelHandle records. The previous Arc K
+        # layout packed/gridded widgets directly into _central_frame;
+        # SPEC-007 routes everything through the host so move/resize/
+        # snap-to-grid have a single coordinate space to operate in.
+        self._panel_host = tk.Frame(self._central_frame, bg="#2a2d34")
+        self._panel_host.place(x=0, y=0, relwidth=1.0, relheight=1.0)
 
         # Chat input bar at the bottom of the right column.
         chat_bar = tk.Frame(self.tk_root, bg="#15171c", height=64)
@@ -846,12 +918,17 @@ class GuiShell:
         if self.active_tab is None or self._central_frame is None:
             return
         self._highlight_active_tab()
-        # Clear central pane.
-        for child in self._central_frame.winfo_children():
+        # Clear panel host. SPEC-007: panels are placed inside
+        # _panel_host with absolute coordinates so move/resize/snap
+        # have a single coordinate space. Destroying the children
+        # cleanly preserves the host itself.
+        host = self._panel_host if self._panel_host is not None else self._central_frame
+        for child in host.winfo_children():
             try:
                 child.destroy()
             except Exception:
                 pass
+        self._panel_widgets.clear()
         if self.active_tab == "3D":
             self._activate_3d()
             return
@@ -864,12 +941,52 @@ class GuiShell:
         items = self.items_for_tab(self.active_tab)
         self._render_list_panel(items)
 
+    def _ensure_panel_handle(self, panel_id: str) -> PanelHandle:
+        """Return the PanelHandle for ``panel_id``, creating it at the
+        default position if absent. SPEC-007 invariant: every visible
+        panel has a handle; handle creation is implicit on first render.
+        """
+        handle = self._panel_handles.get(panel_id)
+        if handle is None:
+            # Default position: stagger by the number of existing
+            # handles so multiple panels don't stack at (0, 0).
+            offset = len(self._panel_handles) * SNAP_GRID_PX * 2
+            handle = PanelHandle(
+                view_name=panel_id,
+                x=snap_to_grid(offset),
+                y=snap_to_grid(offset),
+                w=480,
+                h=320,
+            )
+            self._panel_handles[panel_id] = handle
+        return handle
+
     def _render_list_panel(self, items: List[Dict[str, Any]]) -> None:
-        """Build a Tk list panel for the given items in the central frame."""
+        """Build a Tk list panel for the given items, placed inside the
+        SPEC-007 panel host at the panel handle's (x, y, w, h).
+
+        v1 single-panel-per-tab behaviour: the active tab name is used
+        as the panel id. Future versions (multi-panel, paste-as-
+        duplicate from SPEC-073) will key by node id so two panels of
+        the same view can coexist with independent handles.
+        """
         import tkinter as tk
         from tkinter import ttk
 
-        header = tk.Frame(self._central_frame, bg="#2a2d34")
+        # Resolve the panel id (v1: tab name) + the handle.
+        panel_id = self.active_tab or "panel"
+        handle = self._ensure_panel_handle(panel_id)
+
+        # The panel frame is a `place`-positioned child of the panel
+        # host. Drag handlers on the header reposition this frame by
+        # mutating handle.x/y then re-placing.
+        host = self._panel_host if self._panel_host is not None else self._central_frame
+        panel_frame = tk.Frame(host, bg="#2a2d34", highlightthickness=1,
+                               highlightbackground="#3b4254")
+        panel_frame.place(x=handle.x, y=handle.y, width=handle.w, height=handle.h)
+        self._panel_widgets[panel_id] = panel_frame
+
+        header = tk.Frame(panel_frame, bg="#2a2d34", cursor="fleur")
         header.pack(fill="x", padx=12, pady=(12, 0))
 
         title = tk.Label(
@@ -879,6 +996,7 @@ class GuiShell:
             fg="#e8e8ec",
             font=("Helvetica", 14, "bold"),
             anchor="w",
+            cursor="fleur",
         )
         title.pack(side="left")
 
@@ -889,19 +1007,34 @@ class GuiShell:
             fg="#8d92a3",
             font=("Helvetica", 10),
             anchor="e",
+            cursor="fleur",
         )
         count.pack(side="right")
 
+        # SPEC-007 drag-to-move: pressing the left mouse button on the
+        # header (or any of its children) starts a drag; B1-Motion
+        # repositions the panel via place(); ButtonRelease commits the
+        # final snapped position. The handlers operate on the panel
+        # node id captured in the lambda so a single binding covers
+        # any panel in the host.
+        for w in (header, title, count):
+            w.bind("<ButtonPress-1>",
+                   lambda e, pid=panel_id: self._on_panel_drag_start(e, pid))
+            w.bind("<B1-Motion>",
+                   lambda e, pid=panel_id: self._on_panel_drag_motion(e, pid))
+            w.bind("<ButtonRelease-1>",
+                   lambda e, pid=panel_id: self._on_panel_drag_release(e, pid))
+
         # Action button strip (initially empty; populated when an item
         # is selected).
-        action_bar = tk.Frame(self._central_frame, bg="#2a2d34")
+        action_bar = tk.Frame(panel_frame, bg="#2a2d34")
         action_bar.pack(fill="x", padx=12, pady=(6, 0))
 
         # Tree + scrollbar in a sub-frame so they share a row.
-        list_frame = tk.Frame(self._central_frame, bg="#2a2d34")
+        list_frame = tk.Frame(panel_frame, bg="#2a2d34")
         list_frame.pack(fill="both", expand=True, padx=12, pady=12)
 
-        style = ttk.Style(self._central_frame)
+        style = ttk.Style(panel_frame)
         try:
             style.theme_use("clam")
         except Exception:
@@ -944,7 +1077,7 @@ class GuiShell:
         scroll.pack(side="right", fill="y")
 
         # Body display below the list (collapsed by default).
-        body_frame = tk.Frame(self._central_frame, bg="#1c1f26")
+        body_frame = tk.Frame(panel_frame, bg="#1c1f26")
         # Packed/unpacked dynamically on expand.
 
         from node_types.list_renderer import DEFAULT_STATUS_GLYPHS
@@ -1016,6 +1149,227 @@ class GuiShell:
         # Re-pack the body frame at the bottom; hidden until expand.
         body_frame.pack(fill="x", padx=12, pady=(0, 12))
         body_frame.pack_forget()
+
+    # ----- SPEC-007 movable / resizable / snap / lock -----
+
+    def move_panel(self, panel_id: str, x: int, y: int) -> Dict[str, Any]:
+        """Move a panel to (x, y), snapped to the 12-px grid.
+
+        Idempotent for already-positioned panels: the snap-grid math
+        round-trips through ``move_panel`` (calling twice with the
+        same args is a no-op once the grid has clamped). Locked panels
+        refuse the move and return the current (un-moved) state.
+        Returns the resulting handle dict for assertion.
+        """
+        handle = self._ensure_panel_handle(panel_id)
+        if handle.locked:
+            return self.panel_state(panel_id)
+        snapped_x = snap_to_grid(int(x))
+        snapped_y = snap_to_grid(int(y))
+        handle.x = snapped_x
+        handle.y = snapped_y
+        # Re-place the live widget if it exists. The widget is None
+        # when the panel hasn't been rendered yet (e.g. headless tests
+        # that only exercise the handle layer); skip silently.
+        widget = self._panel_widgets.get(panel_id)
+        if widget is not None:
+            try:
+                widget.place(x=handle.x, y=handle.y,
+                             width=handle.w, height=handle.h)
+            except Exception as exc:
+                self.engine.errors.append(
+                    f"gui_shell move_panel place: {exc}"
+                )
+        return self.panel_state(panel_id)
+
+    def resize_panel(self, panel_id: str, w: int, h: int) -> Dict[str, Any]:
+        """Resize a panel to (w, h), snapped to the 12-px grid.
+
+        Locked panels refuse the resize. Width and height are clamped
+        to a 48 px minimum so a snap-to-zero doesn't make the panel
+        unreachable.
+        """
+        handle = self._ensure_panel_handle(panel_id)
+        if handle.locked:
+            return self.panel_state(panel_id)
+        snapped_w = max(48, snap_to_grid(int(w)))
+        snapped_h = max(48, snap_to_grid(int(h)))
+        handle.w = snapped_w
+        handle.h = snapped_h
+        widget = self._panel_widgets.get(panel_id)
+        if widget is not None:
+            try:
+                widget.place(x=handle.x, y=handle.y,
+                             width=handle.w, height=handle.h)
+            except Exception as exc:
+                self.engine.errors.append(
+                    f"gui_shell resize_panel place: {exc}"
+                )
+        return self.panel_state(panel_id)
+
+    def lock_panel(self, panel_id: str) -> bool:
+        """Lock a panel — drag/resize handlers and ``move_panel`` /
+        ``resize_panel`` early-return without modifying the handle.
+        Returns True if locked; False if no such panel handle.
+        """
+        handle = self._panel_handles.get(panel_id)
+        if handle is None:
+            return False
+        handle.locked = True
+        return True
+
+    def unlock_panel(self, panel_id: str) -> bool:
+        """Unlock a panel. Returns True if unlocked; False if absent."""
+        handle = self._panel_handles.get(panel_id)
+        if handle is None:
+            return False
+        handle.locked = False
+        return True
+
+    def is_locked(self, panel_id: str) -> bool:
+        """Return True if the panel handle exists and is locked."""
+        handle = self._panel_handles.get(panel_id)
+        return bool(handle and handle.locked)
+
+    def panel_state(self, panel_id: str) -> Dict[str, Any]:
+        """Return the panel handle as a plain dict for assertion + the
+        text-API ``panel-state`` verb. Returns an empty dict when the
+        panel doesn't have a handle yet.
+        """
+        handle = self._panel_handles.get(panel_id)
+        if handle is None:
+            return {}
+        return {
+            "panel_id": panel_id,
+            "view_name": handle.view_name,
+            "x": handle.x,
+            "y": handle.y,
+            "w": handle.w,
+            "h": handle.h,
+            "locked": handle.locked,
+            "archived": handle.archived,
+        }
+
+    def archive_panel(self, panel_id: str) -> bool:
+        """Archive a panel — hide it from the host while preserving the
+        handle so ``restore_panel`` brings it back at the prior (x, y,
+        w, h). Returns True on success.
+
+        Composes with SPEC-067: archiving a panel that backs a view
+        also archives the view so the sidebar tab disappears. The
+        underlying ViewRegistry is the source of truth for which views
+        are visible; the PanelHandle's ``archived`` flag tracks the
+        per-instance position state so a restore-from-Archive view can
+        place the panel back exactly where it was.
+        """
+        handle = self._panel_handles.get(panel_id)
+        if handle is None:
+            return False
+        handle.archived = True
+        # Hide the live widget if it exists. The widget stays in
+        # _panel_widgets so a subsequent restore can re-place it
+        # without rebuilding the tree.
+        widget = self._panel_widgets.get(panel_id)
+        if widget is not None:
+            try:
+                widget.place_forget()
+            except Exception:
+                pass
+        # Compose with ViewRegistry: archive the corresponding view
+        # so the sidebar tab also disappears. SPEC-008 names this
+        # composition explicitly.
+        if self.view_registry.get(handle.view_name) is not None:
+            self._archive_tab(handle.view_name)
+        return True
+
+    def restore_panel(self, panel_id: str) -> bool:
+        """Restore a previously-archived panel to its prior position.
+
+        The handle's (x, y, w, h, locked) are preserved through the
+        archive cycle so a panel that was locked stays locked when
+        restored.
+        """
+        handle = self._panel_handles.get(panel_id)
+        if handle is None:
+            return False
+        handle.archived = False
+        # Re-activate the view (SPEC-067) so the sidebar tab reappears.
+        if self.view_registry.is_archived(handle.view_name):
+            self.restore_view(handle.view_name)
+        # Re-place the live widget at the saved coordinates.
+        widget = self._panel_widgets.get(panel_id)
+        if widget is not None:
+            try:
+                widget.place(x=handle.x, y=handle.y,
+                             width=handle.w, height=handle.h)
+            except Exception as exc:
+                self.engine.errors.append(
+                    f"gui_shell restore_panel place: {exc}"
+                )
+        return True
+
+    # ----- drag gesture handlers -----
+
+    def _on_panel_drag_start(self, event: Any, panel_id: str) -> None:
+        """Anchor a drag gesture on initial mouse press over a panel
+        header. Stores the cursor origin + the current handle (x, y)
+        so motion events compute deltas against the gesture anchor
+        rather than the previous motion event.
+        """
+        handle = self._panel_handles.get(panel_id)
+        if handle is None or handle.locked:
+            self._panel_drag = None
+            return
+        try:
+            anchor_x = int(event.x_root)
+            anchor_y = int(event.y_root)
+        except Exception:
+            return
+        self._panel_drag = {
+            "panel_id": panel_id,
+            "anchor_x_root": anchor_x,
+            "anchor_y_root": anchor_y,
+            "origin_x": handle.x,
+            "origin_y": handle.y,
+        }
+
+    def _on_panel_drag_motion(self, event: Any, panel_id: str) -> None:
+        """Apply a drag delta to the panel's place() coordinates.
+
+        Each motion event re-places the widget at the snapped delta
+        from the gesture anchor; the handle is updated continuously
+        so a release commits the final position.
+        """
+        if self._panel_drag is None or self._panel_drag.get("panel_id") != panel_id:
+            return
+        handle = self._panel_handles.get(panel_id)
+        if handle is None or handle.locked:
+            return
+        try:
+            cur_x = int(event.x_root)
+            cur_y = int(event.y_root)
+        except Exception:
+            return
+        delta_x = cur_x - self._panel_drag["anchor_x_root"]
+        delta_y = cur_y - self._panel_drag["anchor_y_root"]
+        new_x = snap_to_grid(self._panel_drag["origin_x"] + delta_x)
+        new_y = snap_to_grid(self._panel_drag["origin_y"] + delta_y)
+        handle.x = max(0, new_x)
+        handle.y = max(0, new_y)
+        widget = self._panel_widgets.get(panel_id)
+        if widget is not None:
+            try:
+                widget.place(x=handle.x, y=handle.y,
+                             width=handle.w, height=handle.h)
+            except Exception:
+                pass
+
+    def _on_panel_drag_release(self, event: Any, panel_id: str) -> None:
+        """Commit the drag — clears the gesture state. The handle
+        already holds the final snapped position from the last motion
+        event; no further mutation is required at release time.
+        """
+        self._panel_drag = None
 
     def _show_body(self, body_frame: Any, item: Dict[str, Any]) -> None:
         import tkinter as tk
