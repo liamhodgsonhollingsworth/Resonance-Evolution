@@ -355,6 +355,40 @@ def _cmd_collapse(
     return ("OK: " if ok else "ERR: ") + msg, view
 
 
+def _cmd_set_mode(
+    engine: Engine,
+    view: View,
+    node_id: str,
+    new_mode: str,
+    *_,
+) -> Tuple[str, View]:
+    """Set a node's ``mode`` field. Currently meaningful for ``WorkflowView``
+    where it toggles between ``"panels"`` and ``"full_render"`` (the same
+    state-change the realtime renderer's Escape global-handler dispatches
+    via ``set_mode``).
+
+    This closes the text-API parity gap with the GUI's Escape key —
+    the maintainer can toggle the workflow surface mode from text
+    without driving the realtime window. Composes with SPEC-062
+    (text-API parity for every GUI interaction).
+    """
+    node = engine.nodes.get(node_id)
+    if node is None:
+        return f"ERR: unknown node: {node_id!r}", view
+    module = engine.types.get(node.type_name)
+    if module is None or not hasattr(module, "set_mode"):
+        return (
+            f"ERR: node {node_id!r} (type {node.type_name!r}) does not "
+            f"declare a set_mode hook",
+            view,
+        )
+    try:
+        module.set_mode(node, new_mode)
+    except Exception as exc:
+        return f"ERR: set_mode failed: {exc}", view
+    return f"OK: set {node_id}.mode = {new_mode!r}", view
+
+
 def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     """Return the canonical command-grammar list — what verbs the CLI
     supports. Equivalent to rendering a TextRenderer-wrapped scene and
@@ -364,6 +398,7 @@ def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     lines = ["available commands:"]
     for entry in command_grammar():
         lines.append(f"  {entry}")
+    lines.append("  set-mode <node> <mode>          -- mutate a node's mode field (e.g. WorkflowView panels/full_render)")
     return "\n".join(lines), view
 
 
@@ -381,6 +416,7 @@ _COMMANDS = {
     "invoke": _cmd_invoke,
     "expand": _cmd_expand,
     "collapse": _cmd_collapse,
+    "set-mode": _cmd_set_mode,
     "list-commands": _cmd_list_commands,
 }
 
