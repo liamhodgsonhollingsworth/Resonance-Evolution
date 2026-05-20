@@ -34,10 +34,17 @@ class InputEvent:
 
     kind:
       - "key_down" / "key_up"  → key populated (e.g. "w", "space", "t")
-      - "mouse_move"           → dx, dy populated (relative deltas)
-      - "mouse_button"         → button ("left"|"right"|"middle"), pressed (bool)
+      - "mouse_move"           → dx, dy (relative deltas); x, y (canvas
+                                  absolute position when known)
+      - "mouse_button"         → button ("left"|"right"|"middle"), pressed
+                                  (bool); x, y (canvas absolute position)
       - "scroll"               → dy populated (positive = away from user)
       - "text"                 → text populated (for chat input)
+
+    ``x`` / ``y`` are integer canvas-space pixel coordinates (origin
+    top-left, +y down). They default to ``-1`` to mean "unknown" so a
+    backend that doesn't supply them (or a headless event with no mouse
+    position) is distinguishable from a real (0, 0) corner click.
     """
     kind: str
     key: Optional[str] = None
@@ -47,6 +54,8 @@ class InputEvent:
     pressed: bool = False
     text: Optional[str] = None
     timestamp: float = 0.0
+    x: int = -1
+    y: int = -1
 
 
 # ---------------------------------------------------------------------------

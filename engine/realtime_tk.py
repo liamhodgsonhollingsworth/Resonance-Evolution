@@ -205,7 +205,14 @@ class TkBackend:
         if dx == 0.0 and dy == 0.0:
             return
         self._events.append(
-            InputEvent(kind="mouse_move", dx=dx, dy=dy, timestamp=self._now())
+            InputEvent(
+                kind="mouse_move",
+                dx=dx,
+                dy=dy,
+                x=int(event.x),
+                y=int(event.y),
+                timestamp=self._now(),
+            )
         )
 
     def _on_button(self, event, button: str, pressed: bool) -> None:
@@ -214,6 +221,8 @@ class TkBackend:
                 kind="mouse_button",
                 button=button,
                 pressed=pressed,
+                x=int(event.x),
+                y=int(event.y),
                 timestamp=self._now(),
             )
         )
