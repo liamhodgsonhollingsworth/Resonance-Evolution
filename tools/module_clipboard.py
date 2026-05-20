@@ -190,41 +190,64 @@ def instantiate_module(
     instead of being auto-resolved. The default True is the safer
     paste behavior; callers wanting strict insertion (e.g. restoring
     an archived view) can opt out.
-    """
-    rename: Dict[str, str] = {}
-    existing_ids = set(engine.nodes.keys())
-    new_ids: List[str] = []
 
-    # First pass: compute rename map.
+    Bug-fix 2026-05-20 (stress-test): the rename map is now keyed by
+    snippet INDEX, not by original id. A snippet containing the same
+    original id twice (e.g. ``[{id:'X'}, {id:'X'}]``) used to overwrite
+    the first rename when the second iteration computed its own. The
+    first node silently spawned into the second's resolved id (both
+    new_ids[0] and new_ids[1] returned the same string). Now each
+    snippet position gets its own resolved id; connection rewriting
+    targets the FIRST snippet occurrence of a given original id
+    (positional convention — duplicates in the same snippet are an
+    unusual case but the first-occurrence rule is unambiguous).
+    """
+    # Per-index resolution. ``planned_ids[i]`` is the resolved id for
+    # ``module[i]`` after collision handling. We track ``used`` across
+    # both pre-existing engine ids and ids we've planned in this call.
+    used = set(engine.nodes.keys())
+    planned_ids: List[str] = []
+
     for n in module:
         original = n["id"]
-        if original not in existing_ids and original not in rename.values():
-            rename[original] = original
-            continue
-        if not auto_rename:
+        if original not in used:
+            chosen = original
+        elif not auto_rename:
             raise ValueError(f"id collision on paste: {original!r}")
-        # Find first non-colliding suffix.
-        idx = 2
-        while True:
-            candidate = f"{original}_{idx}"
-            if candidate not in existing_ids and candidate not in rename.values():
-                rename[original] = candidate
-                break
-            idx += 1
+        else:
+            idx = 2
+            while True:
+                candidate = f"{original}_{idx}"
+                if candidate not in used:
+                    chosen = candidate
+                    break
+                idx += 1
+        used.add(chosen)
+        planned_ids.append(chosen)
 
-    # Second pass: spawn with renamed ids + rewritten in-module
-    # connection targets.
-    for n in module:
-        new_id = rename[n["id"]]
+    # Build a mapping from original id → chosen id for connection
+    # rewriting. When the snippet contains duplicates of the same
+    # original id, the first occurrence's chosen id wins — connections
+    # in any node of the snippet that reference that original id will
+    # be rewritten to point at the first occurrence's chosen.
+    rename: Dict[str, str] = {}
+    for n, chosen in zip(module, planned_ids):
+        original = n["id"]
+        if original not in rename:
+            rename[original] = chosen
+
+    # Spawn with planned ids + rewritten connections.
+    new_ids: List[str] = []
+    for n, chosen in zip(module, planned_ids):
         params = dict(n.get("params", {}))
         connections = _rewrite_connections(n.get("connections", {}), rename)
         engine.spawn(
-            node_id=new_id,
+            node_id=chosen,
             type_name=n["type"],
             params=params,
             connections=connections,
         )
-        new_ids.append(new_id)
+        new_ids.append(chosen)
     return new_ids
 
 

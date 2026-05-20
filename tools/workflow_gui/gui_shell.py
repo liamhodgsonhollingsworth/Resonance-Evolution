@@ -645,14 +645,39 @@ class GuiShell:
         the source of truth. The spec is preserved in the registry so
         ``restore_view(name)`` can bring it back without re-declaring.
         Returns the tab name for tests.
+
+        Bug-fix 2026-05-20 (stress-test): archiving the last visible
+        view used to fall back to DEFAULT_TAB ("Tasks") even when
+        Tasks was already archived. Now if no visible alternative
+        exists, active_tab is set to None — the GUI shows an empty
+        central pane rather than a dangling pointer.
         """
         # Don't let the active tab vanish without a fallback selection.
         if tab_name == self.active_tab:
-            fallback = next(
-                (n for n in self.view_registry.names() if n != tab_name),
-                DEFAULT_TAB,
-            )
-            self.select_tab(fallback)
+            # Pick a visible alternative; only fall back to DEFAULT_TAB
+            # if DEFAULT_TAB is still visible. Otherwise leave
+            # active_tab as None so the central pane clears.
+            visible_alternatives = [
+                n for n in self.view_registry.names() if n != tab_name
+            ]
+            if visible_alternatives:
+                # Prefer DEFAULT_TAB when it's visible, else first.
+                fallback = (
+                    DEFAULT_TAB
+                    if DEFAULT_TAB in visible_alternatives
+                    else visible_alternatives[0]
+                )
+                self.select_tab(fallback)
+            else:
+                # No visible alternative — clear active tab cleanly.
+                self.active_tab = None
+                self._expanded_item_id = None
+                if self.tk_root is not None and self._central_frame is not None:
+                    for child in self._central_frame.winfo_children():
+                        try:
+                            child.destroy()
+                        except Exception:
+                            pass
         # Archive in the registry; rebuild the legacy mirrors.
         self.view_registry.archive(tab_name)
         self._tabs = self.view_registry.as_tabs()
@@ -1315,7 +1340,14 @@ class GuiShell:
     def _resolve_session_id(self, sid_or_name: str) -> Optional[str]:
         """Look up a session by exact id, then by display_name, then
         by id-prefix (so the maintainer can type the first 8 chars
-        of a UUID and have it resolve). Returns None if no match."""
+        of a UUID and have it resolve). Returns None if no match.
+
+        Bug-fix 2026-05-20 (stress-test): the id-prefix branch now
+        detects ambiguity. If two sessions share the supplied prefix,
+        returns None (rather than silently picking the first listed).
+        The caller surfaces the ambiguity to the maintainer via the
+        existing "no session matched" error path.
+        """
         if not sid_or_name:
             return None
         # Exact id match.
@@ -1332,9 +1364,21 @@ class GuiShell:
                     return rec.id
             # id-prefix match (≥4 chars to avoid false hits).
             if len(sid_or_name) >= 4:
-                for rec in self.sm.list():
-                    if rec.id.startswith(sid_or_name):
-                        return rec.id
+                prefix_matches = [
+                    rec.id for rec in self.sm.list()
+                    if rec.id.startswith(sid_or_name)
+                ]
+                if len(prefix_matches) == 1:
+                    return prefix_matches[0]
+                if len(prefix_matches) > 1:
+                    # Ambiguous prefix — log and return None so the
+                    # caller surfaces the failure rather than silently
+                    # picking the wrong session.
+                    self.engine.errors.append(
+                        f"_resolve_session_id: ambiguous prefix "
+                        f"{sid_or_name!r}; matches {prefix_matches}"
+                    )
+                    return None
         except Exception:
             pass
         return None
