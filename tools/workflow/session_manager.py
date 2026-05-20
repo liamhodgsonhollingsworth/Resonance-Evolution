@@ -354,6 +354,25 @@ class SessionManager:
 
         # Windows: claude.cmd needs shell=False via shutil.which resolution.
         # Use text mode so stream-json reads as str rather than bytes.
+        #
+        # Critical: strip billing-mode env vars from the inherited
+        # environment so the spawned ``claude`` subprocess uses the
+        # maintainer's logged-in plan (OAuth) instead of per-call API
+        # billing. If the maintainer has ``ANTHROPIC_API_KEY`` set in
+        # their user environment for other tools, that key would be
+        # inherited here and force the spawned session into API mode,
+        # which charges separately from their Claude Code plan. The
+        # default is "use the plan"; opting back into API billing
+        # would require a dedicated flag (not yet implemented — file an
+        # SPEC entry if a maintainer ever needs the carve-out).
+        env = os.environ.copy()
+        for key in (
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CODE_USE_VERTEX",
+        ):
+            env.pop(key, None)
         try:
             child = subprocess.Popen(
                 args,
@@ -364,7 +383,7 @@ class SessionManager:
                 text=True,
                 bufsize=1,  # line-buffered
                 encoding="utf-8",
-                env=os.environ.copy(),
+                env=env,
             )
         except FileNotFoundError as exc:
             s.record.status = "error"
