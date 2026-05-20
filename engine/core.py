@@ -202,7 +202,12 @@ class Engine:
         params: Optional[Dict[str, Any]] = None,
         connections: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Create a node instance. Wraps build() in try/except."""
+        """Create a node instance. Wraps build() in try/except.
+
+        Emits one ``spawn`` history row regardless of whether build()
+        succeeded — a dead-on-arrival node is still a mutation event
+        worth recording for diagnostic purposes (SPEC-076 §6).
+        """
         params = params or {}
         connections = connections or {}
         instance = NodeInstance(
@@ -217,6 +222,12 @@ class Engine:
             instance.dead = True
             instance.error = f"unknown type: {type_name}"
             self.nodes[node_id] = instance
+            self._emit_history(
+                node_id,
+                "spawn",
+                payload={"type": type_name, "params": dict(params), "dead": True},
+                summary=f"spawn {type_name} (unknown type)",
+            )
             return node_id
 
         try:
@@ -228,7 +239,152 @@ class Engine:
             instance.dead = True
             instance.error = f"build failed: {e}\n{traceback.format_exc()}"
         self.nodes[node_id] = instance
+        self._emit_history(
+            node_id,
+            "spawn",
+            payload={"type": type_name, "params": dict(params), "dead": instance.dead},
+            summary=f"spawn {type_name}",
+        )
         return node_id
+
+    # ----- mutation surface with history (SPEC-076) -----
+    #
+    # The methods below are the formal mutation surface — calling them
+    # emits one row to ``state/node_history/<node-id>.jsonl`` per
+    # mutation (SPEC-076 design §6). Existing code paths that mutate
+    # ``node.params`` / ``node.connections`` directly still work; they
+    # just don't appear in the history view. History is a diagnostic
+    # surface, not a transactional log, so silently-missing rows for
+    # legacy paths are acceptable per the design's resilience clause.
+
+    def set_param(self, node_id: str, key: str, value: Any) -> bool:
+        """Set ``node.params[key] = value`` and emit a history row.
+
+        Returns True on success, False if the node is missing. Does
+        NOT call ``build()`` again — that requires a full respawn. A
+        caller that needs the post-build state refresh should respawn.
+        """
+        node = self.nodes.get(node_id)
+        if node is None:
+            return False
+        old = node.params.get(key)
+        node.params[key] = value
+        self._emit_history(
+            node_id,
+            "set_param",
+            payload={"key": key, "old": old, "new": value},
+            summary=f"{key}: {old!r} -> {value!r}",
+        )
+        return True
+
+    def connect(self, from_id: str, slot: str, to_id: str) -> bool:
+        """Wire ``from_id.<slot> -> to_id`` and emit a history row.
+
+        Returns True on success, False if ``from_id`` is missing.
+        """
+        node = self.nodes.get(from_id)
+        if node is None:
+            return False
+        old = node.connections.get(slot)
+        node.connections[slot] = to_id
+        self._emit_history(
+            from_id,
+            "connect",
+            payload={"slot": slot, "old": old, "new": to_id},
+            summary=f"{slot} -> {to_id}",
+        )
+        return True
+
+    def disconnect(self, from_id: str, slot: str) -> bool:
+        """Remove ``from_id.<slot>`` and emit a history row.
+
+        Returns True if the slot existed and was removed.
+        """
+        node = self.nodes.get(from_id)
+        if node is None:
+            return False
+        if slot not in node.connections:
+            return False
+        old = node.connections.pop(slot)
+        self._emit_history(
+            from_id,
+            "disconnect",
+            payload={"slot": slot, "old": old},
+            summary=f"disconnect {slot} (was {old!r})",
+        )
+        return True
+
+    def archive(self, node_id: str) -> bool:
+        """Mark a node ``dead`` and emit a history row.
+
+        Composes with the engine's ``dead`` flag — a dead node returns
+        a placeholder at render time but stays in ``engine.nodes`` so
+        it can be ``restored``. The history row records when the
+        archive happened and what state preceded it.
+        """
+        node = self.nodes.get(node_id)
+        if node is None:
+            return False
+        was_dead = node.dead
+        node.dead = True
+        self._emit_history(
+            node_id,
+            "archive",
+            payload={"was_dead": was_dead},
+            summary="archived",
+        )
+        return True
+
+    def restore(self, node_id: str) -> bool:
+        """Reverse :meth:`archive` — clear ``dead`` and emit a row."""
+        node = self.nodes.get(node_id)
+        if node is None:
+            return False
+        was_dead = node.dead
+        node.dead = False
+        node.error = ""
+        self._emit_history(
+            node_id,
+            "restore",
+            payload={"was_dead": was_dead},
+            summary="restored",
+        )
+        return True
+
+    def _emit_history(
+        self,
+        node_id: str,
+        kind: str,
+        payload: Optional[Dict[str, Any]] = None,
+        summary: str = "",
+    ) -> None:
+        """Append one row to a node's history file (SPEC-076).
+
+        Imported lazily to keep ``engine/core.py`` independent of
+        ``tools/`` for circular-import safety. The session id (when
+        available) is read from ``self.active_session_id`` so the
+        active-sessions registry (SPEC-079) can stamp rows with the
+        current session.
+
+        Failures are swallowed — history is diagnostic, not
+        transactional. The next mutation tries again.
+        """
+        try:
+            from tools.node_history import append_history_row
+        except Exception:
+            return
+        session_id = getattr(self, "active_session_id", "") or ""
+        try:
+            append_history_row(
+                root=self.root_dir,
+                node_id=node_id,
+                kind=kind,
+                payload=payload,
+                summary=summary,
+                session_id=str(session_id),
+            )
+        except Exception as e:
+            self.errors.append(f"history({node_id}, {kind}): {e}")
 
     # ----- phases -----
 

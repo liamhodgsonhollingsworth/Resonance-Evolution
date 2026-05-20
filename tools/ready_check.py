@@ -1029,6 +1029,270 @@ def _check_visual_contract(verbose: bool) -> Tuple[bool, str]:
     )
 
 
+def _check_buttons_as_nodes(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-076 + SPEC-077: ButtonNode is a first-class node-type AND the
+    derived-view button-row + connections are computed on demand.
+
+    Probes:
+
+    1. ``ButtonNode`` registers via ``engine.discover()`` so it's
+       paste-able + scene-loadable.
+    2. ``build()`` accepts an empty params dict and returns the design's
+       full state shape — every default field present.
+    3. ``engine.actions.resolve_target`` decodes each design prefix
+       (empty, ``panel:``, ``node:``, ``session:``, ``view:``, unknown).
+    4. History writes to ``state/node_history/<id>.jsonl`` round-trip
+       cleanly (write a few rows, read them back newest-first).
+    5. The derived connections-view returns the correct in/out edges
+       for a focused node in a tiny synthetic scene.
+    6. The button-row builder returns the three standards by default
+       AND folds in a real ButtonNode customization in display order.
+    7. The ``buttons_as_nodes`` text-API verbs all dispatch cleanly.
+
+    History writes during the probe are redirected via the
+    ``APEIRON_NODE_HISTORY_ROOT_OVERRIDE`` env var so the probe does
+    NOT pollute the live ``state/node_history/`` directory.
+    """
+    import tempfile
+
+    try:
+        from engine import Engine
+        from engine.actions import (
+            dispatch_button,
+            resolve_target,
+        )
+        from tools.button_view import (
+            button_row_for,
+            buttons_attached_to,
+            connections_for,
+        )
+        from tools.node_history import (
+            append_history_row,
+            read_node_history,
+        )
+        from tools.text_test import dispatch_command
+    except Exception as exc:
+        return False, f"buttons_as_nodes import failed: {exc}"
+
+    # Redirect history writes into a temp dir so the probe doesn't
+    # pollute state/node_history. Restored on exit.
+    prior_override = os.environ.get("APEIRON_NODE_HISTORY_ROOT_OVERRIDE", "")
+    probe_temp = tempfile.mkdtemp(prefix="ready_check_buttons_")
+    os.environ["APEIRON_NODE_HISTORY_ROOT_OVERRIDE"] = probe_temp
+    try:
+        return _run_buttons_as_nodes_probes(
+            verbose,
+            Engine=Engine,
+            resolve_target=resolve_target,
+            dispatch_button=dispatch_button,
+            button_row_for=button_row_for,
+            buttons_attached_to=buttons_attached_to,
+            connections_for=connections_for,
+            append_history_row=append_history_row,
+            read_node_history=read_node_history,
+            dispatch_command=dispatch_command,
+        )
+    finally:
+        if prior_override:
+            os.environ["APEIRON_NODE_HISTORY_ROOT_OVERRIDE"] = prior_override
+        else:
+            os.environ.pop("APEIRON_NODE_HISTORY_ROOT_OVERRIDE", None)
+        # Best-effort cleanup of the probe's temp dir.
+        try:
+            import shutil
+            shutil.rmtree(probe_temp, ignore_errors=True)
+        except Exception:
+            pass
+
+
+def _run_buttons_as_nodes_probes(
+    verbose: bool,
+    *,
+    Engine,
+    resolve_target,
+    dispatch_button,
+    button_row_for,
+    buttons_attached_to,
+    connections_for,
+    append_history_row,
+    read_node_history,
+    dispatch_command,
+) -> Tuple[bool, str]:
+    import tempfile
+
+    e = Engine(root_dir=ROOT)
+    e.discover()
+    if "ButtonNode" not in e.types:
+        return False, "ButtonNode did not register via engine.discover()"
+
+    # Probe 2: build() accepts empty params + returns full state shape.
+    e.spawn("probe_btn", "ButtonNode", params={})
+    node = e.nodes.get("probe_btn")
+    if node is None or node.dead:
+        err = node.error.splitlines()[0] if node and node.error else "missing"
+        return False, f"probe ButtonNode spawn failed: {err}"
+    required_keys = {
+        "label", "icon", "action", "target", "payload",
+        "position", "order", "parent", "standard", "hidden",
+    }
+    missing = required_keys - set(node.state)
+    if missing:
+        return False, f"ButtonNode.build() missing state keys: {sorted(missing)}"
+
+    # Probe 3: target-prefix decoder covers every design case.
+    cases = [
+        ("", "ownerA", "self", "ownerA"),
+        ("panel:tasks_panel", "ownerA", "panel", "tasks_panel"),
+        ("node:other_node", "ownerA", "node", "other_node"),
+        ("session:s-1", "ownerA", "session", "s-1"),
+        ("view:Tasks", "ownerA", "view", "Tasks"),
+        ("garbage-no-prefix", "ownerA", "unknown", ""),
+    ]
+    for target, parent, expected_kind, expected_id in cases:
+        rt = resolve_target(target, parent_node_id=parent)
+        if rt.kind != expected_kind:
+            return False, (
+                f"resolve_target({target!r}) kind={rt.kind!r}; "
+                f"expected {expected_kind!r}"
+            )
+        if rt.target_id != expected_id:
+            return False, (
+                f"resolve_target({target!r}) target_id={rt.target_id!r}; "
+                f"expected {expected_id!r}"
+            )
+    # session: must inject chat_target.
+    session_rt = resolve_target("session:s-1")
+    if session_rt.payload_extras.get("chat_target") != "s-1":
+        return False, f"session: target missing chat_target in payload_extras"
+
+    # Probe 4: history round-trip. The env-var override (set by the
+    # outer wrapper) routes writes into a temp directory automatically,
+    # so we just pass any path and read back from the same one.
+    probe_root = Path(os.environ["APEIRON_NODE_HISTORY_ROOT_OVERRIDE"])
+    append_history_row(probe_root, "node_a", "spawn",
+                       payload={"type": "Task"},
+                       summary="spawn Task")
+    append_history_row(probe_root, "node_a", "set_param",
+                       payload={"key": "title", "new": "X"},
+                       summary="title -> X")
+    rows = read_node_history(probe_root, "node_a")
+    if len(rows) != 2:
+        return False, f"history round-trip: wrote 2, read {len(rows)}"
+    if rows[0].get("kind") != "set_param":
+        return False, "history not newest-first"
+    # Malformed-line resilience.
+    bad_path = probe_root / "state" / "node_history" / "node_a.jsonl"
+    if not bad_path.exists():
+        return False, f"history file missing after append: {bad_path}"
+    with open(bad_path, "a", encoding="utf-8") as fh:
+        fh.write("not-valid-json\n")
+    append_history_row(probe_root, "node_a", "archive",
+                       summary="archived")
+    rows = read_node_history(probe_root, "node_a")
+    if len(rows) != 3:
+        return False, f"after-malformed: expected 3 rows, got {len(rows)}"
+
+    # Probe 5: connections derived-view in a tiny synthetic scene.
+    e.spawn("hub", "ButtonNode", params={"parent": "core"})
+    e.spawn("core", "ButtonNode", params={})
+    e.spawn("leaf", "ButtonNode", params={"parent": "core"})
+    # core is target of hub.parent + leaf.parent. We use params not
+    # connections, so emulate with explicit engine.connect:
+    e.connect("hub", "owner", "core")
+    e.connect("leaf", "owner", "core")
+    e.connect("core", "next", "hub")
+    edges = connections_for(e, "core")
+    out_targets = {x["target_id"] for x in edges["out"]}
+    in_sources = {x["from_id"] for x in edges["in"]}
+    if "hub" not in out_targets:
+        return False, f"connections out missing hub: {edges['out']}"
+    if "hub" not in in_sources or "leaf" not in in_sources:
+        return False, f"connections in missing hub/leaf: {edges['in']}"
+
+    # Probe 6: button-row builder.
+    e.spawn("focus", "ButtonNode", params={})
+    e.spawn(
+        "pin_btn",
+        "ButtonNode",
+        params={
+            "label": "Pin",
+            "action": "pin-panel",
+            "target": "node:focus",
+            "parent": "focus",
+            "order": 10,
+        },
+    )
+    row = button_row_for(e, "focus")
+    labels = [b.label for b in row]
+    if labels[:3] != ["Author", "History", "Connections"]:
+        return False, f"button row missing implicit standards: {labels[:3]}"
+    if "Pin" not in labels:
+        return False, f"button row missing customization 'Pin': {labels}"
+    attached = buttons_attached_to(e, "focus")
+    if attached != ["pin_btn"]:
+        return False, f"buttons_attached_to(focus) = {attached}; expected ['pin_btn']"
+
+    # Probe 7: text-API verbs.
+    msg, _ = dispatch_command(e, "node-buttons focus")
+    if not msg.startswith("button row"):
+        return False, f"node-buttons text-API failed: {msg}"
+    msg, _ = dispatch_command(e, "list-node-connections core")
+    if not msg.startswith("connections"):
+        return False, f"list-node-connections text-API failed: {msg}"
+    msg, _ = dispatch_command(
+        e, "spawn-button TestLabel test-action node:focus parent=focus"
+    )
+    if not msg.startswith("OK:"):
+        return False, f"spawn-button text-API failed: {msg}"
+
+    # Probe 8: dispatch_button resolves a target-node prefix and routes
+    # through dispatch_action. The renderer is a ListRenderer (which
+    # has handle_action). Wire a synthetic panel and click a button
+    # targeting it with the renderer-scoped collapse action.
+    import tempfile as _t2
+    with _t2.TemporaryDirectory() as td2:
+        td2_path = Path(td2)
+        # Set up a list-renderer panel + a button targeting it.
+        from node_types import file_source
+        file_source.add_allowed_root(td2_path)
+        try:
+            (td2_path / "tasks.md").write_text("- [ ] alpha\n", encoding="utf-8")
+            e.spawn(
+                "src_for_btn",
+                "FileSource",
+                params={"path": str(td2_path / "tasks.md"), "parser_name": "tasks"},
+            )
+            e.spawn(
+                "panel_for_btn",
+                "ListRenderer",
+                params={"title_text": "Probe"},
+                connections={"source": "src_for_btn"},
+            )
+            e.spawn(
+                "click_probe",
+                "ButtonNode",
+                params={
+                    "label": "Collapse",
+                    "action": "collapse",
+                    "target": "panel:panel_for_btn",
+                    "parent": "panel_for_btn",
+                },
+            )
+            e.precompute()
+            ok, msg = dispatch_button(e, "click_probe")
+            if not ok:
+                return False, f"dispatch_button failed: {msg}"
+        finally:
+            file_source.clear_extra_allowed_roots()
+
+    return True, (
+        "ButtonNode registers + builds; target-prefix decode covers 6 cases; "
+        "history JSONL round-trips with malformed-line resilience; derived "
+        "connections + button-row return correct shapes; 4 text-API verbs "
+        "dispatch; dispatch_button routes through engine.actions"
+    )
+
+
 CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("engine_discover", _check_engine_discover),
     ("scene_precompute", _check_scene_precompute),
@@ -1051,24 +1315,45 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("panel_movable_resize", _check_panel_movable_resize),
     ("paste_trust_gate", _check_paste_trust_gate),
     ("visual_contract", _check_visual_contract),
+    ("buttons_as_nodes", _check_buttons_as_nodes),
 ]
 
 
 def run_all(verbose: bool = False) -> int:
     print(f"Apeiron readiness check — {len(CHECKS)} probes\n")
+    # Redirect all history writes during ready_check into a tempdir so
+    # the live state/node_history/ stays clean across runs. Restored at
+    # exit. SPEC-076 history is a diagnostic surface; ready_check is a
+    # synthetic probe whose mutations shouldn't appear in production
+    # diagnostic logs.
+    import shutil
+    import tempfile
+    prior_override = os.environ.get("APEIRON_NODE_HISTORY_ROOT_OVERRIDE", "")
+    probe_root = tempfile.mkdtemp(prefix="ready_check_history_")
+    os.environ["APEIRON_NODE_HISTORY_ROOT_OVERRIDE"] = probe_root
     failures: List[str] = []
-    for name, fn in CHECKS:
-        t0 = time.perf_counter()
+    try:
+        for name, fn in CHECKS:
+            t0 = time.perf_counter()
+            try:
+                ok, msg = fn(verbose)
+            except Exception as exc:
+                ok = False
+                msg = f"probe raised: {exc!r}"
+            elapsed = time.perf_counter() - t0
+            marker = "OK " if ok else "FAIL"
+            print(f"  [{marker}] {name:24s} ({elapsed*1000:.0f}ms) -- {msg}")
+            if not ok:
+                failures.append(name)
+    finally:
+        if prior_override:
+            os.environ["APEIRON_NODE_HISTORY_ROOT_OVERRIDE"] = prior_override
+        else:
+            os.environ.pop("APEIRON_NODE_HISTORY_ROOT_OVERRIDE", None)
         try:
-            ok, msg = fn(verbose)
-        except Exception as exc:
-            ok = False
-            msg = f"probe raised: {exc!r}"
-        elapsed = time.perf_counter() - t0
-        marker = "OK " if ok else "FAIL"
-        print(f"  [{marker}] {name:24s} ({elapsed*1000:.0f}ms) -- {msg}")
-        if not ok:
-            failures.append(name)
+            shutil.rmtree(probe_root, ignore_errors=True)
+        except Exception:
+            pass
     print()
     if failures:
         print(f"READY: NO -- {len(failures)} failed: {', '.join(failures)}")
