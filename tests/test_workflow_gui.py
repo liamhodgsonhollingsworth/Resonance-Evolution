@@ -699,22 +699,23 @@ def test_set_sidebar_scale_idempotent_no_op():
 
 
 def test_archive_tab_removes_from_tab_order():
+    """SPEC-067: archive goes through the registry; the legacy
+    ``_tab_order`` mirror is rebuilt from ``registry.names()``."""
     shell = _make_shell()
-    shell._tab_order = ["Tasks", "Ideas", "Wishlist"]
     shell.active_tab = "Tasks"
     # _archive_tab tries to pack_forget the button; since UI isn't built,
-    # the missing button is OK — the order-list mutation must still happen.
+    # the missing button is OK — the registry mutation must still happen.
     result = shell._archive_tab("Ideas")
     assert result == "Ideas"
     assert "Ideas" not in shell._tab_order
-    assert shell._tab_order == ["Tasks", "Wishlist"]
+    assert "Ideas" not in shell.view_registry.names()
+    assert "Ideas" in shell.view_registry.archived_names()
 
 
 def test_archive_tab_falls_back_to_other_tab_when_archiving_active():
     """SPEC-072: archiving the active tab must select a fallback so the
     central pane doesn't display a now-archived surface."""
     shell = _make_shell()
-    shell._tab_order = ["Tasks", "Ideas", "Wishlist"]
     shell.active_tab = "Tasks"
     shell._archive_tab("Tasks")
     assert shell.active_tab in shell._tab_order

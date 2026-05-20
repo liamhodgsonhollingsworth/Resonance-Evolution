@@ -389,6 +389,91 @@ def _cmd_set_mode(
     return f"OK: set {node_id}.mode = {new_mode!r}", view
 
 
+def _cmd_set_view(
+    engine: Engine,
+    view: View,
+    *args,
+) -> Tuple[str, View]:
+    """Activate a view from the workflow GUI's view registry (SPEC-067).
+
+    Usage::
+
+        set-view <view-name>
+        set-view             # no arg: print current view + available list
+
+    Every "alternative collection of nodes" is a view (maintainer
+    directive 2026-05-20). The GUI shell attaches its
+    ``ViewRegistry`` to ``engine.view_registry`` at startup; this
+    command consults it. When no GUI is attached the command still
+    reports the registered views (the registry may be created
+    independently for headless testing).
+    """
+    reg = getattr(engine, "view_registry", None)
+    shell = getattr(engine, "gui_shell", None)
+
+    # No argument: report current view + the menu.
+    if not args:
+        if reg is None:
+            return "ERR: no view registry attached to engine", view
+        current = getattr(shell, "active_tab", None) if shell is not None else None
+        names = reg.names()
+        archived = reg.archived_names()
+        lines = [f"current view: {current!r}"]
+        lines.append(f"available views: {', '.join(names) if names else '(none)'}")
+        if archived:
+            lines.append(f"archived views: {', '.join(archived)}")
+        return "\n".join(lines), view
+
+    target = args[0]
+    if reg is None:
+        return f"ERR: no view registry attached; cannot switch to {target!r}", view
+    if reg.get(target) is None:
+        return (
+            f"ERR: unknown view {target!r}; "
+            f"registered: {', '.join(reg.names() + reg.archived_names())}",
+            view,
+        )
+    if shell is None:
+        # Headless: just verify the view is registered. Caller can
+        # decide what to do without an actual UI.
+        return (
+            f"OK (headless): view {target!r} is registered; "
+            f"attach a GuiShell to activate it",
+            view,
+        )
+    try:
+        ok = shell.set_view(target)
+    except Exception as exc:
+        return f"ERR: set_view failed: {exc}", view
+    if not ok:
+        return f"ERR: set_view({target!r}) returned False", view
+    return f"OK: active view = {target!r}", view
+
+
+def _cmd_list_views(engine: Engine, view: View, *_) -> Tuple[str, View]:
+    """List the views registered on ``engine.view_registry`` (SPEC-067).
+
+    Output is one row per view with kind + source/panel/scene refs so
+    a non-GUI caller can verify the registry contents end-to-end.
+    """
+    reg = getattr(engine, "view_registry", None)
+    if reg is None:
+        return "ERR: no view registry attached to engine", view
+    lines = [f"views ({len(reg.names())} visible, {len(reg.archived_names())} archived):"]
+    for spec in reg.list_views():
+        bits = [f"kind={spec.kind}"]
+        if spec.source_id:
+            bits.append(f"source={spec.source_id}")
+        if spec.panel_id:
+            bits.append(f"panel={spec.panel_id}")
+        if spec.scene_root:
+            bits.append(f"scene={spec.scene_root}")
+        lines.append(f"  {spec.name:18s}  {', '.join(bits)}")
+    for name in reg.archived_names():
+        lines.append(f"  [archived] {name}")
+    return "\n".join(lines), view
+
+
 def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     """Return the canonical command-grammar list — what verbs the CLI
     supports. Equivalent to rendering a TextRenderer-wrapped scene and
@@ -399,6 +484,8 @@ def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     for entry in command_grammar():
         lines.append(f"  {entry}")
     lines.append("  set-mode <node> <mode>          -- mutate a node's mode field (e.g. WorkflowView panels/full_render)")
+    lines.append("  set-view <view-name>            -- activate a registered view (SPEC-067)")
+    lines.append("  list-views                      -- list views from engine.view_registry (SPEC-067)")
     return "\n".join(lines), view
 
 
@@ -417,6 +504,8 @@ _COMMANDS = {
     "expand": _cmd_expand,
     "collapse": _cmd_collapse,
     "set-mode": _cmd_set_mode,
+    "set-view": _cmd_set_view,
+    "list-views": _cmd_list_views,
     "list-commands": _cmd_list_commands,
 }
 

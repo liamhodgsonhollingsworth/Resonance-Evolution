@@ -66,6 +66,11 @@ from tools.workflow.trust import (
     sender_trust_set,
     session_trust_set,
 )
+from tools.workflow_gui.view_registry import (
+    ViewRegistry,
+    ViewSpec,
+    default_view_registry,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -73,19 +78,16 @@ from tools.workflow.trust import (
 # ---------------------------------------------------------------------------
 
 
-# (display name, source-node-id-or-marker, panel-renderer-id-or-None).
-# A ``None`` panel id means the tab has no engine-level actions; expand
-# / action buttons fall back to local UI state only.
-TABS: List[Tuple[str, str, Optional[str]]] = [
-    ("Tasks", "tasks_source", "task_panel"),
-    ("Ideas", "ideas_source", "idea_panel"),
-    ("Wishlist", "wishes_source", "wish_panel"),
-    ("Inbox", "_inbox", None),
-    ("Chat", "_chat", None),
-    ("Quarantine", "quarantine_source", "quarantine_panel"),
-    ("Trusted Senders", "trusted_senders_source", "trusted_senders_panel"),
-    ("3D", "_3d", None),
-]
+# Legacy tab tuple shape: ``(name, source_id_or_marker, panel_id_or_None)``.
+# A ``None`` panel id means the tab has no engine-level actions; expand /
+# action buttons fall back to local UI state only.
+#
+# As of SPEC-067 the canonical source of truth is the ``ViewRegistry`` at
+# ``tools.workflow_gui.view_registry``. ``TABS`` is materialized from
+# ``default_view_registry()`` so legacy consumers (tests, the ready-check
+# probe) keep working without seeing the registry abstraction. New code
+# should consult ``shell.view_registry`` directly.
+TABS: List[Tuple[str, str, Optional[str]]] = default_view_registry().as_tabs()
 
 DEFAULT_TAB = "Tasks"
 
@@ -166,6 +168,55 @@ def _session_status_to_panel_status(status: str) -> str:
     }.get(status, "pending")
 
 
+def items_from_text_view(spec: Any, engine: Engine) -> List[Dict[str, Any]]:
+    """Build the items list for a SPEC-067 ``text`` view.
+
+    For the built-in ``Logs`` view, returns one row per engine error;
+    for any other text view, returns a single synthetic row containing
+    the spec's ``text_body``. Public for tests.
+    """
+    if getattr(spec, "name", "") == "Logs":
+        # Special: stream engine errors as one row each.
+        out: List[Dict[str, Any]] = []
+        for idx, err in enumerate(list(engine.errors)[-200:]):
+            first = err.splitlines()[0] if err else ""
+            out.append(
+                {
+                    "id": f"log-{idx}",
+                    "title": first[:120] if first else "(empty)",
+                    "body": err,
+                    "status": "alert",
+                    "actions": ["expand"],
+                }
+            )
+        if not out:
+            out.append(
+                {
+                    "id": "log-empty",
+                    "title": "(no errors recorded — engine is healthy)",
+                    "body": (
+                        "Logs view reads from engine.errors. This view "
+                        "is the SPEC-067 demonstration that adding a new "
+                        "view is one ViewSpec config row."
+                    ),
+                    "status": "ok",
+                    "actions": ["expand"],
+                }
+            )
+        return out
+    # Generic text view: one item carrying the configured body.
+    body = getattr(spec, "text_body", "") or ""
+    return [
+        {
+            "id": f"text-{getattr(spec, 'name', 'view')}",
+            "title": getattr(spec, "name", "view"),
+            "body": body or "(empty)",
+            "status": "ok",
+            "actions": ["expand"],
+        }
+    ]
+
+
 # ---------------------------------------------------------------------------
 # The shell.
 # ---------------------------------------------------------------------------
@@ -190,6 +241,7 @@ class GuiShell:
         scene_path: Optional[Path],
         scene_root_id: Optional[str],
         current_user: Optional[str] = None,
+        view_registry: Optional[ViewRegistry] = None,
     ) -> None:
         self.engine = engine
         self.sm = session_manager
@@ -199,13 +251,31 @@ class GuiShell:
         self.scene_root_id = scene_root_id
         self.current_user = current_user
 
+        # SPEC-067: the registry is the canonical source of truth for
+        # which views the sidebar shows. Constructing a custom registry
+        # at the call site lets plugins / tests add views without
+        # touching shell code. Default is ``default_view_registry()``.
+        self.view_registry: ViewRegistry = (
+            view_registry if view_registry is not None else default_view_registry()
+        )
+        # Engine-side handle so the text-API ``set-view`` command + any
+        # non-GUI caller can consult the registry without importing
+        # GUI modules. Idempotent: re-attaching the same registry is a
+        # no-op.
+        setattr(self.engine, "view_registry", self.view_registry)
+        setattr(self.engine, "gui_shell", self)
+
         # GUI state — set when ``build_ui`` is called.
         self.tk_root: Any = None
         self._central_frame: Any = None
         self._sidebar_frame: Any = None
         self._chat_entry: Any = None
         self._sidebar_buttons: Dict[str, Any] = {}
-        self._tabs: List[Tuple[str, str, Optional[str]]] = list(TABS)
+        # ``_tabs`` is the legacy materialized form ``items_for_tab``
+        # iterates over. Re-materialized whenever the registry changes
+        # so the rendering switch keeps working without dictionary
+        # lookups on every render.
+        self._tabs: List[Tuple[str, str, Optional[str]]] = self.view_registry.as_tabs()
 
         # Tab state machine.
         self.active_tab: Optional[str] = None
@@ -233,21 +303,14 @@ class GuiShell:
         self.ctrl_held: bool = False
         self._tooltip_window: Any = None
         self._tooltip_after_id: Any = None
-        # Per-tab descriptive help text shown on Ctrl-hover (SPEC-074
-        # standard-icons-by-default + hover-name + Ctrl-hover-help).
-        self._tab_help: Dict[str, str] = {
-            "Tasks": "Tasks panel — read from tasks.md via FileSource. Ctrl+click archives; Ctrl+drag resizes all toolbar modules together.",
-            "Ideas": "Ideas panel — Alethea ideas via MCPSource. Ctrl+click archives; Ctrl+drag resizes all toolbar modules together.",
-            "Wishlist": "Wishlist panel — wishlist.md via FileSource. Ctrl+click archives; Ctrl+drag resizes all toolbar modules.",
-            "Inbox": "Main inbox messages from trusted senders. Ctrl+click archives; Ctrl+drag resizes all toolbar modules.",
-            "Chat": "Active Claude Code sessions; click a row to set as active chat target. Ctrl+drag resizes all toolbar modules.",
-            "Quarantine": "Untrusted messages awaiting promote/delete. Ctrl+click archives; Ctrl+drag resizes all toolbar modules.",
-            "Trusted Senders": "Trusted-sender set with revoke/delete actions. Ctrl+drag resizes all toolbar modules.",
-            "3D": "Realtime renderer embedded into the central pane. Ctrl+drag resizes all toolbar modules; Esc inside the 3D view toggles WorkflowView mode.",
-        }
-        # Tab order (currently fixed at TABS sequence; future SPEC-067
-        # generalizes this into a view-as-menu node collection).
-        self._tab_order: List[str] = [name for name, _, _ in TABS]
+        # ``_tab_help`` materializes the registry's per-view description
+        # field for fast lookup during Ctrl-hover. SPEC-074
+        # standard-icons-by-default + hover-name + Ctrl-hover-help.
+        self._tab_help: Dict[str, str] = self.view_registry.help_map()
+        # ``_tab_order`` mirrors the registry's display order. Updated
+        # whenever a view is archived / restored so the existing sidebar
+        # rendering paths keep treating it as the truth.
+        self._tab_order: List[str] = self.view_registry.names()
         # Sidebar resize state (SPEC-072 Ctrl-drag = resize toolbar
         # modules). _base_font_size and _base_pady are the at-rest
         # values; _sidebar_scale is the live multiplier mutated on
@@ -262,7 +325,32 @@ class GuiShell:
     # ----- data providers (testable without UI) -----
 
     def items_for_tab(self, tab_name: str) -> List[Dict[str, Any]]:
-        """Return the items list for the named tab. Public for tests."""
+        """Return the items list for the named tab. Public for tests.
+
+        For the SPEC-067 ``text`` kind, returns a synthetic single-row
+        item carrying the rendered text body so the standard list-panel
+        renderer surfaces it without a special case in the central
+        pane. The ``Logs`` view in the default registry uses this to
+        render ``engine.errors`` as a read-only diagnostics tab.
+        """
+        # Source-of-truth lookup: prefer the registry spec; fall back
+        # to the legacy _tabs marker for tabs that haven't migrated.
+        spec = self.view_registry.get(tab_name)
+        if spec is not None:
+            if spec.kind == "source":
+                return items_from_engine_cache(self.engine, spec.source_id or "")
+            if spec.kind == "gui_inbox":
+                return items_from_inbox(self.inbox)
+            if spec.kind == "gui_chat":
+                return items_from_sessions(self.sm, self.active_session_id)
+            if spec.kind == "3d":
+                return []
+            if spec.kind == "text":
+                return items_from_text_view(spec, self.engine)
+            if spec.kind == "custom":
+                return []
+        # Legacy fallback (for tabs registered through the old TABS
+        # mechanism that aren't in the registry).
         for name, source_id, _ in self._tabs:
             if name != tab_name:
                 continue
@@ -271,6 +359,8 @@ class GuiShell:
             if source_id == "_chat":
                 return items_from_sessions(self.sm, self.active_session_id)
             if source_id == "_3d":
+                return []
+            if source_id.startswith("_text:") or source_id.startswith("_custom:"):
                 return []
             return items_from_engine_cache(self.engine, source_id)
         return []
@@ -528,20 +618,22 @@ class GuiShell:
     def _archive_tab(self, tab_name: str) -> str:
         """Archive a tab — hide it from the sidebar. SPEC-008 + SPEC-072.
 
-        For v1 the archive is in-memory only (persists for the session);
-        restoring is via an Archive view that will land with SPEC-076's
-        button row + SPEC-067's view-as-menu generalization. Returns
-        the tab name for tests.
+        Delegates to ``ViewRegistry.archive`` so the registry remains
+        the source of truth. The spec is preserved in the registry so
+        ``restore_view(name)`` can bring it back without re-declaring.
+        Returns the tab name for tests.
         """
         # Don't let the active tab vanish without a fallback selection.
         if tab_name == self.active_tab:
             fallback = next(
-                (n for n in self._tab_order if n != tab_name),
+                (n for n in self.view_registry.names() if n != tab_name),
                 DEFAULT_TAB,
             )
             self.select_tab(fallback)
-        if tab_name in self._tab_order:
-            self._tab_order.remove(tab_name)
+        # Archive in the registry; rebuild the legacy mirrors.
+        self.view_registry.archive(tab_name)
+        self._tabs = self.view_registry.as_tabs()
+        self._tab_order = self.view_registry.names()
         btn = self._sidebar_buttons.get(tab_name)
         if btn is not None:
             try:
@@ -549,6 +641,88 @@ class GuiShell:
             except Exception:
                 pass
         return tab_name
+
+    # ----- SPEC-067 view-as-menu surface -----
+
+    def set_view(self, name: str) -> bool:
+        """Activate the named view. SPEC-067 primitive.
+
+        Sugar over ``select_tab`` that the text-API ``set-view``
+        command and the gui_test_driver call. Returns True on success.
+        If the named view is archived, restores it first so the
+        switch always succeeds when the view is registered (visible
+        or hidden).
+        """
+        if not self.view_registry.get(name):
+            return False
+        if self.view_registry.is_archived(name):
+            self.restore_view(name)
+        return self.select_tab(name)
+
+    def current_view(self) -> Optional[str]:
+        """Return the active view name. SPEC-067 read primitive."""
+        return self.active_tab
+
+    def list_views(self) -> List[str]:
+        """Names of visible views in display order. SPEC-067 read."""
+        return self.view_registry.names()
+
+    def restore_view(self, name: str) -> bool:
+        """Restore a previously-archived view. Returns True on success.
+
+        Rebuilds the sidebar so the restored button reappears. If the
+        Tk root exists, re-runs ``_build_sidebar`` to add the missing
+        button widget; otherwise just updates the registry + mirrors.
+        """
+        if not self.view_registry.restore(name):
+            return False
+        self._tabs = self.view_registry.as_tabs()
+        self._tab_order = self.view_registry.names()
+        # Rebuild the sidebar so the restored view's button reappears
+        # at its registry-canonical position.
+        if self.tk_root is not None and self._sidebar_frame is not None:
+            try:
+                self._rebuild_sidebar()
+            except Exception as exc:
+                self.engine.errors.append(f"gui_shell restore_view rebuild: {exc}")
+        return True
+
+    def register_view(self, spec: ViewSpec) -> None:
+        """Register a new view at runtime. SPEC-067 extensibility.
+
+        Plugins / extensions / the maintainer's future code can add
+        views without subclassing the shell. The sidebar rebuilds so
+        the new tab appears immediately.
+        """
+        self.view_registry.register(spec)
+        # Also re-attach the help description for the new view.
+        self._tabs = self.view_registry.as_tabs()
+        self._tab_order = self.view_registry.names()
+        self._tab_help = self.view_registry.help_map()
+        if self.tk_root is not None and self._sidebar_frame is not None:
+            try:
+                self._rebuild_sidebar()
+            except Exception as exc:
+                self.engine.errors.append(f"gui_shell register_view rebuild: {exc}")
+
+    def _rebuild_sidebar(self) -> None:
+        """Tear down + rebuild the sidebar from the current registry.
+
+        Used after ``restore_view`` / ``register_view`` so a view
+        change propagates to the displayed buttons without restarting
+        the shell. The active tab is preserved when possible.
+        """
+        if self._sidebar_frame is None:
+            return
+        for child in list(self._sidebar_frame.winfo_children()):
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        self._sidebar_buttons.clear()
+        self._build_sidebar()
+        if self.active_tab is not None and self.active_tab in self._tab_order:
+            self._highlight_active_tab()
 
     def _on_toolbar_resize_start(self, event: Any) -> None:
         """Anchor the Ctrl-drag resize gesture on initial press.
