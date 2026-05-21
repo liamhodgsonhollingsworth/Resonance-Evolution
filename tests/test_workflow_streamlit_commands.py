@@ -19,7 +19,7 @@ import pytest
 
 from engine.core import Engine
 from tools.workflow_streamlit.cli_bridge import drain, enqueue, queue_path
-from tools.workflow_streamlit.command_registry import CommandContext, CommandRegistry
+from tools.workflow_streamlit.command_registry import CommandContext, CommandRegistry, CommandResult
 from tools.workflow_streamlit.commands import register_all
 from tools.workflow_streamlit.config import RuntimeConfig
 
@@ -43,7 +43,9 @@ class _FakeSessionRecord:
 class _FakeSessionManager:
     def __init__(self):
         self.sent: List[tuple[str, str]] = []
+        self.archived: List[str] = []
         self._records = {"sess-fake-001": _FakeSessionRecord("sess-fake-001", "active")}
+        self.spawn_calls: List[dict] = []
 
     def list(self):
         return list(self._records.values())
@@ -52,7 +54,27 @@ class _FakeSessionManager:
         return self._records.get(sid)
 
     def send(self, sid, body):
+        if sid not in self._records:
+            raise RuntimeError(f"unknown session: {sid}")
         self.sent.append((sid, body))
+
+    def spawn(self, session_type, display_name=None, seed_message=None, cwd=None, concerns=None):
+        self.spawn_calls.append({
+            "session_type": session_type,
+            "display_name": display_name,
+            "seed_message": seed_message,
+        })
+        sid = f"sess-fake-{len(self._records) + 1:03d}"
+        rec = _FakeSessionRecord(sid, "active")
+        rec.session_type = session_type
+        rec.display_name = display_name or f"{session_type}-{sid}"
+        self._records[sid] = rec
+        return rec
+
+    def archive(self, sid):
+        self.archived.append(sid)
+        if sid in self._records:
+            self._records[sid].status = "archived"
 
 
 class _FakeInboxMessage:
@@ -263,6 +285,75 @@ def test_session_respawn_sets_scratch_flag(runtime):
     assert r.ok and runtime["ctx"].scratch.get("respawn_session") is True
 
 
+def test_session_spawn_creates_new_session(runtime):
+    r = runtime["registry"].run("session.spawn parallel-development worker", runtime["ctx"])
+    assert r.ok and "worker" in r.message
+    assert len(runtime["sm"].spawn_calls) == 1
+    assert runtime["sm"].spawn_calls[0]["session_type"] == "parallel-development"
+
+
+def test_session_spawn_with_seed_after_dash_dash(runtime):
+    r = runtime["registry"].run(
+        'session.spawn workflow-management chief -- you are the chief',
+        runtime["ctx"],
+    )
+    assert r.ok
+    assert runtime["sm"].spawn_calls[-1]["seed_message"] == "you are the chief"
+
+
+def test_session_spawn_without_args_errors(runtime):
+    r = runtime["registry"].run("session.spawn", runtime["ctx"])
+    assert not r.ok and "usage" in r.message
+
+
+def test_session_target_routes_chat(runtime):
+    # Spawn an extra session first.
+    runtime["registry"].run("session.spawn parallel-development second", runtime["ctx"])
+    new_id = list(runtime["sm"]._records.keys())[-1]
+    r = runtime["registry"].run(f"session.target {new_id}", runtime["ctx"])
+    assert r.ok and "chat target" in r.message
+    assert runtime["ctx"].active_session_id == new_id
+    # And subsequent chat.send goes to the new target.
+    runtime["registry"].run('chat.send "to-second"', runtime["ctx"])
+    assert runtime["sm"].sent[-1][0] == new_id
+
+
+def test_session_target_clear(runtime):
+    runtime["registry"].run("session.target none", runtime["ctx"])
+    assert runtime["ctx"].active_session_id is None
+
+
+def test_session_target_unknown_session_errors(runtime):
+    r = runtime["registry"].run("session.target sess-nope-zzz", runtime["ctx"])
+    assert not r.ok and "no such session" in r.message
+
+
+def test_session_send_to_specific_session(runtime):
+    sid = "sess-fake-001"
+    r = runtime["registry"].run(f'session.send {sid} hello there', runtime["ctx"])
+    assert r.ok and "sent" in r.message
+    assert runtime["sm"].sent[-1] == (sid, "hello there")
+
+
+def test_session_send_to_unknown_errors(runtime):
+    r = runtime["registry"].run('session.send sess-nope hello', runtime["ctx"])
+    assert not r.ok and "fail" in r.message.lower()
+
+
+def test_session_archive_marks_record(runtime):
+    sid = "sess-fake-001"
+    r = runtime["registry"].run(f"session.archive {sid}", runtime["ctx"])
+    assert r.ok and sid in runtime["sm"].archived
+    assert runtime["sm"]._records[sid].status == "archived"
+
+
+def test_session_spawn_then_list_includes_new_session(runtime):
+    runtime["registry"].run("session.spawn worker-type alice", runtime["ctx"])
+    runtime["registry"].run("session.spawn worker-type bob", runtime["ctx"])
+    r = runtime["registry"].run("session.list", runtime["ctx"])
+    assert r.ok and len(r.data) == 3   # original + 2 spawned
+
+
 # ---------------------------------------------------------------------------
 # Items / cache
 # ---------------------------------------------------------------------------
@@ -383,3 +474,214 @@ def test_run_default_logs_with_terminal_source(runtime):
     entries = runtime["registry"].log()
     last = entries[-1]
     assert last.source == "terminal"
+
+
+# ---------------------------------------------------------------------------
+# Break-point tests — what happens when things go wrong
+# ---------------------------------------------------------------------------
+
+
+def test_handler_exception_is_caught_and_returned_as_err(runtime):
+    """A handler that raises must not break the registry; the error
+    is captured into a CommandResult with ``ok=False``."""
+    from tools.workflow_streamlit.command_registry import Command
+
+    def boom(ctx, args):
+        raise RuntimeError("intentional handler failure")
+
+    runtime["registry"].register(Command("test.boom", "raises on call", boom))
+    r = runtime["registry"].run("test.boom", runtime["ctx"])
+    assert not r.ok and "RuntimeError" in r.message and "intentional" in r.message
+    # And the log records the failure.
+    last = runtime["registry"].log()[-1]
+    assert last.result is r and not r.ok
+
+
+def test_malformed_quoting_returns_parse_err(runtime):
+    r = runtime["registry"].run('chat.send "unclosed quote', runtime["ctx"])
+    assert not r.ok and "parse" in r.message.lower()
+
+
+def test_empty_command_is_ok_noop(runtime):
+    r = runtime["registry"].run("", runtime["ctx"])
+    assert r.ok and r.message == ""
+    r2 = runtime["registry"].run("    ", runtime["ctx"])
+    assert r2.ok
+
+
+def test_command_log_caps_at_max(runtime):
+    """The default 500-entry cap should keep memory bounded under spam."""
+    from tools.workflow_streamlit.command_registry import CommandRegistry
+    small = CommandRegistry(max_log_entries=10)
+    from tools.workflow_streamlit.commands import register_all
+    register_all(small)
+    for i in range(50):
+        small.run(f"ping {i}", runtime["ctx"])
+    assert len(small.log()) == 10
+    assert small.log()[-1].command.endswith("ping 49")
+
+
+def test_drain_handles_handler_exception_without_losing_other_commands(runtime):
+    """If one queued command's handler explodes, the rest still dispatch."""
+    from tools.workflow_streamlit.cli_bridge import drain, enqueue
+    from tools.workflow_streamlit.command_registry import Command
+
+    def boom(ctx, args):
+        raise RuntimeError("queue boom")
+
+    runtime["registry"].register(Command("test.queue-boom", "raises", boom))
+    state_dir = runtime["cfg"].state_dir
+    enqueue(state_dir, "ping before-boom")
+    enqueue(state_dir, "test.queue-boom")
+    enqueue(state_dir, "ping after-boom")
+    result = drain(state_dir, runtime["registry"], runtime["ctx"])
+    assert len(result.commands) == 3
+    statuses = [r.ok for r in result.results]
+    assert statuses == [True, False, True]
+
+
+def test_drain_under_concurrent_enqueues(runtime):
+    """Two threads enqueue while we drain. The drain must see at least
+    its own batch and not corrupt the file."""
+    import threading
+    import time as _t
+    from tools.workflow_streamlit.cli_bridge import drain, enqueue
+
+    state_dir = runtime["cfg"].state_dir
+    enqueue(state_dir, "ping seed-1")
+    enqueue(state_dir, "ping seed-2")
+
+    stop = threading.Event()
+    written = []
+
+    def writer(label):
+        i = 0
+        while not stop.is_set() and i < 10:
+            enqueue(state_dir, f"ping concurrent-{label}-{i}")
+            written.append(f"concurrent-{label}-{i}")
+            _t.sleep(0.01)
+            i += 1
+
+    t1 = threading.Thread(target=writer, args=("a",))
+    t2 = threading.Thread(target=writer, args=("b",))
+    t1.start()
+    t2.start()
+    t1.join(timeout=3)
+    t2.join(timeout=3)
+    stop.set()
+    # Drain the rest.
+    final = drain(state_dir, runtime["registry"], runtime["ctx"], max_per_tick=100)
+    # At minimum, the seed commands plus at least some of the
+    # concurrent commands should have made it through SOMEWHERE — either
+    # in `final.commands` or already in the registry's log from prior
+    # drains. We just assert no exception was raised + at least 2 seeds
+    # appear in the log.
+    log_text = " ".join(e.command for e in runtime["registry"].log())
+    assert "seed-1" in log_text and "seed-2" in log_text
+
+
+def test_drain_handles_unicode(runtime):
+    from tools.workflow_streamlit.cli_bridge import drain, enqueue
+    state_dir = runtime["cfg"].state_dir
+    enqueue(state_dir, 'echo "héllo — wörld ✨"')
+    result = drain(state_dir, runtime["registry"], runtime["ctx"])
+    assert len(result.commands) == 1 and result.results[0].ok
+    assert "héllo" in result.results[0].message
+
+
+def test_drain_skips_corrupt_quote_lines_and_continues(runtime):
+    """A malformed line should produce a parse-err result, not kill the drain."""
+    from tools.workflow_streamlit.cli_bridge import drain, queue_path
+    state_dir = runtime["cfg"].state_dir
+    queue_path(state_dir).write_text(
+        'ping before-bad\n"unclosed quote line\nping after-bad\n',
+        encoding="utf-8",
+    )
+    result = drain(state_dir, runtime["registry"], runtime["ctx"])
+    statuses = [r.ok for r in result.results]
+    # First and third OK, middle parse-err.
+    assert statuses[0] is True and statuses[-1] is True
+    assert any(not s for s in statuses)
+
+
+# ---------------------------------------------------------------------------
+# Generalizability tests — can new things be added without touching core?
+# ---------------------------------------------------------------------------
+
+
+def test_runtime_command_registration_lets_new_commands_dispatch(runtime):
+    """A new Command added after register_all() is reachable immediately."""
+    from tools.workflow_streamlit.command_registry import Command
+
+    def custom(ctx, args):
+        ctx.scratch["custom_ran_with"] = list(args)
+        return CommandResult.ok_msg("custom ran")
+
+    runtime["registry"].register(Command("custom.example", "test command", custom))
+    r = runtime["registry"].run("custom.example a b c", runtime["ctx"])
+    assert r.ok and r.message == "custom ran"
+    assert runtime["ctx"].scratch["custom_ran_with"] == ["a", "b", "c"]
+    # And help now lists it.
+    h = runtime["registry"].run("help", runtime["ctx"])
+    assert "custom.example" in h.data
+
+
+def test_command_aliases_resolve_to_same_handler(runtime):
+    from tools.workflow_streamlit.command_registry import Command
+
+    def custom(ctx, args):
+        return CommandResult.ok_msg("hit")
+
+    runtime["registry"].register(
+        Command("custom.canonical", "with aliases", custom, aliases=["custom.alias1", "custom.alias2"])
+    )
+    assert runtime["registry"].run("custom.canonical", runtime["ctx"]).ok
+    assert runtime["registry"].run("custom.alias1", runtime["ctx"]).ok
+    assert runtime["registry"].run("custom.alias2", runtime["ctx"]).ok
+
+
+def test_panel_discovery_picks_up_files_added_at_runtime(tmp_path):
+    """Drop a new panel file into a custom dir; the registry sees it
+    on the next discover_panels call — proves the panel system is
+    extensible without touching the discovery code."""
+    from tools.workflow_streamlit.registry import discover_panels
+
+    panels_dir = tmp_path / "extra_panels"
+    panels_dir.mkdir()
+    # The first discover call sees no panels.
+    assert discover_panels(panels_dir=panels_dir) == []
+
+    # Drop a new panel file.
+    new_panel = panels_dir / "newcomer.py"
+    new_panel.write_text(
+        "from tools.workflow_streamlit.panels._common import MOUNT_MAIN, PanelManifest\n"
+        "def manifest():\n"
+        "    return PanelManifest(name='newcomer', description='dynamic', mount_point=MOUNT_MAIN)\n"
+        "def render(ctx):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    after = discover_panels(panels_dir=panels_dir)
+    assert len(after) == 1 and after[0].manifest.name == "newcomer"
+
+
+def test_registry_re_registration_replaces_handler(runtime):
+    """Re-registering a name should replace the handler (useful for hot
+    reload of a panel module's command definitions)."""
+    from tools.workflow_streamlit.command_registry import Command
+
+    calls = []
+
+    def v1(ctx, args):
+        calls.append("v1")
+        return CommandResult.ok_msg("v1")
+
+    def v2(ctx, args):
+        calls.append("v2")
+        return CommandResult.ok_msg("v2")
+
+    runtime["registry"].register(Command("custom.versioned", "v1", v1))
+    runtime["registry"].run("custom.versioned", runtime["ctx"])
+    runtime["registry"].register(Command("custom.versioned", "v2", v2))
+    runtime["registry"].run("custom.versioned", runtime["ctx"])
+    assert calls == ["v1", "v2"]

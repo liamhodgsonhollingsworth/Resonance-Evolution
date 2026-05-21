@@ -160,10 +160,109 @@ def _session_respawn(ctx: CommandContext, args: List[str]) -> CommandResult:
     return CommandResult.ok_msg("respawn flagged — will fire on next rerun")
 
 
+def _session_spawn(ctx: CommandContext, args: List[str]) -> CommandResult:
+    """Spawn an additional claude-CLI session of any type.
+
+    Usage: ``session.spawn <session_type> [display_name] [-- seed prompt]``
+
+    The seed prompt is everything after ``--``. With no ``--``, the
+    receiving session boots with no seed and waits for the next message.
+    """
+    if not args:
+        return CommandResult.err(
+            "usage: session.spawn <session_type> [display_name] [-- seed prompt]"
+        )
+    if "--" in args:
+        sep = args.index("--")
+        head, seed_parts = args[:sep], args[sep + 1:]
+        seed_message = " ".join(seed_parts).strip() or None
+    else:
+        head, seed_message = args, None
+    session_type = head[0]
+    display_name = head[1] if len(head) > 1 else None
+    try:
+        rec = ctx.session_manager.spawn(
+            session_type=session_type,
+            display_name=display_name,
+            cwd=ctx.apeiron_root,
+            seed_message=seed_message,
+        )
+    except Exception as exc:
+        return CommandResult.err(f"spawn failed: {type(exc).__name__}: {exc}")
+    return CommandResult.ok_msg(
+        f"spawned {rec.display_name} id={rec.id[:8]} type={rec.session_type}",
+        data={"id": rec.id, "type": rec.session_type, "name": rec.display_name},
+    )
+
+
+def _chat_target_path(ctx: CommandContext):
+    return ctx.config.state_dir / "chat_target.txt"
+
+
+def _session_target(ctx: CommandContext, args: List[str]) -> CommandResult:
+    """Route the chat panel + chat.send to a specific session id.
+
+    Persists to ``state/workflow/chat_target.txt`` so the next rerun
+    picks up the override. The app driver reads this on each rerun.
+    """
+    if not args:
+        return CommandResult.err("usage: session.target <session_id|none>")
+    target = args[0]
+    target_path = _chat_target_path(ctx)
+    if target.lower() in {"none", "off", "clear"}:
+        try:
+            target_path.unlink()
+        except FileNotFoundError:
+            pass
+        ctx.active_session_id = None
+        return CommandResult.ok_msg("chat target cleared")
+    rec = ctx.session_manager.get(target)
+    if rec is None:
+        return CommandResult.err(f"no such session: {target}")
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(rec.id, encoding="utf-8")
+    ctx.active_session_id = rec.id
+    return CommandResult.ok_msg(f"chat target → {rec.display_name} ({rec.id[:8]})")
+
+
+def _session_send(ctx: CommandContext, args: List[str]) -> CommandResult:
+    """Send a message to a specific session (any, not just the active one)."""
+    if len(args) < 2:
+        return CommandResult.err("usage: session.send <session_id> <message...>")
+    sid = args[0]
+    body = " ".join(args[1:]).strip()
+    if not body:
+        return CommandResult.err("empty message body")
+    try:
+        ctx.session_manager.send(sid, body)
+    except Exception as exc:
+        return CommandResult.err(f"send failed: {type(exc).__name__}: {exc}")
+    return CommandResult.ok_msg(f"sent ({len(body)} chars) to {sid[:8]}")
+
+
+def _session_archive(ctx: CommandContext, args: List[str]) -> CommandResult:
+    if not args:
+        return CommandResult.err("usage: session.archive <session_id>")
+    sid = args[0]
+    try:
+        ctx.session_manager.archive(sid)
+    except Exception as exc:
+        return CommandResult.err(f"archive failed: {type(exc).__name__}: {exc}")
+    return CommandResult.ok_msg(f"archived {sid[:8]}")
+
+
 def build_session_commands() -> List[Command]:
     return [
         Command("session.status", "show active session", _session_status),
         Command("session.list", "list all sessions", _session_list),
+        Command("session.spawn", "spawn a claude-CLI session", _session_spawn,
+                arg_help="<type> [name] [-- seed...]"),
+        Command("session.target", "route chat to a specific session", _session_target,
+                arg_help="<id|none>"),
+        Command("session.send", "send to any session (not just the active one)",
+                _session_send, arg_help="<id> <message...>"),
+        Command("session.archive", "archive a session", _session_archive,
+                arg_help="<id>"),
         Command("session.respawn", "respawn default workflow-mgmt session", _session_respawn),
     ]
 

@@ -92,6 +92,17 @@ def main() -> None:
 
 
 def _build_context(runtime, cfg) -> PanelContext:
+    # Honour any persistent chat-target override set by `session.target`.
+    target_file = cfg.state_dir / "chat_target.txt"
+    active_id = runtime.default_session_id
+    if target_file.exists():
+        try:
+            stored = target_file.read_text(encoding="utf-8").strip()
+            if stored and runtime.session_manager.get(stored) is not None:
+                active_id = stored
+        except OSError:
+            pass
+
     ctx = PanelContext(
         engine=runtime.engine,
         session_manager=runtime.session_manager,
@@ -100,7 +111,7 @@ def _build_context(runtime, cfg) -> PanelContext:
         config=cfg,
         apeiron_root=cfg.apeiron_root,
         user=None,
-        active_session_id=runtime.default_session_id,
+        active_session_id=active_id,
     )
     # Make the registry available to every panel via the same scratch
     # the terminal reads. Storing it on scratch keeps PanelContext's
