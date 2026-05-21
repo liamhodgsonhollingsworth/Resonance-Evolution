@@ -176,6 +176,11 @@
       "id": "panel_positioner_main",
       "type": "PanelPositioner",
       "params": {}
+    },
+    {
+      "id": "idea_queue_main",
+      "type": "IdeaQueue",
+      "params": {}
     }
   ]
 }

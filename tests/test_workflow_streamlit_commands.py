@@ -132,6 +132,7 @@ def runtime(tmp_path):
         "session_manager": sm,
         "inbox": inbox,
         "apeiron_root": REPO_ROOT,
+        "state_dir": state_dir,
     }
     registry = CommandRegistry()
     register_all(registry)
