@@ -186,6 +186,32 @@
       "id": "auth_gate_main",
       "type": "AuthGate",
       "params": {}
+    },
+
+    {
+      "id": "streamlit_panel_auth",
+      "type": "StreamlitPanel",
+      "params": {"panel_name": "auth", "mount_point": "gate", "order": 0}
+    },
+    {
+      "id": "streamlit_panel_session_status",
+      "type": "StreamlitPanel",
+      "params": {"panel_name": "session-status", "mount_point": "sidebar", "order": 10}
+    },
+    {
+      "id": "streamlit_panel_scene_picker",
+      "type": "StreamlitPanel",
+      "params": {"panel_name": "scene-picker", "mount_point": "sidebar", "order": 20}
+    },
+    {
+      "id": "streamlit_panel_chat",
+      "type": "StreamlitPanel",
+      "params": {"panel_name": "chat", "mount_point": "main", "order": 10}
+    },
+    {
+      "id": "streamlit_panel_terminal",
+      "type": "StreamlitPanel",
+      "params": {"panel_name": "terminal", "mount_point": "bottom", "order": 10}
     }
   ]
 }

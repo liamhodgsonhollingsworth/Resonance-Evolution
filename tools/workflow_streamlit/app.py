@@ -42,7 +42,10 @@ from tools.workflow_streamlit.panels._common import (
     MOUNT_SIDEBAR,
     PanelContext,
 )
-from tools.workflow_streamlit.registry import discover_panels, panels_for_mount
+from tools.workflow_streamlit.registry import (
+    discover_panels_with_engine_overrides,
+    panels_for_mount,
+)
 from tools.workflow_streamlit.runtime import get_runtime
 
 
@@ -66,7 +69,10 @@ def main() -> None:
     # in the sidebar right away).
     _drain_cli_queue(ctx, runtime, cfg)
 
-    panels = discover_panels()
+    # Discover filesystem panels + apply scene-declared overrides from
+    # any StreamlitPanel scene nodes. Closes the parallel-registry gap
+    # from the 2026-05-21 audit (criterion 2).
+    panels = discover_panels_with_engine_overrides(runtime.engine)
 
     # 1. Gate (auth) — can short-circuit.
     for p in panels_for_mount(panels, MOUNT_GATE):
