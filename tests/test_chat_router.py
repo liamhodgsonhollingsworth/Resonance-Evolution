@@ -51,7 +51,12 @@ class FakeInbox:
 
 @pytest.fixture
 def engine_with_router(tmp_path: Path) -> Engine:
-    """Boot an Engine + load a minimal scene containing one ChatRouter."""
+    """Boot an Engine + load a scene with ChatRouter + its composition partners.
+
+    chat_router v2 composes inbox_echo_main + session_sender_main +
+    session_resolver_main + session_lister_main via dispatch_action.
+    The test scene must load all of them so chat_router's verbs work
+    end-to-end."""
     apeiron_root = Path(__file__).resolve().parents[1]
     engine = Engine(root_dir=apeiron_root)
     engine.discover()
@@ -62,7 +67,11 @@ def engine_with_router(tmp_path: Path) -> Engine:
           "view": {"position": [0,0,5], "look_at": [0,0,0],
                    "width": 64, "height": 64, "fov_y_radians": 0.6},
           "nodes": [
-            {"id": "chat_router_main", "type": "ChatRouter", "params": {}}
+            {"id": "chat_router_main", "type": "ChatRouter", "params": {}},
+            {"id": "inbox_echo_main", "type": "InboxEcho", "params": {}},
+            {"id": "session_sender_main", "type": "SessionSender", "params": {}},
+            {"id": "session_resolver_main", "type": "SessionResolver", "params": {}},
+            {"id": "session_lister_main", "type": "SessionLister", "params": {}}
           ]
         }""",
         encoding="utf-8",
@@ -265,6 +274,131 @@ def test_send_fails_when_session_manager_missing(
     view = engine_actions.get_view_state(engine_with_router, "chat_router_main")
     assert view["last_route"]["routed"] is False
     assert "session_manager" in view["last_route"]["reason"]
+
+
+def test_send_at_prefix_resolves_and_routes(engine_with_router: Engine) -> None:
+    """v2: @<name> body composes session_resolver + session_sender."""
+    import dataclasses
+    @dataclasses.dataclass
+    class FakeRec:
+        id: str
+        display_name: str
+        session_type: str = "general"
+        status: str = "active"
+        cwd: str = "."
+        spawned_at: str = ""
+        last_active_at: str = ""
+        concerns: list = dataclasses.field(default_factory=list)
+
+    class SMWithList(FakeSessionManager):
+        def __init__(self, recs):
+            super().__init__()
+            self.recs = recs
+        def list(self):
+            return self.recs
+
+    sm = SMWithList([FakeRec(id="aaaaaaaa-1111", display_name="alpha")])
+    sm.known_ids = {"aaaaaaaa-1111"}
+    inbox = FakeInbox()
+    engine_with_router.cache["__workflow__"] = {"session_manager": sm, "inbox": inbox}
+
+    ok, msg = engine_actions.dispatch_action(
+        engine_with_router, "chat_router_main", "send",
+        payload={"text": "@alpha hello there", "session_id": None},
+    )
+    assert ok, msg
+    view = engine_actions.get_view_state(engine_with_router, "chat_router_main")
+    assert view["last_route"]["routed"] is True
+    assert view["last_route"]["target"] == "aaaaaaaa-1111"
+    assert sm.sent == [("aaaaaaaa-1111", "hello there")]
+
+
+def test_send_at_prefix_unresolved_fails(engine_with_router: Engine) -> None:
+    import dataclasses
+    @dataclasses.dataclass
+    class FakeRec:
+        id: str
+        display_name: str
+        session_type: str = "general"
+        status: str = "active"
+        cwd: str = "."
+        spawned_at: str = ""
+        last_active_at: str = ""
+        concerns: list = dataclasses.field(default_factory=list)
+
+    class SMWithList(FakeSessionManager):
+        def __init__(self, recs):
+            super().__init__()
+            self.recs = recs
+        def list(self):
+            return self.recs
+
+    sm = SMWithList([FakeRec(id="aaaaaaaa-1111", display_name="alpha")])
+    engine_with_router.cache["__workflow__"] = {
+        "session_manager": sm, "inbox": FakeInbox(),
+    }
+    engine_actions.dispatch_action(
+        engine_with_router, "chat_router_main", "send",
+        payload={"text": "@nonexistent hi", "session_id": None},
+    )
+    view = engine_actions.get_view_state(engine_with_router, "chat_router_main")
+    assert view["last_route"]["routed"] is False
+    assert "nonexistent" in view["last_route"]["reason"] or "no session" in view["last_route"]["reason"]
+
+
+def test_send_slash_all_broadcasts(engine_with_router: Engine) -> None:
+    """v2: /all body composes session_lister + session_sender."""
+    import dataclasses
+    @dataclasses.dataclass
+    class FakeRec:
+        id: str
+        display_name: str
+        session_type: str = "general"
+        status: str = "active"
+        cwd: str = "."
+        spawned_at: str = ""
+        last_active_at: str = ""
+        concerns: list = dataclasses.field(default_factory=list)
+
+    class SMWithList(FakeSessionManager):
+        def __init__(self, recs):
+            super().__init__()
+            self.recs = recs
+        def list(self):
+            return self.recs
+
+    recs = [
+        FakeRec(id="sid-1", display_name="one"),
+        FakeRec(id="sid-2", display_name="two"),
+        FakeRec(id="sid-3", display_name="archived-one", status="archived"),
+    ]
+    sm = SMWithList(recs)
+    sm.known_ids = {"sid-1", "sid-2", "sid-3"}
+    engine_with_router.cache["__workflow__"] = {
+        "session_manager": sm, "inbox": FakeInbox(),
+    }
+    engine_actions.dispatch_action(
+        engine_with_router, "chat_router_main", "send",
+        payload={"text": "/all broadcast body", "session_id": None},
+    )
+    view = engine_actions.get_view_state(engine_with_router, "chat_router_main")
+    assert view["last_route"]["routed"] is True
+    assert view["last_route"]["target"] == "all"
+    # The archived session is skipped; active two get the body.
+    assert set(view["last_route"]["delivered_to"]) == {"sid-1", "sid-2"}
+    assert ("sid-1", "broadcast body") in sm.sent
+    assert ("sid-2", "broadcast body") in sm.sent
+    assert ("sid-3", "broadcast body") not in sm.sent
+
+
+def test_send_slash_all_with_empty_body_fails(engine_with_router: Engine) -> None:
+    engine_actions.dispatch_action(
+        engine_with_router, "chat_router_main", "send",
+        payload={"text": "/all", "session_id": None},
+    )
+    view = engine_actions.get_view_state(engine_with_router, "chat_router_main")
+    assert view["last_route"]["routed"] is False
+    assert "/all with empty body" in view["last_route"]["reason"]
 
 
 def test_unknown_action_returns_none(engine_with_router: Engine) -> None:
