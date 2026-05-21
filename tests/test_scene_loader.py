@@ -121,3 +121,76 @@ def test_current_returns_loaded_scene_after_load(engine_with_loader: Engine) -> 
     )
     view = engine_actions.get_view_state(engine_with_loader, "scene_loader_main")
     assert view["last_current"] == "hello_cube.json"
+
+
+def test_reload_reapplies_current_scene(engine_with_loader: Engine) -> None:
+    """The scenes-JSON-not-watched gap fix — runtime reload of the
+    on-disk scene without a process restart."""
+    engine_with_loader.cache["__workflow__"] = {
+        "session_manager": None, "inbox": None,
+        "apeiron_root": REPO_ROOT,
+    }
+    engine_actions.dispatch_action(
+        engine_with_loader, "scene_loader_main", "load",
+        payload={"name": "hello_cube"},
+    )
+    engine_actions.dispatch_action(
+        engine_with_loader, "scene_loader_main", "reload", payload={}
+    )
+    view = engine_actions.get_view_state(engine_with_loader, "scene_loader_main")
+    assert view["last_reload"]["reloaded"] is True
+    assert view["last_reload"]["scene"] == "hello_cube.json"
+    assert view["current_scene"] == "hello_cube.json"
+
+
+def test_reload_falls_back_to_default_scene(engine_with_loader: Engine) -> None:
+    """When no current scene is recorded, reload uses default_scene
+    from the workflow singleton."""
+    engine_with_loader.cache["__workflow__"] = {
+        "session_manager": None, "inbox": None,
+        "apeiron_root": REPO_ROOT,
+        "default_scene": "hello_cube.json",
+    }
+    engine_actions.dispatch_action(
+        engine_with_loader, "scene_loader_main", "reload", payload={}
+    )
+    view = engine_actions.get_view_state(engine_with_loader, "scene_loader_main")
+    assert view["last_reload"]["reloaded"] is True
+    assert view["last_reload"]["scene"] == "hello_cube.json"
+
+
+def test_reload_explicit_name_overrides(engine_with_loader: Engine) -> None:
+    engine_with_loader.cache["__workflow__"] = {
+        "session_manager": None, "inbox": None,
+        "apeiron_root": REPO_ROOT,
+    }
+    engine_actions.dispatch_action(
+        engine_with_loader, "scene_loader_main", "reload",
+        payload={"name": "hello_cube"},
+    )
+    view = engine_actions.get_view_state(engine_with_loader, "scene_loader_main")
+    assert view["last_reload"]["reloaded"] is True
+    assert view["last_reload"]["scene"] == "hello_cube.json"
+
+
+def test_reload_unknown_name_fails_gracefully(engine_with_loader: Engine) -> None:
+    engine_with_loader.cache["__workflow__"] = {
+        "session_manager": None, "inbox": None,
+        "apeiron_root": REPO_ROOT,
+    }
+    engine_actions.dispatch_action(
+        engine_with_loader, "scene_loader_main", "reload",
+        payload={"name": "nonexistent"},
+    )
+    view = engine_actions.get_view_state(engine_with_loader, "scene_loader_main")
+    assert view["last_reload"]["reloaded"] is False
+    assert "not found" in view["last_reload"]["reason"]
+
+
+def test_reload_without_workflow_root_fails(engine_with_loader: Engine) -> None:
+    engine_actions.dispatch_action(
+        engine_with_loader, "scene_loader_main", "reload", payload={}
+    )
+    view = engine_actions.get_view_state(engine_with_loader, "scene_loader_main")
+    assert view["last_reload"]["reloaded"] is False
+    assert "apeiron_root" in view["last_reload"]["reason"]

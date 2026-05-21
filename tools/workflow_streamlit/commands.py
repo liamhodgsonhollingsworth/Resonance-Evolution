@@ -371,11 +371,34 @@ def _scene_current(ctx: CommandContext, args: List[str]) -> CommandResult:
     return CommandResult.ok_msg(current, data=current)
 
 
+def _scene_reload(ctx: CommandContext, args: List[str]) -> CommandResult:
+    """Dispatch through SceneLoader node — reload current scene from disk.
+
+    Closes the scenes-JSON-not-watched gap. The maintainer edits the
+    scene file by hand, then runs `scene.reload` to apply the change
+    without restarting the program.
+    """
+    name = args[0] if args else ""
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="scene_loader_main",
+        action_name="reload", payload={"name": name},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "scene_loader_main")
+    res = view.get("last_reload", {})
+    if not res.get("reloaded"):
+        return CommandResult.err(res.get("reason") or "reload failed")
+    ctx.scratch["current_scene"] = res["scene"]
+    return CommandResult.ok_msg(f"reloaded {res['scene']}", data=res)
+
+
 def build_scene_commands() -> List[Command]:
     return [
         Command("scene.list", "list available scenes", _scene_list),
         Command("scene.load", "load a scene by name", _scene_load, arg_help="<name>"),
         Command("scene.current", "show currently-loaded scene", _scene_current),
+        Command("scene.reload", "re-load the current scene from disk",
+                _scene_reload, arg_help="[name]"),
     ]
 
 

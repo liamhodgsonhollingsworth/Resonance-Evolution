@@ -7,6 +7,10 @@ Verbs:
                   Calls engine.load_scene + engine.precompute. Result via
                   view-state ``last_load: {loaded, scene, reason}``.
   - ``current`` — return the currently-loaded scene name from view-state.
+  - ``reload``  — re-load the currently-loaded scene from disk; closes the
+                  scenes-JSON-not-watched gap surfaced in the 2026-05-21
+                  bare-minimum audit. Falls back to the runtime's
+                  ``default_scene`` when no current scene is recorded.
 
 Lifts the inline scene-management logic from
 ``tools/workflow_streamlit/commands.py::_scene_*``. Same primitive
@@ -114,5 +118,46 @@ def handle_action(
         view = engine.cache.setdefault("__view_state__", {}).setdefault(node.id, {})
         current = view.get("current_scene")
         return {"last_current": current}
+
+    if action_name == "reload":
+        if not apeiron_root:
+            return {"last_reload": {
+                "reloaded": False, "scene": None,
+                "reason": "no apeiron_root in __workflow__",
+            }}
+        view = engine.cache.setdefault("__view_state__", {}).setdefault(node.id, {})
+        # Prefer the explicit currently-loaded scene; fall back to the
+        # workflow-singleton's default_scene if set; final fallback is
+        # workflow_view.json (the canonical default scene name).
+        name = (
+            payload.get("name")
+            or view.get("current_scene")
+            or workflow.get("default_scene")
+            or "workflow_view.json"
+        )
+        scenes_dir = Path(apeiron_root) / "scenes"
+        target = scenes_dir / (
+            name if str(name).endswith(".json") else f"{name}.json"
+        )
+        if not target.exists():
+            return {"last_reload": {
+                "reloaded": False, "scene": target.name,
+                "reason": f"scene not found: {target.name}",
+            }}
+        try:
+            engine.load_scene(target)
+            engine.precompute()
+        except Exception as exc:
+            return {"last_reload": {
+                "reloaded": False, "scene": target.name,
+                "reason": f"reload failed: {exc}",
+            }}
+        return {
+            "last_reload": {
+                "reloaded": True, "scene": target.name,
+                "reason": f"reloaded {target.name}",
+            },
+            "current_scene": target.name,
+        }
 
     return None

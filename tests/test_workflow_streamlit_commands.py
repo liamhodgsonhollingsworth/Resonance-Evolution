@@ -133,6 +133,7 @@ def runtime(tmp_path):
         "inbox": inbox,
         "apeiron_root": REPO_ROOT,
         "state_dir": state_dir,
+        "default_scene": cfg.default_scene,
     }
     registry = CommandRegistry()
     register_all(registry)
