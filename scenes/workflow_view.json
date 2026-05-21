@@ -166,6 +166,11 @@
       "id": "scene_loader_main",
       "type": "SceneLoader",
       "params": {}
+    },
+    {
+      "id": "scene_mutator_main",
+      "type": "SceneMutator",
+      "params": {}
     }
   ]
 }
