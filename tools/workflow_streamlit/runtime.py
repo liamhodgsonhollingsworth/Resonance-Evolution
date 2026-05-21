@@ -76,6 +76,15 @@ def boot_runtime(config_kwargs: tuple) -> Runtime:
     sm = SessionManager(state_dir=state_dir)
     inbox = Inbox(state_dir=state_dir)
 
+    # Register workflow singletons on engine.cache so logic node-types
+    # (ChatRouter, future session_controller, etc.) can find them during
+    # engine.actions.dispatch_action handlers. Follows the existing
+    # reserved-key pattern (__view_state__, __lights__, __gravity_fields__).
+    engine.cache["__workflow__"] = {
+        "session_manager": sm,
+        "inbox": inbox,
+    }
+
     default_session_id = _ensure_default_session(sm, cfg)
 
     # Build the command registry once at boot and reuse across reruns.

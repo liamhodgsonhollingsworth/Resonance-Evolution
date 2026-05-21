@@ -119,6 +119,12 @@
       "id": "trusted_senders_source",
       "type": "TrustedSendersSource",
       "params": {"root": ".", "user": "LHH", "kind": "sender"}
+    },
+
+    {
+      "id": "chat_router_main",
+      "type": "ChatRouter",
+      "params": {}
     }
   ]
 }

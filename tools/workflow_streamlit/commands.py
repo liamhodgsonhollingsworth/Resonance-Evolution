@@ -366,30 +366,35 @@ def build_items_commands() -> List[Command]:
 
 
 def _chat_send(ctx: CommandContext, args: List[str]) -> CommandResult:
+    """Route a chat send through the ChatRouter node-type.
+
+    The handler previously did inline inbox-echo + sm.send. That logic
+    now lives in node_types/chat_router.py so the Tk surface and the
+    Streamlit surface dispatch through one canonical routing node
+    instead of each reimplementing the routing rules. This is the
+    first concrete lift toward the "same logic node, different
+    renderers" architectural commitment.
+    """
     if not args:
         return CommandResult.err("usage: chat.send <message...>")
     text = " ".join(args).strip()
     if not text:
         return CommandResult.err("empty message")
-    sid = ctx.active_session_id
-    summary = text.replace("\n", " ")[:80]
-    # Path 1: inbox echo for the chat panel UI.
-    try:
-        ctx.inbox.post(
-            to=sid or "maintainer",
-            kind="chat",
-            summary=summary,
-            body=text,
-            sender="maintainer",
+    from engine import actions as engine_actions
+    ok, msg = engine_actions.dispatch_action(
+        ctx.engine,
+        renderer_id="chat_router_main",
+        action_name="send",
+        payload={"text": text, "session_id": ctx.active_session_id},
+    )
+    if not ok:
+        return CommandResult.err(f"chat_router.send: {msg}")
+    view_state = engine_actions.get_view_state(ctx.engine, "chat_router_main")
+    route = view_state.get("last_route") or {}
+    if not route.get("routed"):
+        return CommandResult.err(
+            f"chat_router.send: {route.get('reason', 'unknown failure')}"
         )
-    except Exception as exc:
-        return CommandResult.err(f"inbox.post failed: {exc}")
-    # Path 2: deliver to the session.
-    if sid:
-        try:
-            ctx.session_manager.send(sid, text)
-        except Exception as exc:
-            return CommandResult.err(f"session.send failed: {exc}")
     return CommandResult.ok_msg(f"sent ({len(text)} chars)")
 
 
