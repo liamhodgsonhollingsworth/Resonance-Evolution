@@ -417,6 +417,74 @@ def test_chat_list_after_send(runtime):
     assert r.ok and "first message" in r.message
 
 
+def test_chat_round_trip_via_chat_panel(runtime):
+    """Full loop: maintainer sends via chat.send → session manager receives →
+    session posts an inbox reply addressed to the maintainer → chat_panel's
+    _load_chat_messages surfaces both legs in render order.
+
+    The audit's "no full-loop test for chat round-trip" gap — criterion 5+6
+    of the originating Notion entry's bare-minimum block.
+    """
+    from tools.workflow_streamlit.panels.chat_panel import (
+        _load_chat_messages,
+        _is_chat_message,
+    )
+
+    sid = runtime["ctx"].active_session_id
+    inbox = runtime["inbox"]
+
+    # Leg 1: maintainer sends a message via chat.send (this routes to
+    # the maintainer's own inbox echo + the active session).
+    runtime["registry"].run('chat.send "hello session"', runtime["ctx"])
+
+    # Leg 2: simulate the session posting a reply back addressed to the
+    # maintainer. This is the convention the seed message instructs every
+    # workflow-management session to follow.
+    inbox.post(
+        to="maintainer", kind="message", sender=sid,
+        summary="reply from session", body="received your hello",
+    )
+
+    # Leg 3: chat_panel reads through the inbox and filters to chat
+    # messages. Both legs must appear.
+    messages = _load_chat_messages(runtime["ctx"])
+    bodies = [m.body for m in messages]
+    assert "hello session" in bodies
+    assert "received your hello" in bodies
+
+    # Filter assertions match the criterion-6 contract: maintainer-addressed
+    # messages and session-addressed-from-maintainer messages are chat;
+    # everything else is silent.
+    reply = [m for m in messages if m.body == "received your hello"][0]
+    assert _is_chat_message(reply, sid) is True
+    assert reply.to == "maintainer"
+    assert reply.sender == sid
+
+
+def test_chat_filter_hides_non_chat_inbox_traffic(runtime):
+    """Criterion 6: only message nodes addressed to the maintainer
+    (or maintainer→session) surface in the chat panel. Other inbox
+    traffic is silent — the maintainer is "not seeing literally all
+    the outputs."
+    """
+    from tools.workflow_streamlit.panels.chat_panel import _is_chat_message
+
+    sid = runtime["ctx"].active_session_id
+
+    # Non-chat: session-to-session, neither addressed to maintainer
+    class _M:
+        def __init__(self, to, sender):
+            self.to = to
+            self.sender = sender
+    assert _is_chat_message(_M(to="some-other-sid", sender=sid), sid) is False
+    # Non-chat: maintainer-to-self (would echo loop) — also session_id-shaped
+    assert _is_chat_message(_M(to=sid, sender=sid), sid) is False
+    # Chat: session → maintainer
+    assert _is_chat_message(_M(to="maintainer", sender=sid), sid) is True
+    # Chat: maintainer → session (the echo leg)
+    assert _is_chat_message(_M(to=sid, sender="maintainer"), sid) is True
+
+
 # ---------------------------------------------------------------------------
 # CLI bridge — the file-queue injection contract
 # ---------------------------------------------------------------------------
