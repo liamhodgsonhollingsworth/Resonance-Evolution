@@ -142,14 +142,21 @@ def _session_status(ctx: CommandContext, args: List[str]) -> CommandResult:
 
 
 def _session_list(ctx: CommandContext, args: List[str]) -> CommandResult:
-    records = ctx.session_manager.list()
+    """Dispatch through SessionLister node so any surface reads the same list."""
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="session_lister_main",
+        action_name="refresh", payload={},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "session_lister_main")
+    records = view.get("sessions", [])
     if not records:
         return CommandResult.ok_msg("(no sessions)", data=[])
     lines = [
-        f"  {r.id[:8]} {r.status:10s} {r.session_type:25s} {r.display_name}"
+        f"  {r['id'][:8]} {r.get('status',''):10s} {r.get('session_type',''):25s} {r.get('display_name','')}"
         for r in records
     ]
-    return CommandResult.ok_msg("\n".join(lines), data=[r.id for r in records])
+    return CommandResult.ok_msg("\n".join(lines), data=[r["id"] for r in records])
 
 
 def _session_respawn(ctx: CommandContext, args: List[str]) -> CommandResult:
@@ -161,12 +168,9 @@ def _session_respawn(ctx: CommandContext, args: List[str]) -> CommandResult:
 
 
 def _session_spawn(ctx: CommandContext, args: List[str]) -> CommandResult:
-    """Spawn an additional claude-CLI session of any type.
+    """Dispatch through SessionSpawner node.
 
     Usage: ``session.spawn <session_type> [display_name] [-- seed prompt]``
-
-    The seed prompt is everything after ``--``. With no ``--``, the
-    receiving session boots with no seed and waits for the next message.
     """
     if not args:
         return CommandResult.err(
@@ -180,18 +184,29 @@ def _session_spawn(ctx: CommandContext, args: List[str]) -> CommandResult:
         head, seed_message = args, None
     session_type = head[0]
     display_name = head[1] if len(head) > 1 else None
-    try:
-        rec = ctx.session_manager.spawn(
-            session_type=session_type,
-            display_name=display_name,
-            cwd=ctx.apeiron_root,
-            seed_message=seed_message,
-        )
-    except Exception as exc:
-        return CommandResult.err(f"spawn failed: {type(exc).__name__}: {exc}")
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="session_spawner_main",
+        action_name="spawn",
+        payload={
+            "session_type": session_type,
+            "display_name": display_name,
+            "seed_message": seed_message,
+            "cwd": str(ctx.apeiron_root),
+        },
+    )
+    view = engine_actions.get_view_state(ctx.engine, "session_spawner_main")
+    result = view.get("last_spawn", {})
+    if not result.get("spawned"):
+        return CommandResult.err(f"spawn failed: {result.get('reason')}")
+    rec = result.get("record", {})
     return CommandResult.ok_msg(
-        f"spawned {rec.display_name} id={rec.id[:8]} type={rec.session_type}",
-        data={"id": rec.id, "type": rec.session_type, "name": rec.display_name},
+        f"spawned {rec.get('display_name')} id={rec.get('id','')[:8]} type={rec.get('session_type','')}",
+        data={
+            "id": rec.get("id"),
+            "type": rec.get("session_type"),
+            "name": rec.get("display_name"),
+        },
     )
 
 
@@ -200,54 +215,90 @@ def _chat_target_path(ctx: CommandContext):
 
 
 def _session_target(ctx: CommandContext, args: List[str]) -> CommandResult:
-    """Route the chat panel + chat.send to a specific session id.
+    """Dispatch through SessionTarget node.
 
-    Persists to ``state/workflow/chat_target.txt`` so the next rerun
-    picks up the override. The app driver reads this on each rerun.
+    Persists in node view-state. Streamlit driver continues to honor
+    chat_target.txt for cache_resource compatibility — writing the file
+    here keeps that path live until session_target's view-state becomes
+    the canonical persistence layer.
     """
     if not args:
         return CommandResult.err("usage: session.target <session_id|none>")
     target = args[0]
     target_path = _chat_target_path(ctx)
+    from engine import actions as engine_actions
     if target.lower() in {"none", "off", "clear"}:
+        engine_actions.dispatch_action(
+            ctx.engine, renderer_id="session_target_main",
+            action_name="set", payload={"session_id": None},
+        )
         try:
             target_path.unlink()
         except FileNotFoundError:
             pass
         ctx.active_session_id = None
         return CommandResult.ok_msg("chat target cleared")
-    rec = ctx.session_manager.get(target)
-    if rec is None:
-        return CommandResult.err(f"no such session: {target}")
+    # Resolve via SessionResolver so name/prefix/id all work uniformly.
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="session_resolver_main",
+        action_name="resolve", payload={"name_or_id": target},
+    )
+    resolution = engine_actions.get_view_state(
+        ctx.engine, "session_resolver_main"
+    ).get("last_resolution", {})
+    if not resolution.get("resolved"):
+        return CommandResult.err(
+            f"no such session: {target} ({resolution.get('reason','')})"
+        )
+    sid = resolution["session_id"]
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="session_target_main",
+        action_name="set", payload={"session_id": sid},
+    )
     target_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path.write_text(rec.id, encoding="utf-8")
-    ctx.active_session_id = rec.id
-    return CommandResult.ok_msg(f"chat target → {rec.display_name} ({rec.id[:8]})")
+    target_path.write_text(sid, encoding="utf-8")
+    ctx.active_session_id = sid
+    rec = ctx.session_manager.get(sid)
+    name = rec.display_name if rec else sid[:8]
+    return CommandResult.ok_msg(f"chat target → {name} ({sid[:8]})")
 
 
 def _session_send(ctx: CommandContext, args: List[str]) -> CommandResult:
-    """Send a message to a specific session (any, not just the active one)."""
+    """Dispatch through SessionSender node."""
     if len(args) < 2:
         return CommandResult.err("usage: session.send <session_id> <message...>")
     sid = args[0]
     body = " ".join(args[1:]).strip()
     if not body:
         return CommandResult.err("empty message body")
-    try:
-        ctx.session_manager.send(sid, body)
-    except Exception as exc:
-        return CommandResult.err(f"send failed: {type(exc).__name__}: {exc}")
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="session_sender_main",
+        action_name="send", payload={"session_id": sid, "body": body},
+    )
+    result = engine_actions.get_view_state(
+        ctx.engine, "session_sender_main"
+    ).get("last_send", {})
+    if not result.get("sent"):
+        return CommandResult.err(f"send failed: {result.get('reason')}")
     return CommandResult.ok_msg(f"sent ({len(body)} chars) to {sid[:8]}")
 
 
 def _session_archive(ctx: CommandContext, args: List[str]) -> CommandResult:
+    """Dispatch through SessionArchiver node."""
     if not args:
         return CommandResult.err("usage: session.archive <session_id>")
     sid = args[0]
-    try:
-        ctx.session_manager.archive(sid)
-    except Exception as exc:
-        return CommandResult.err(f"archive failed: {type(exc).__name__}: {exc}")
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="session_archiver_main",
+        action_name="archive", payload={"session_id": sid},
+    )
+    result = engine_actions.get_view_state(
+        ctx.engine, "session_archiver_main"
+    ).get("last_archive", {})
+    if not result.get("archived"):
+        return CommandResult.err(f"archive failed: {result.get('reason')}")
     return CommandResult.ok_msg(f"archived {sid[:8]}")
 
 
