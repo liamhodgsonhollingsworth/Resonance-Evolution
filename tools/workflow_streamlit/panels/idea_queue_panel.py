@@ -1,24 +1,25 @@
 """Right-sidebar idea queue (the "anything queue" the maintainer named).
 
-A persistent drag-droppable list. Items live on disk at
-``state/workflow/idea_queue.md`` so they survive process restarts and
-are visible to other surfaces (the file can be read by Apeiron sessions
-or watched by other tools).
+A persistent queue with up / down / delete / add affordances. Every
+button dispatches through the ``CommandRegistry`` so the equivalent
+CLI command (``idea-queue.add "fix the oscillation"``) appears in the
+terminal log on click — the GUI↔CLI 1:1 property.
 
-Streamlit's native widget set doesn't include true drag-and-drop, so
-v1 ships with explicit up / down / delete buttons per row plus an
-input to add. v2 can swap in ``streamlit-sortables`` (already a
-permissive dep) without changing the storage format — the data shape
-is just a markdown checklist.
+Storage is a markdown checklist at
+``state/workflow/idea_queue.md``; the handler in
+``tools.workflow_streamlit.commands`` is the single source of truth.
 """
 
 from __future__ import annotations
 
-from typing import List
-
 import streamlit as st
 
-from tools.workflow_streamlit.panels._common import MOUNT_SIDEBAR, PanelContext, PanelManifest
+from tools.workflow_streamlit.commands import _load_idea_queue
+from tools.workflow_streamlit.panels._common import (
+    MOUNT_SIDEBAR,
+    PanelContext,
+    PanelManifest,
+)
 
 
 def manifest() -> PanelManifest:
@@ -31,9 +32,15 @@ def manifest() -> PanelManifest:
 
 
 def render(ctx: PanelContext) -> None:
+    registry = ctx.scratch.get("command_registry")
+    if registry is None:
+        st.warning("command registry missing; idea queue disabled")
+        return
+
     st.markdown("### Ideas queue")
-    path = ctx.config.state_dir / "idea_queue.md"
-    items = _load(path)
+
+    cctx = ctx.as_command_context()
+    items = _load_idea_queue(cctx)
 
     # Add box.
     new_text = st.text_input(
@@ -43,9 +50,11 @@ def render(ctx: PanelContext) -> None:
         label_visibility="collapsed",
     )
     if st.button("add", key="idea-queue-add-btn") and new_text.strip():
-        items.append(new_text.strip())
-        _save(path, items)
-        st.session_state["idea-queue-add"] = ""
+        registry.run_gui("idea-queue.add", cctx, new_text.strip())
+        try:
+            del st.session_state["idea-queue-add"]
+        except KeyError:
+            pass
         st.rerun()
 
     if not items:
@@ -58,36 +67,13 @@ def render(ctx: PanelContext) -> None:
             st.markdown(f"- {text}")
         with cols[1]:
             if st.button("↑", key=f"iq-up-{idx}", disabled=(idx == 0)):
-                items[idx - 1], items[idx] = items[idx], items[idx - 1]
-                _save(path, items)
+                registry.run_gui("idea-queue.up", cctx, str(idx))
                 st.rerun()
         with cols[2]:
             if st.button("↓", key=f"iq-down-{idx}", disabled=(idx == len(items) - 1)):
-                items[idx + 1], items[idx] = items[idx], items[idx + 1]
-                _save(path, items)
+                registry.run_gui("idea-queue.down", cctx, str(idx))
                 st.rerun()
         with cols[3]:
             if st.button("✕", key=f"iq-del-{idx}"):
-                del items[idx]
-                _save(path, items)
+                registry.run_gui("idea-queue.delete", cctx, str(idx))
                 st.rerun()
-
-
-def _load(path) -> List[str]:
-    if not path.exists():
-        return []
-    try:
-        out: List[str] = []
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line.startswith("- "):
-                out.append(line[2:].strip())
-        return out
-    except Exception:
-        return []
-
-
-def _save(path, items: List[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    body = "# Idea queue\n\n" + "\n".join(f"- {it}" for it in items) + "\n"
-    path.write_text(body, encoding="utf-8")

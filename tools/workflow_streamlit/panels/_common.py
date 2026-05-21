@@ -50,3 +50,24 @@ class PanelContext:
     active_session_id: Optional[str] = None
     # Per-rerun scratchpad — never persists across reruns.
     scratch: dict = field(default_factory=dict)
+
+    def as_command_context(self):
+        """Build a ``CommandContext`` that mirrors this PanelContext.
+
+        The scratch dict is shared by reference so handlers and panels
+        can pass state through it within a single rerun (e.g. a
+        ``scene.load`` handler writes ``current_scene`` and the scene
+        picker reads it back in the same tick).
+        """
+        from tools.workflow_streamlit.command_registry import CommandContext
+        return CommandContext(
+            engine=self.engine,
+            session_manager=self.session_manager,
+            inbox=self.inbox,
+            file_watcher=self.file_watcher,
+            config=self.config,
+            apeiron_root=self.apeiron_root,
+            active_session_id=self.active_session_id,
+            user=self.user,
+            scratch=self.scratch,
+        )

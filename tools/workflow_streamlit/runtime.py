@@ -35,6 +35,7 @@ class Runtime:
     file_watcher: Any
     config: RuntimeConfig
     default_session_id: Optional[str]
+    command_registry: Any = None
 
 
 @st.cache_resource(show_spinner="booting Apeiron engine…")
@@ -76,6 +77,14 @@ def boot_runtime(config_kwargs: tuple) -> Runtime:
 
     default_session_id = _ensure_default_session(sm, cfg)
 
+    # Build the command registry once at boot and reuse across reruns.
+    # Re-registering is idempotent so any future hot-reload of a panel
+    # module's commands re-runs cheaply.
+    from .command_registry import CommandRegistry
+    from .commands import register_all
+    registry = CommandRegistry()
+    register_all(registry)
+
     return Runtime(
         engine=engine,
         session_manager=sm,
@@ -83,6 +92,7 @@ def boot_runtime(config_kwargs: tuple) -> Runtime:
         file_watcher=file_watcher,
         config=cfg,
         default_session_id=default_session_id,
+        command_registry=registry,
     )
 
 

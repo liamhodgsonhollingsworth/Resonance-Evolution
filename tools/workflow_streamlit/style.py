@@ -78,6 +78,26 @@ div[data-testid="stButton"] button:hover { background: #e8d5a3 !important; color
 .mode-banner.web { border-left-color: #6a4aaa; color: #8a6aaa; background: #0a0814; border-color: #2a1a4a; }
 
 .empty-hint { font-family: 'IBM Plex Mono', monospace; font-size: .76rem; color: #5a6478; padding: 12px 0; }
+
+.terminal-log {
+    background: #05080c; border: 1px solid #1e2535; border-radius: 4px;
+    padding: 10px; max-height: 360px; overflow-y: auto;
+    font-family: 'IBM Plex Mono', monospace; font-size: .76rem; line-height: 1.45;
+    margin-bottom: 8px;
+}
+.term-row { display: block; color: #8a9ab0; }
+.term-when { color: #4a5a6e; margin-right: 8px; }
+.term-src { font-size: .66rem; padding: 0 5px; border-radius: 2px; margin-right: 8px; letter-spacing: .04em; }
+.term-src-gui { background: #0e1830; color: #6b8cba; border: 1px solid #1a2e4a; }
+.term-src-terminal { background: #1a180a; color: #b89a3a; border: 1px solid #2e2a12; }
+.term-src-cli { background: #0a1814; color: #4aa68c; border: 1px solid #16382c; }
+.term-src-system { background: #181018; color: #8a6aaa; border: 1px solid #2e1a4a; }
+.term-cmd { color: #d4cfc7; }
+.term-output { margin-left: 16px; margin-bottom: 4px; }
+.term-output pre { color: inherit; background: transparent; border: none; padding: 0; margin: 0; font-family: inherit; font-size: inherit; white-space: pre-wrap; }
+.term-output.term-ok { color: #5a8a6a; }
+.term-output.term-err { color: #c84a4a; }
+.term-marker { font-weight: 600; margin-right: 4px; }
 </style>
 """
 
