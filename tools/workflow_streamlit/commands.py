@@ -27,35 +27,22 @@ from .command_registry import (
 
 
 # ---------------------------------------------------------------------------
-# Idea queue
+# Idea queue — dispatched through idea_queue_main (logic node). Every
+# verb here is a thin wrapper around engine.actions.dispatch_action;
+# the file CRUD + list manipulation lives in node_types/idea_queue.py.
 # ---------------------------------------------------------------------------
 
 
-def _idea_queue_path(ctx: CommandContext) -> Path:
-    return ctx.config.state_dir / "idea_queue.md"
-
-
-def _load_idea_queue(ctx: CommandContext) -> List[str]:
-    path = _idea_queue_path(ctx)
-    if not path.exists():
-        return []
-    out: List[str] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line.startswith("- "):
-            out.append(line[2:].strip())
-    return out
-
-
-def _save_idea_queue(ctx: CommandContext, items: List[str]) -> None:
-    path = _idea_queue_path(ctx)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    body = "# Idea queue\n\n" + "\n".join(f"- {it}" for it in items) + ("\n" if items else "")
-    path.write_text(body, encoding="utf-8")
-
-
 def _idea_list(ctx: CommandContext, args: List[str]) -> CommandResult:
-    items = _load_idea_queue(ctx)
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="idea_queue_main",
+        action_name="list", payload={},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "idea_queue_main")
+    if view.get("last_error"):
+        return CommandResult.err(view["last_error"])
+    items = view.get("items", [])
     if not items:
         return CommandResult.ok_msg("(queue empty)", data=[])
     rendered = "\n".join(f"  {i}: {text}" for i, text in enumerate(items))
@@ -66,36 +53,43 @@ def _idea_add(ctx: CommandContext, args: List[str]) -> CommandResult:
     if not args:
         return CommandResult.err("usage: idea-queue.add <text>")
     text = " ".join(args).strip()
-    if not text:
-        return CommandResult.err("empty text")
-    items = _load_idea_queue(ctx)
-    items.append(text)
-    _save_idea_queue(ctx, items)
-    return CommandResult.ok_msg(f"added at index {len(items) - 1}", data=text)
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="idea_queue_main",
+        action_name="add", payload={"text": text},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "idea_queue_main")
+    res = view.get("last_add", {})
+    if not res.get("added"):
+        return CommandResult.err(res.get("reason") or "add failed")
+    return CommandResult.ok_msg(f"added at index {res['index']}", data=res["text"])
 
 
-def _idea_move(ctx: CommandContext, args: List[str], direction: int) -> CommandResult:
+def _idea_move(ctx: CommandContext, args: List[str], verb: str) -> CommandResult:
     if not args:
-        return CommandResult.err(f"usage: idea-queue.{'up' if direction < 0 else 'down'} <index>")
+        return CommandResult.err(f"usage: idea-queue.{verb} <index>")
     try:
         i = int(args[0])
     except ValueError:
         return CommandResult.err(f"index must be an integer, got {args[0]!r}")
-    items = _load_idea_queue(ctx)
-    j = i + direction
-    if not (0 <= i < len(items)) or not (0 <= j < len(items)):
-        return CommandResult.err(f"out of range: i={i} target={j} len={len(items)}")
-    items[i], items[j] = items[j], items[i]
-    _save_idea_queue(ctx, items)
-    return CommandResult.ok_msg(f"swapped {i} <-> {j}")
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="idea_queue_main",
+        action_name=verb, payload={"index": i},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "idea_queue_main")
+    res = view.get(f"last_{verb}", {})
+    if not res.get("moved"):
+        return CommandResult.err(res.get("reason") or f"{verb} failed")
+    return CommandResult.ok_msg(f"swapped {res['i']} <-> {res['j']}")
 
 
 def _idea_up(ctx: CommandContext, args: List[str]) -> CommandResult:
-    return _idea_move(ctx, args, -1)
+    return _idea_move(ctx, args, "up")
 
 
 def _idea_down(ctx: CommandContext, args: List[str]) -> CommandResult:
-    return _idea_move(ctx, args, +1)
+    return _idea_move(ctx, args, "down")
 
 
 def _idea_delete(ctx: CommandContext, args: List[str]) -> CommandResult:
@@ -105,12 +99,16 @@ def _idea_delete(ctx: CommandContext, args: List[str]) -> CommandResult:
         i = int(args[0])
     except ValueError:
         return CommandResult.err(f"index must be an integer, got {args[0]!r}")
-    items = _load_idea_queue(ctx)
-    if not (0 <= i < len(items)):
-        return CommandResult.err(f"out of range: i={i} len={len(items)}")
-    removed = items.pop(i)
-    _save_idea_queue(ctx, items)
-    return CommandResult.ok_msg(f"removed: {removed!r}")
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="idea_queue_main",
+        action_name="delete", payload={"index": i},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "idea_queue_main")
+    res = view.get("last_delete", {})
+    if not res.get("deleted"):
+        return CommandResult.err(res.get("reason") or "delete failed")
+    return CommandResult.ok_msg(f"removed: {res['text']!r}")
 
 
 def build_idea_queue_commands() -> List[Command]:

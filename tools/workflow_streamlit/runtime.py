@@ -84,6 +84,7 @@ def boot_runtime(config_kwargs: tuple) -> Runtime:
         "session_manager": sm,
         "inbox": inbox,
         "apeiron_root": cfg.apeiron_root,
+        "state_dir": cfg.state_dir,
     }
 
     default_session_id = _ensure_default_session(sm, cfg)
