@@ -156,6 +156,11 @@
       "id": "session_target_main",
       "type": "SessionTarget",
       "params": {}
+    },
+    {
+      "id": "inbox_echo_main",
+      "type": "InboxEcho",
+      "params": {}
     }
   ]
 }
