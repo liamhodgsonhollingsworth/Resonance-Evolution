@@ -125,6 +125,37 @@
       "id": "chat_router_main",
       "type": "ChatRouter",
       "params": {}
+    },
+
+    {
+      "id": "session_lister_main",
+      "type": "SessionLister",
+      "params": {}
+    },
+    {
+      "id": "session_resolver_main",
+      "type": "SessionResolver",
+      "params": {}
+    },
+    {
+      "id": "session_sender_main",
+      "type": "SessionSender",
+      "params": {}
+    },
+    {
+      "id": "session_spawner_main",
+      "type": "SessionSpawner",
+      "params": {}
+    },
+    {
+      "id": "session_archiver_main",
+      "type": "SessionArchiver",
+      "params": {}
+    },
+    {
+      "id": "session_target_main",
+      "type": "SessionTarget",
+      "params": {}
     }
   ]
 }
