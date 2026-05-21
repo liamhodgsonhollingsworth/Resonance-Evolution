@@ -54,17 +54,18 @@ def render(ctx: PanelContext) -> None:
         st.session_state["terminal_visible"] = True
     visible = st.session_state["terminal_visible"]
 
+    cctx = _command_context_from_panel(ctx)
     header_cols = st.columns([0.7, 0.15, 0.15])
     with header_cols[0]:
         st.markdown("## Terminal")
     with header_cols[1]:
         label = "hide" if visible else "show"
         if st.button(label, key="terminal-toggle"):
-            st.session_state["terminal_visible"] = not visible
+            registry.run_gui("ui.terminal.toggle", cctx)
             st.rerun()
     with header_cols[2]:
         if visible and st.button("clear", key="terminal-clear-btn"):
-            registry.run("clear", _command_context_from_panel(ctx), source="gui")
+            registry.run_gui("clear", cctx)
             st.rerun()
 
     if not visible:

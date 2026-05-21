@@ -463,6 +463,48 @@ def build_meta_commands(registry: CommandRegistry) -> List[Command]:
 
 
 # ---------------------------------------------------------------------------
+# UI toggles — every interactive widget gets a command, so the in-page
+# terminal logs the equivalent CLI form on each click.
+# ---------------------------------------------------------------------------
+
+
+def _ui_terminal_toggle(ctx: CommandContext, args: List[str]) -> CommandResult:
+    try:
+        import streamlit as st
+        current = st.session_state.get("terminal_visible", True)
+        st.session_state["terminal_visible"] = not current
+        return CommandResult.ok_msg(f"terminal_visible={not current}")
+    except Exception as exc:
+        return CommandResult.err(f"streamlit session unavailable: {exc}")
+
+
+def _ui_terminal_hide(ctx: CommandContext, args: List[str]) -> CommandResult:
+    try:
+        import streamlit as st
+        st.session_state["terminal_visible"] = False
+        return CommandResult.ok_msg("terminal_visible=False")
+    except Exception as exc:
+        return CommandResult.err(f"streamlit session unavailable: {exc}")
+
+
+def _ui_terminal_show(ctx: CommandContext, args: List[str]) -> CommandResult:
+    try:
+        import streamlit as st
+        st.session_state["terminal_visible"] = True
+        return CommandResult.ok_msg("terminal_visible=True")
+    except Exception as exc:
+        return CommandResult.err(f"streamlit session unavailable: {exc}")
+
+
+def build_ui_commands() -> List[Command]:
+    return [
+        Command("ui.terminal.toggle", "show/hide the in-page terminal", _ui_terminal_toggle),
+        Command("ui.terminal.hide", "hide the in-page terminal", _ui_terminal_hide),
+        Command("ui.terminal.show", "show the in-page terminal", _ui_terminal_show),
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Aggregate registration
 # ---------------------------------------------------------------------------
 
@@ -474,4 +516,5 @@ def register_all(registry: CommandRegistry) -> None:
     registry.register_many(build_scene_commands())
     registry.register_many(build_items_commands())
     registry.register_many(build_chat_commands())
+    registry.register_many(build_ui_commands())
     registry.register_many(build_meta_commands(registry))

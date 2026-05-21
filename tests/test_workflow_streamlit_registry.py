@@ -30,16 +30,16 @@ from tools.workflow_streamlit.registry import (
 def test_discover_returns_at_least_the_known_panels():
     panels = discover_panels()
     names = {p.manifest.name for p in panels}
-    # The shipped surface — auth, session-status, scene-picker, idea-queue,
-    # workflow-view, chat. The internal ``items`` helper module declares
-    # itself ``hidden=True`` and the registry filters it out.
+    # The shipped surface after the 2026-05-21 minimization — auth,
+    # session-status, scene-picker, chat, terminal. The workflow / idea
+    # queue panels were removed at the maintainer's request; their CLI
+    # commands stay registered for headless inspection.
     expected = {
         "auth",
         "session-status",
         "scene-picker",
-        "idea-queue",
-        "workflow-view",
         "chat",
+        "terminal",
     }
     assert expected.issubset(names), f"missing panels: {expected - names}"
 

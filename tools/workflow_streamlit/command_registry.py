@@ -129,8 +129,14 @@ class CommandRegistry:
     ) -> CommandResult:
         """Parse a command line and dispatch.
 
-        Shell-style argument splitting (``shlex``). Empty input is a no-op
-        OK. Unknown commands return an err with a hint.
+        Shell-style argument splitting (``shlex``). Empty input is a
+        no-op OK. Unknown commands return an err with a hint.
+
+        Every dispatch also prints a structured line to stdout so the
+        cmd window (the "desktop terminal" surface) shows the parsing
+        side — name, parsed args, source, OK/ERR. The in-page terminal
+        renders the readable form; this print is the non-readable
+        engineering view of the same event.
         """
         line = (command_line or "").strip()
         if not line:
@@ -140,6 +146,7 @@ class CommandRegistry:
         except ValueError as exc:
             result = CommandResult.err(f"parse error: {exc}")
             self._append_log(source, line, result)
+            _stdout_echo(source, line, [], "parse-err", result)
             return result
         if not parts:
             return CommandResult.ok_msg("")
@@ -148,12 +155,14 @@ class CommandRegistry:
         if cmd is None:
             result = CommandResult.err(f"unknown command: {name} (try `help`)")
             self._append_log(source, line, result)
+            _stdout_echo(source, line, parts, "unknown", result)
             return result
         try:
             result = cmd.handler(ctx, args)
         except Exception as exc:
             result = CommandResult.err(f"{name}: {type(exc).__name__}: {exc}")
         self._append_log(source, line, result)
+        _stdout_echo(source, line, parts, name, result)
         return result
 
     def run_gui(
@@ -188,6 +197,41 @@ class CommandRegistry:
 
     def clear_log(self) -> None:
         self._log = []
+
+
+def _stdout_echo(source: str, line: str, parts, resolved: str, result: CommandResult) -> None:
+    """Print the parsing side of a dispatch to stdout.
+
+    Designed for the cmd window where ``streamlit run`` is hosted —
+    the maintainer keeps that window open while using the page; every
+    GUI button click, CLI injection, and typed command lands here in
+    its parsed form. The in-page terminal renders the same event
+    readably for the maintainer.
+    """
+    import sys as _sys
+    marker = "ok" if result.ok else "err"
+    parsed = repr(parts) if parts else "[]"
+    msg_short = (result.message or "").splitlines()[0] if result.message else ""
+    if len(msg_short) > 100:
+        msg_short = msg_short[:97] + "..."
+    try:
+        print(
+            f"[dispatch source={source} resolved={resolved} {marker}] "
+            f"input={line!r} argv={parsed} -> {msg_short}",
+            flush=True,
+            file=_sys.stdout,
+        )
+    except UnicodeEncodeError:
+        # Windows cp1252 console can't render non-ASCII chars; degrade
+        # to ASCII so the dispatch echo still surfaces.
+        ascii_msg = msg_short.encode("ascii", errors="replace").decode("ascii")
+        ascii_input = line.encode("ascii", errors="replace").decode("ascii")
+        print(
+            f"[dispatch source={source} resolved={resolved} {marker}] "
+            f"input={ascii_input!r} argv={parsed} -> {ascii_msg}",
+            flush=True,
+            file=_sys.stdout,
+        )
 
 
 def format_log_entry(entry: CommandLogEntry) -> str:

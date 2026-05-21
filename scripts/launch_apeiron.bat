@@ -1,26 +1,38 @@
 @echo off
-REM Apeiron one-click launcher (Windows). SPEC-001 (one-click GUI launch).
+REM Apeiron desktop launcher — boots the Streamlit workflow surface.
 REM
-REM Boots the Streamlit workflow surface — the browser-rendered GUI that
-REM is the local-launch counterpart of the eventual Resonance website
-REM workflow surface. Same engine + sessions + inbox primitives as the
-REM Tk GUI and terminal REPL; the renderer is the only difference.
+REM Apeiron.lnk on the Desktop points here. Double-click opens this
+REM cmd window, which is the "desktop terminal" the maintainer asked
+REM for: it shows the non-readable parsing side of every dispatched
+REM command. Streamlit's own page is the readable side, shown in the
+REM browser tab that opens automatically.
 REM
-REM Right-click this .bat -> "Create shortcut" -> drag the shortcut to
-REM the Desktop. (The existing Apeiron.lnk on the Desktop already points
-REM at this file, so updating the .bat updates the shortcut behavior.)
-REM
-REM What this does:
-REM   1. cd's to the Apeiron repo root.
-REM   2. Runs `python -m tools.workflow_streamlit`, which boots the
-REM      engine + auto-spawns the default workflow-management session
-REM      + opens the Streamlit page in the default browser.
-REM
-REM Other surfaces, kept available for power users:
-REM   * Terminal REPL:  python -m tools.workflow --scene workflow_view.json
-REM   * Tk GUI:         python -m tools.workflow_gui --scene workflow_view.json
+REM Power-user alternatives:
+REM   python -m tools.workflow         (terminal-only REPL)
+REM   python -m tools.workflow_gui     (legacy Tk GUI)
 
 setlocal
 cd /d "%~dp0\.."
-python -m tools.workflow_streamlit %*
+
+REM Try the Python Launcher first (`py` is bundled with the standard
+REM Windows Python installer and respects shebangs), then plain
+REM `python`, then warn the user clearly.
+where py >nul 2>nul
+if %errorlevel% == 0 (
+    py -m tools.workflow_streamlit %*
+    goto end
+)
+where python >nul 2>nul
+if %errorlevel% == 0 (
+    python -m tools.workflow_streamlit %*
+    goto end
+)
+echo.
+echo [apeiron] could not find Python on PATH.
+echo [apeiron] install Python 3.11+ (and tick "Add to PATH") or check
+echo [apeiron] `py` from the Python Launcher for Windows is available.
+echo.
+pause
+
+:end
 endlocal
