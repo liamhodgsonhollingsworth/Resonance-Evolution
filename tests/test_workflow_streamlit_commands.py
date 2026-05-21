@@ -125,6 +125,13 @@ def runtime(tmp_path):
         engine.precompute()
     sm = _FakeSessionManager()
     inbox = _FakeInbox()
+    # Mirror runtime.boot_runtime: register workflow singletons on
+    # engine.cache so logic node-types (ChatRouter, etc.) dispatched
+    # via engine.actions.dispatch_action can find them.
+    engine.cache["__workflow__"] = {
+        "session_manager": sm,
+        "inbox": inbox,
+    }
     registry = CommandRegistry()
     register_all(registry)
     ctx = CommandContext(
