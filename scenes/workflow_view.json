@@ -171,6 +171,11 @@
       "id": "scene_mutator_main",
       "type": "SceneMutator",
       "params": {}
+    },
+    {
+      "id": "panel_positioner_main",
+      "type": "PanelPositioner",
+      "params": {}
     }
   ]
 }

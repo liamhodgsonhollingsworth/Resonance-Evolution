@@ -693,3 +693,39 @@ def test_registry_re_registration_replaces_handler(runtime):
     runtime["registry"].register(Command("custom.versioned", "v2", v2))
     runtime["registry"].run("custom.versioned", runtime["ctx"])
     assert calls == ["v1", "v2"]
+
+
+# ---------------------------------------------------------------------------
+# Panel positioning (panel.* via panel_positioner_main)
+# ---------------------------------------------------------------------------
+
+
+def test_panel_register_move_resize_through_streamlit(runtime):
+    reg = runtime["registry"]
+    ctx = runtime["ctx"]
+    r = reg.run("panel.register chat 100 200 480 320", ctx)
+    assert r.ok
+    # 100 -> 96, 200 -> 204 (12-px grid snap).
+    assert r.data["x"] == 96 and r.data["y"] == 204
+    r = reg.run("panel.move chat 60 60", ctx)
+    assert r.ok and r.data["x"] == 60 and r.data["y"] == 60
+    r = reg.run("panel.resize chat 240 120", ctx)
+    assert r.ok and r.data["w"] == 240 and r.data["h"] == 120
+
+
+def test_panel_lock_blocks_move_through_streamlit(runtime):
+    reg = runtime["registry"]
+    ctx = runtime["ctx"]
+    reg.run("panel.register p 0 0", ctx)
+    reg.run("panel.lock p", ctx)
+    r = reg.run("panel.move p 96 96", ctx)
+    assert not r.ok and "locked" in r.message.lower()
+
+
+def test_panel_list_through_streamlit(runtime):
+    reg = runtime["registry"]
+    ctx = runtime["ctx"]
+    reg.run("panel.register a 0 0", ctx)
+    reg.run("panel.register b 100 100", ctx)
+    r = reg.run("panel.list", ctx)
+    assert r.ok and len(r.data) == 2

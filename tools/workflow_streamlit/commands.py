@@ -382,6 +382,168 @@ def build_scene_commands() -> List[Command]:
 
 
 # ---------------------------------------------------------------------------
+# Panel positioning — surface-agnostic snap/move/resize/lock math.
+# Every verb dispatches against panel_positioner_main; the math lives
+# in node_types/panel_positioner.py and is shared with the Tk surface
+# (when it migrates) and the HTML/MCP surfaces (future).
+# ---------------------------------------------------------------------------
+
+
+def _panel_register(ctx: CommandContext, args: List[str]) -> CommandResult:
+    if not args:
+        return CommandResult.err("usage: panel.register <id> [x] [y] [w] [h]")
+    panel_id = args[0]
+    try:
+        x = int(args[1]) if len(args) > 1 else 0
+        y = int(args[2]) if len(args) > 2 else 0
+        w = int(args[3]) if len(args) > 3 else 480
+        h = int(args[4]) if len(args) > 4 else 320
+    except ValueError:
+        return CommandResult.err("x/y/w/h must be ints")
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="panel_positioner_main",
+        action_name="register",
+        payload={"panel_id": panel_id, "x": x, "y": y, "w": w, "h": h},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "panel_positioner_main")
+    res = view.get("last_register", {})
+    if not res.get("registered"):
+        return CommandResult.err(res.get("reason") or "register failed")
+    return CommandResult.ok_msg(
+        f"registered {panel_id} at ({res['x']},{res['y']}) {res['w']}x{res['h']}",
+        data=res,
+    )
+
+
+def _panel_move(ctx: CommandContext, args: List[str]) -> CommandResult:
+    if len(args) < 3:
+        return CommandResult.err("usage: panel.move <id> <x> <y>")
+    try:
+        panel_id, x, y = args[0], int(args[1]), int(args[2])
+    except ValueError:
+        return CommandResult.err("x and y must be ints")
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="panel_positioner_main",
+        action_name="move",
+        payload={"panel_id": panel_id, "x": x, "y": y},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "panel_positioner_main")
+    res = view.get("last_move", {})
+    if not res.get("moved"):
+        return CommandResult.err(res.get("reason") or "move failed")
+    return CommandResult.ok_msg(f"moved {panel_id} to ({res['x']},{res['y']})", data=res)
+
+
+def _panel_resize(ctx: CommandContext, args: List[str]) -> CommandResult:
+    if len(args) < 3:
+        return CommandResult.err("usage: panel.resize <id> <w> <h>")
+    try:
+        panel_id, w, h = args[0], int(args[1]), int(args[2])
+    except ValueError:
+        return CommandResult.err("w and h must be ints")
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="panel_positioner_main",
+        action_name="resize",
+        payload={"panel_id": panel_id, "w": w, "h": h},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "panel_positioner_main")
+    res = view.get("last_resize", {})
+    if not res.get("resized"):
+        return CommandResult.err(res.get("reason") or "resize failed")
+    return CommandResult.ok_msg(f"resized {panel_id} to {res['w']}x{res['h']}", data=res)
+
+
+def _panel_lock(ctx: CommandContext, args: List[str]) -> CommandResult:
+    if not args:
+        return CommandResult.err("usage: panel.lock <id>")
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="panel_positioner_main",
+        action_name="lock", payload={"panel_id": args[0]},
+    )
+    return CommandResult.ok_msg(f"locked {args[0]}")
+
+
+def _panel_unlock(ctx: CommandContext, args: List[str]) -> CommandResult:
+    if not args:
+        return CommandResult.err("usage: panel.unlock <id>")
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="panel_positioner_main",
+        action_name="unlock", payload={"panel_id": args[0]},
+    )
+    return CommandResult.ok_msg(f"unlocked {args[0]}")
+
+
+def _panel_archive(ctx: CommandContext, args: List[str]) -> CommandResult:
+    if not args:
+        return CommandResult.err("usage: panel.archive <id>")
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="panel_positioner_main",
+        action_name="archive", payload={"panel_id": args[0]},
+    )
+    return CommandResult.ok_msg(f"archived {args[0]}")
+
+
+def _panel_snap(ctx: CommandContext, args: List[str]) -> CommandResult:
+    if not args:
+        return CommandResult.err("usage: panel.snap <id>")
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="panel_positioner_main",
+        action_name="snap_to_peers", payload={"panel_id": args[0]},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "panel_positioner_main")
+    res = view.get("last_snap", {})
+    if not res.get("snapped"):
+        return CommandResult.ok_msg(res.get("reason") or "no snap")
+    return CommandResult.ok_msg(f"snapped {args[0]} to ({res['x']},{res['y']})", data=res)
+
+
+def _panel_list(ctx: CommandContext, args: List[str]) -> CommandResult:
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="panel_positioner_main",
+        action_name="list", payload={},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "panel_positioner_main")
+    panels = view.get("last_list", [])
+    if not panels:
+        return CommandResult.ok_msg("(no panels)", data=[])
+    lines = []
+    for p in panels:
+        flags = " [locked]" if p.get("locked") else ""
+        flags += " [archived]" if p.get("archived") else ""
+        lines.append(
+            f"  {p['panel_id']}: ({p['x']},{p['y']}) {p['w']}x{p['h']}{flags}"
+        )
+    return CommandResult.ok_msg("\n".join(lines), data=panels)
+
+
+def build_panel_commands() -> List[Command]:
+    return [
+        Command("panel.register", "register a panel for positioning",
+                _panel_register, arg_help="<id> [x] [y] [w] [h]"),
+        Command("panel.move", "move a panel; snaps to 12-px grid",
+                _panel_move, arg_help="<id> <x> <y>"),
+        Command("panel.resize", "resize a panel; 48-px minimum; snaps to grid",
+                _panel_resize, arg_help="<id> <w> <h>"),
+        Command("panel.lock", "lock a panel (refuse move/resize)",
+                _panel_lock, arg_help="<id>"),
+        Command("panel.unlock", "unlock a panel", _panel_unlock, arg_help="<id>"),
+        Command("panel.archive", "archive a panel (skipped by peer-snap)",
+                _panel_archive, arg_help="<id>"),
+        Command("panel.snap", "snap a panel to closest peer edges",
+                _panel_snap, arg_help="<id>"),
+        Command("panel.list", "list all registered panels", _panel_list),
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Items / workflow panels
 # ---------------------------------------------------------------------------
 
@@ -588,6 +750,7 @@ def register_all(registry: CommandRegistry) -> None:
     registry.register_many(build_idea_queue_commands())
     registry.register_many(build_session_commands())
     registry.register_many(build_scene_commands())
+    registry.register_many(build_panel_commands())
     registry.register_many(build_items_commands())
     registry.register_many(build_chat_commands())
     registry.register_many(build_ui_commands())
