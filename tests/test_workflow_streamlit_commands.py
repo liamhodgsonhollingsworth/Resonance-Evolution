@@ -730,3 +730,64 @@ def test_panel_list_through_streamlit(runtime):
     reg.run("panel.register b 100 100", ctx)
     r = reg.run("panel.list", ctx)
     assert r.ok and len(r.data) == 2
+
+
+# ---------------------------------------------------------------------------
+# Scene mutation (mutate.* via scene_mutator_main)
+# ---------------------------------------------------------------------------
+
+
+def test_mutate_spawn_creates_node(runtime):
+    reg = runtime["registry"]
+    ctx = runtime["ctx"]
+    r = reg.run("mutate.spawn my_new_cube Cube size=2", ctx)
+    assert r.ok and r.data.get("node_id") == "my_new_cube"
+    assert "my_new_cube" in ctx.engine.nodes
+
+
+def test_mutate_spawn_rejects_missing_args(runtime):
+    reg = runtime["registry"]
+    ctx = runtime["ctx"]
+    r = reg.run("mutate.spawn", ctx)
+    assert not r.ok and "usage" in r.message
+
+
+def test_mutate_set_param(runtime):
+    reg = runtime["registry"]
+    ctx = runtime["ctx"]
+    reg.run("mutate.spawn s_cube Cube size=1", ctx)
+    r = reg.run("mutate.set-param s_cube size 5", ctx)
+    assert r.ok
+    assert ctx.engine.nodes["s_cube"].params["size"] == 5
+
+
+def test_mutate_connect_disconnect(runtime):
+    reg = runtime["registry"]
+    ctx = runtime["ctx"]
+    reg.run("mutate.spawn src_node Cube", ctx)
+    reg.run("mutate.spawn dst_node Cube", ctx)
+    r = reg.run("mutate.connect src_node child dst_node", ctx)
+    assert r.ok
+    assert ctx.engine.nodes["src_node"].connections.get("child") == "dst_node"
+    r = reg.run("mutate.disconnect src_node child", ctx)
+    assert r.ok
+    assert "child" not in ctx.engine.nodes["src_node"].connections
+
+
+def test_mutate_list_nodes_includes_scene_mutator(runtime):
+    reg = runtime["registry"]
+    ctx = runtime["ctx"]
+    r = reg.run("mutate.list-nodes", ctx)
+    assert r.ok
+    ids = {n["id"] for n in r.data}
+    assert "scene_mutator_main" in ids
+    assert "chat_router_main" in ids
+
+
+def test_mutate_list_types_includes_cube(runtime):
+    reg = runtime["registry"]
+    ctx = runtime["ctx"]
+    r = reg.run("mutate.list-types", ctx)
+    assert r.ok
+    assert "Cube" in r.data
+    assert "SceneMutator" in r.data
