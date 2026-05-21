@@ -82,6 +82,108 @@ def discover_panels(panels_dir: Path = PANELS_DIR) -> List[RegisteredPanel]:
     return out
 
 
+def discover_panels_with_engine_overrides(
+    engine: Any,
+    panels_dir: Path = PANELS_DIR,
+) -> List[RegisteredPanel]:
+    """Discover filesystem panels + apply scene-declared overrides.
+
+    Walks ``panels/`` for every panel module (the existing path), then
+    walks ``engine.nodes`` for every ``StreamlitPanel`` instance and
+    applies the scene's overrides on top of the panel module's own
+    manifest. A panel declared in the scene with explicit mount_point
+    or order wins over the panel's PanelManifest defaults.
+
+    A panel module that the scene does NOT declare is still discovered
+    and rendered with its own defaults — declarative-scene is additive,
+    not exclusive, so the existing surface keeps working untouched.
+
+    A scene declaration whose panel_name does not match any panel
+    module is recorded as a hidden RegisteredPanel with a load_error so
+    the driver can surface the mismatch without crashing.
+
+    Closes the parallel-registry gap from the 2026-05-21 audit
+    (criterion 2). The deeper lift — moving panels into ``node_types/``
+    entirely — is a follow-up; this function is the bridge.
+    """
+    panels = discover_panels(panels_dir=panels_dir)
+    by_name = {p.manifest.name: p for p in panels}
+
+    # Walk engine.nodes for StreamlitPanel instances and apply overrides.
+    nodes = getattr(engine, "nodes", {}) or {}
+    for node_id, instance in nodes.items():
+        if getattr(instance, "type_name", None) != "StreamlitPanel":
+            continue
+        state = getattr(instance, "state", {}) or {}
+        panel_name = (state.get("panel_name") or "").strip()
+        if not panel_name:
+            continue
+        match = by_name.get(panel_name)
+        if match is None:
+            # Scene declares a panel the filesystem doesn't carry.
+            # Record it as a hidden + load-errored entry so the driver
+            # can show the mismatch without crashing.
+            placeholder = PanelManifest(
+                name=panel_name,
+                description=(
+                    f"scene declared StreamlitPanel '{node_id}' with "
+                    f"panel_name='{panel_name}' but no matching panel "
+                    f"module exists under panels/"
+                ),
+                hidden=True,
+            )
+            panels.append(
+                RegisteredPanel(
+                    manifest=placeholder,
+                    render=_error_render(
+                        f"{panel_name} (scene)",
+                        ValueError(f"unknown panel_name {panel_name!r}"),
+                        f"scene node {node_id} declared this panel",
+                    ),
+                    source_path=Path(f"<scene:{node_id}>"),
+                    load_error=f"unknown panel_name {panel_name!r}",
+                )
+            )
+            continue
+
+        # Apply scene-declared overrides on top of the module's manifest.
+        override_mount = state.get("mount_point")
+        override_order = state.get("order")
+        override_hidden = state.get("hidden")
+        if (
+            override_mount is None
+            and override_order is None
+            and not override_hidden
+        ):
+            continue  # nothing to override
+        new_manifest = PanelManifest(
+            name=match.manifest.name,
+            description=match.manifest.description,
+            mount_point=(
+                override_mount
+                if override_mount
+                else match.manifest.mount_point
+            ),
+            order=(
+                int(override_order)
+                if override_order is not None
+                else match.manifest.order
+            ),
+            requires_auth=match.manifest.requires_auth,
+            hidden=bool(override_hidden) or match.manifest.hidden,
+        )
+        # Replace the match in-place to preserve list ordering.
+        idx = panels.index(match)
+        panels[idx] = RegisteredPanel(
+            manifest=new_manifest,
+            render=match.render,
+            source_path=match.source_path,
+            load_error=match.load_error,
+        )
+        by_name[match.manifest.name] = panels[idx]
+    return panels
+
+
 def _import_panel_module(path: Path) -> Any:
     """Fresh-import a panel module under a stable name."""
     mod_name = f"apeiron_workflow_streamlit_panels_{path.stem}"
