@@ -380,6 +380,156 @@ def build_scene_commands() -> List[Command]:
 
 
 # ---------------------------------------------------------------------------
+# Scene mutation — runtime evolve-from-within primitive. Every verb
+# dispatches against scene_mutator_main; the engine's SPEC-076 mutation
+# surface (spawn / set_param / connect / disconnect) is exposed plus
+# the two inspectors (list_nodes / list_types). The maintainer's
+# 2026-05-21 stress-test directive — "add new nodes, move those around
+# freely" from within the software — is operational through these
+# commands today. The Tk + HTML + MCP surfaces inherit the same verbs.
+# ---------------------------------------------------------------------------
+
+
+def _mutate_spawn(ctx: CommandContext, args: List[str]) -> CommandResult:
+    if len(args) < 2:
+        return CommandResult.err("usage: mutate.spawn <node_id> <type_name> [key=val ...]")
+    node_id = args[0]
+    type_name = args[1]
+    params: dict = {}
+    for tok in args[2:]:
+        if "=" not in tok:
+            return CommandResult.err(f"bad param {tok!r}; use key=value")
+        k, _, v = tok.partition("=")
+        # Best-effort numeric coercion; falls back to string.
+        try:
+            params[k] = int(v)
+        except ValueError:
+            try:
+                params[k] = float(v)
+            except ValueError:
+                params[k] = v
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="scene_mutator_main",
+        action_name="spawn",
+        payload={"node_id": node_id, "type_name": type_name, "params": params},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "scene_mutator_main")
+    res = view.get("last_spawn", {})
+    if not res.get("spawned"):
+        return CommandResult.err(res.get("reason") or "spawn failed")
+    return CommandResult.ok_msg(
+        f"spawned {res['node_id']} of type {res['type_name']}", data=res
+    )
+
+
+def _mutate_set_param(ctx: CommandContext, args: List[str]) -> CommandResult:
+    if len(args) < 3:
+        return CommandResult.err("usage: mutate.set-param <node_id> <key> <value>")
+    node_id, key, raw = args[0], args[1], " ".join(args[2:])
+    # Numeric coercion as above.
+    try:
+        value = int(raw)
+    except ValueError:
+        try:
+            value = float(raw)
+        except ValueError:
+            value = raw
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="scene_mutator_main",
+        action_name="set_param",
+        payload={"node_id": node_id, "key": key, "value": value},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "scene_mutator_main")
+    res = view.get("last_set_param", {})
+    if not res.get("set"):
+        return CommandResult.err(res.get("reason") or "set_param failed")
+    return CommandResult.ok_msg(f"{node_id}.{key} = {value!r}", data=res)
+
+
+def _mutate_connect(ctx: CommandContext, args: List[str]) -> CommandResult:
+    if len(args) < 3:
+        return CommandResult.err("usage: mutate.connect <from_id> <slot> <to_id>")
+    from_id, slot, to_id = args[0], args[1], args[2]
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="scene_mutator_main",
+        action_name="connect",
+        payload={"from_id": from_id, "slot": slot, "to_id": to_id},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "scene_mutator_main")
+    res = view.get("last_connect", {})
+    if not res.get("connected"):
+        return CommandResult.err(res.get("reason") or "connect failed")
+    return CommandResult.ok_msg(f"{from_id}.{slot} -> {to_id}", data=res)
+
+
+def _mutate_disconnect(ctx: CommandContext, args: List[str]) -> CommandResult:
+    if len(args) < 2:
+        return CommandResult.err("usage: mutate.disconnect <from_id> <slot>")
+    from_id, slot = args[0], args[1]
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="scene_mutator_main",
+        action_name="disconnect",
+        payload={"from_id": from_id, "slot": slot},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "scene_mutator_main")
+    res = view.get("last_disconnect", {})
+    if not res.get("disconnected"):
+        return CommandResult.err(res.get("reason") or "disconnect failed")
+    return CommandResult.ok_msg(f"unwired {from_id}.{slot}", data=res)
+
+
+def _mutate_list_nodes(ctx: CommandContext, args: List[str]) -> CommandResult:
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="scene_mutator_main",
+        action_name="list_nodes", payload={},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "scene_mutator_main")
+    nodes = view.get("last_list_nodes", [])
+    if not nodes:
+        return CommandResult.ok_msg("(no nodes)", data=[])
+    lines = [
+        f"  {n['id']:30s} {n['type']:20s}" + (" [dead]" if n.get("dead") else "")
+        for n in nodes
+    ]
+    return CommandResult.ok_msg("\n".join(lines), data=nodes)
+
+
+def _mutate_list_types(ctx: CommandContext, args: List[str]) -> CommandResult:
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="scene_mutator_main",
+        action_name="list_types", payload={},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "scene_mutator_main")
+    types = view.get("last_list_types", [])
+    if not types:
+        return CommandResult.ok_msg("(no types discovered)", data=[])
+    return CommandResult.ok_msg("\n".join(f"  {t}" for t in types), data=types)
+
+
+def build_mutate_commands() -> List[Command]:
+    return [
+        Command("mutate.spawn", "spawn a new node into the live graph",
+                _mutate_spawn, arg_help="<node_id> <type_name> [key=val ...]"),
+        Command("mutate.set-param", "set a param on a live node",
+                _mutate_set_param, arg_help="<node_id> <key> <value>"),
+        Command("mutate.connect", "wire from_id.slot -> to_id",
+                _mutate_connect, arg_help="<from_id> <slot> <to_id>"),
+        Command("mutate.disconnect", "unwire from_id.slot",
+                _mutate_disconnect, arg_help="<from_id> <slot>"),
+        Command("mutate.list-nodes", "list every node in the live graph",
+                _mutate_list_nodes),
+        Command("mutate.list-types", "list every node-type the engine discovered",
+                _mutate_list_types),
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Panel positioning — surface-agnostic snap/move/resize/lock math.
 # Every verb dispatches against panel_positioner_main; the math lives
 # in node_types/panel_positioner.py and is shared with the Tk surface
@@ -748,6 +898,7 @@ def register_all(registry: CommandRegistry) -> None:
     registry.register_many(build_idea_queue_commands())
     registry.register_many(build_session_commands())
     registry.register_many(build_scene_commands())
+    registry.register_many(build_mutate_commands())
     registry.register_many(build_panel_commands())
     registry.register_many(build_items_commands())
     registry.register_many(build_chat_commands())
