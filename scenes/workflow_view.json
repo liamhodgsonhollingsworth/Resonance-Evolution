@@ -181,6 +181,11 @@
       "id": "idea_queue_main",
       "type": "IdeaQueue",
       "params": {}
+    },
+    {
+      "id": "auth_gate_main",
+      "type": "AuthGate",
+      "params": {}
     }
   ]
 }
