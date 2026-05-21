@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from tools.workflow_streamlit._common_imports import auth as auth_module
+from engine import actions as engine_actions
 from tools.workflow_streamlit.panels._common import MOUNT_GATE, PanelContext, PanelManifest
 
 
@@ -57,10 +57,10 @@ def render(ctx: PanelContext) -> None:
 
     # Render the login form and short-circuit the rest of the page.
     ctx.scratch["gate"] = "block"
-    _render_login_form(cfg)
+    _render_login_form(ctx)
 
 
-def _render_login_form(cfg) -> None:
+def _render_login_form(ctx: PanelContext) -> None:
     st.markdown("# Apeiron")
     st.markdown("Sign in to continue.")
     with st.form("login-form"):
@@ -69,12 +69,18 @@ def _render_login_form(cfg) -> None:
         submitted = st.form_submit_button("Sign in")
     if not submitted:
         st.stop()
-    if not username or not password:
-        st.error("Enter a username and password.")
-        st.stop()
-    if auth_module.authenticate(username, password, accounts_path=cfg.accounts_path):
-        st.session_state["user"] = username
+    # Dispatch through auth_gate_main; the node owns the actual
+    # password verification + accounts-store I/O. Surface owns
+    # session-state and rerun decisions.
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="auth_gate_main", action_name="authenticate",
+        payload={"username": username, "password": password},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "auth_gate_main")
+    res = view.get("last_authenticate", {})
+    if res.get("ok"):
+        st.session_state["user"] = res["username"]
         st.rerun()
     else:
-        st.error("Incorrect username or password.")
+        st.error(res.get("reason") or "Incorrect username or password.")
         st.stop()
