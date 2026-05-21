@@ -37,6 +37,7 @@ class Runtime:
     default_session_id: Optional[str]
     command_registry: Any = None
     inbox_pump: Any = None
+    scene_watcher: Any = None
 
 
 @st.cache_resource(show_spinner="booting Apeiron engine…")
@@ -68,6 +69,15 @@ def boot_runtime(config_kwargs: tuple) -> Runtime:
     file_watcher = FileWatcher(engine=engine)
     file_watcher.start()
 
+    # Live-reload for scenes/*.json — closes the scenes-not-watched gap
+    # surfaced in the 2026-05-21 audit (criterion 4 of the originating
+    # Notion entry's bare-minimum block). Modified-event for the active
+    # scene triggers engine.load_scene + precompute; other scenes are
+    # tracked but not auto-loaded.
+    from engine.scene_watcher import SceneWatcher
+    scene_watcher = SceneWatcher(engine=engine)
+    scene_watcher.start()
+
     from tools.workflow.session_manager import SessionManager
     from tools.workflow.inbox import Inbox
 
@@ -86,6 +96,7 @@ def boot_runtime(config_kwargs: tuple) -> Runtime:
         "apeiron_root": cfg.apeiron_root,
         "state_dir": cfg.state_dir,
         "accounts_path": cfg.accounts_path,
+        "default_scene": cfg.default_scene,
     }
 
     default_session_id = _ensure_default_session(sm, cfg)
@@ -115,6 +126,7 @@ def boot_runtime(config_kwargs: tuple) -> Runtime:
         default_session_id=default_session_id,
         command_registry=registry,
         inbox_pump=inbox_pump,
+        scene_watcher=scene_watcher,
     )
 
 
