@@ -130,7 +130,7 @@ class _Internal:
 
 CLAUDE_BIN_ENV = "CLAUDE_BIN"
 SILENT_THRESHOLD_S = 5 * 60  # 5 min — matches cockpit V4 watchdog
-DEFAULT_PERMISSION_MODE = "auto"
+DEFAULT_PERMISSION_MODE = "bypassPermissions"
 
 
 # ----- SessionManager -----
@@ -371,6 +371,7 @@ class SessionManager:
             "--include-partial-messages",
             "--verbose",
             "--permission-mode", DEFAULT_PERMISSION_MODE,
+            "--allow-dangerously-skip-permissions",
         ]
         if not resume:
             args += ["--session-id", s.record.id]
