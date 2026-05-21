@@ -324,34 +324,52 @@ def build_session_commands() -> List[Command]:
 
 
 def _scene_list(ctx: CommandContext, args: List[str]) -> CommandResult:
-    scenes_dir = ctx.apeiron_root / "scenes"
-    if not scenes_dir.exists():
-        return CommandResult.err("no scenes/ directory")
-    names = sorted(p.name for p in scenes_dir.glob("*.json"))
+    """Dispatch through SceneLoader node."""
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="scene_loader_main",
+        action_name="list", payload={},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "scene_loader_main")
+    if view.get("error"):
+        return CommandResult.err(view["error"])
+    names = view.get("scenes", [])
     if not names:
         return CommandResult.ok_msg("(no scenes)", data=[])
     return CommandResult.ok_msg("\n".join(f"  {n}" for n in names), data=names)
 
 
 def _scene_load(ctx: CommandContext, args: List[str]) -> CommandResult:
+    """Dispatch through SceneLoader node."""
     if not args:
         return CommandResult.err("usage: scene.load <name>")
     name = args[0]
-    scenes_dir = ctx.apeiron_root / "scenes"
-    target = scenes_dir / (name if name.endswith(".json") else f"{name}.json")
-    if not target.exists():
-        return CommandResult.err(f"scene not found: {target.name}")
-    try:
-        ctx.engine.load_scene(target)
-        ctx.engine.precompute()
-    except Exception as exc:
-        return CommandResult.err(f"load failed: {exc}")
-    ctx.scratch["current_scene"] = target.name
-    return CommandResult.ok_msg(f"loaded {target.name}")
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="scene_loader_main",
+        action_name="load", payload={"name": name},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "scene_loader_main")
+    result = view.get("last_load", {})
+    if not result.get("loaded"):
+        return CommandResult.err(result.get("reason") or "load failed")
+    ctx.scratch["current_scene"] = result["scene"]
+    return CommandResult.ok_msg(f"loaded {result['scene']}")
 
 
 def _scene_current(ctx: CommandContext, args: List[str]) -> CommandResult:
-    current = ctx.scratch.get("current_scene") or ctx.config.default_scene
+    """Dispatch through SceneLoader node; falls back to default_scene."""
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="scene_loader_main",
+        action_name="current", payload={},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "scene_loader_main")
+    current = (
+        view.get("current_scene")
+        or ctx.scratch.get("current_scene")
+        or ctx.config.default_scene
+    )
     return CommandResult.ok_msg(current, data=current)
 
 

@@ -131,6 +131,7 @@ def runtime(tmp_path):
     engine.cache["__workflow__"] = {
         "session_manager": sm,
         "inbox": inbox,
+        "apeiron_root": REPO_ROOT,
     }
     registry = CommandRegistry()
     register_all(registry)

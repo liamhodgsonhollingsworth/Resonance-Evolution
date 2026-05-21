@@ -161,6 +161,11 @@
       "id": "inbox_echo_main",
       "type": "InboxEcho",
       "params": {}
+    },
+    {
+      "id": "scene_loader_main",
+      "type": "SceneLoader",
+      "params": {}
     }
   ]
 }
