@@ -462,6 +462,70 @@ def test_chat_round_trip_via_chat_panel(runtime):
     assert reply.sender == sid
 
 
+# ---------------------------------------------------------------------------
+# Auth (auth.* via auth_gate_main)
+# ---------------------------------------------------------------------------
+
+
+def test_auth_login_success_via_registry(runtime, tmp_path):
+    from tools.workflow import auth as auth_module
+    accounts_path = tmp_path / "accounts.json"
+    auth_module.create_account("alice", "correcthorse", accounts_path=accounts_path)
+    runtime["engine"].cache["__workflow__"]["accounts_path"] = accounts_path
+    r = runtime["registry"].run("auth.login alice correcthorse", runtime["ctx"])
+    assert r.ok
+    assert r.data["ok"] is True
+    assert r.data["username"] == "alice"
+
+
+def test_auth_login_wrong_password_via_registry(runtime, tmp_path):
+    from tools.workflow import auth as auth_module
+    accounts_path = tmp_path / "accounts.json"
+    auth_module.create_account("alice", "correcthorse", accounts_path=accounts_path)
+    runtime["engine"].cache["__workflow__"]["accounts_path"] = accounts_path
+    r = runtime["registry"].run("auth.login alice wrong", runtime["ctx"])
+    assert not r.ok
+    assert "incorrect" in r.message.lower()
+
+
+def test_auth_login_usage(runtime):
+    r = runtime["registry"].run("auth.login", runtime["ctx"])
+    assert not r.ok and "usage" in r.message
+
+
+def test_auth_has_any_account_via_registry(runtime, tmp_path):
+    from tools.workflow import auth as auth_module
+    accounts_path = tmp_path / "accounts.json"
+    auth_module.create_account("alice", "x", accounts_path=accounts_path)
+    runtime["engine"].cache["__workflow__"]["accounts_path"] = accounts_path
+    r = runtime["registry"].run("auth.has-any-account", runtime["ctx"])
+    assert r.ok and r.data is True
+
+
+def test_auth_list_accounts_via_registry(runtime, tmp_path):
+    from tools.workflow import auth as auth_module
+    accounts_path = tmp_path / "accounts.json"
+    auth_module.create_account("alice", "x", accounts_path=accounts_path)
+    auth_module.create_account("bob", "y", accounts_path=accounts_path)
+    runtime["engine"].cache["__workflow__"]["accounts_path"] = accounts_path
+    r = runtime["registry"].run("auth.list-accounts", runtime["ctx"])
+    assert r.ok and "alice" in r.data and "bob" in r.data
+
+
+# ---------------------------------------------------------------------------
+# session.respawn — verify cache-clear folded into command handler
+# ---------------------------------------------------------------------------
+
+
+def test_session_respawn_flag_set_and_cache_clear_safe(runtime):
+    """The respawn handler sets the scratch flag the runtime reads AND
+    calls st.cache_resource.clear() best-effort. In the test environment
+    streamlit may not be importable; the handler must not raise."""
+    r = runtime["registry"].run("session.respawn", runtime["ctx"])
+    assert r.ok
+    assert runtime["ctx"].scratch.get("respawn_session") is True
+
+
 def test_chat_filter_hides_non_chat_inbox_traffic(runtime):
     """Criterion 6: only message nodes addressed to the maintainer
     (or maintainer→session) surface in the chat panel. Other inbox

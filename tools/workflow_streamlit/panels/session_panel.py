@@ -42,8 +42,10 @@ def render(ctx: PanelContext) -> None:
             unsafe_allow_html=True,
         )
         if st.button("retry spawn", key="session-respawn"):
+            # The session.respawn command now folds st.cache_resource.clear()
+            # into the handler so the CLI bridge produces the same effect as
+            # this button. Per the 2026-05-21 GUI/CLI 1:1 audit.
             registry.run_gui("session.respawn", ctx.as_command_context())
-            st.cache_resource.clear()
             st.rerun()
         return
 
@@ -67,8 +69,10 @@ def render(ctx: PanelContext) -> None:
 
     if rec.status == "archived":
         if st.button("re-spawn", key="session-respawn-archived"):
+            # The session.respawn command now folds st.cache_resource.clear()
+            # into the handler so the CLI bridge produces the same effect as
+            # this button. Per the 2026-05-21 GUI/CLI 1:1 audit.
             registry.run_gui("session.respawn", ctx.as_command_context())
-            st.cache_resource.clear()
             st.rerun()
 
 

@@ -17,9 +17,10 @@ Two modes, switched by ``ctx.config.require_login``:
 
 from __future__ import annotations
 
+import shlex
+
 import streamlit as st
 
-from engine import actions as engine_actions
 from tools.workflow_streamlit.panels._common import MOUNT_GATE, PanelContext, PanelManifest
 
 
@@ -69,18 +70,21 @@ def _render_login_form(ctx: PanelContext) -> None:
         submitted = st.form_submit_button("Sign in")
     if not submitted:
         st.stop()
-    # Dispatch through auth_gate_main; the node owns the actual
-    # password verification + accounts-store I/O. Surface owns
-    # session-state and rerun decisions.
-    engine_actions.dispatch_action(
-        ctx.engine, renderer_id="auth_gate_main", action_name="authenticate",
-        payload={"username": username, "password": password},
-    )
-    view = engine_actions.get_view_state(ctx.engine, "auth_gate_main")
-    res = view.get("last_authenticate", {})
-    if res.get("ok"):
-        st.session_state["user"] = res["username"]
+    # Route the submit through the command registry so the same code
+    # path serves the GUI form, the bottom terminal's typed `auth.login`,
+    # and any future CLI-bridge invocation. The 2026-05-21 GUI/CLI 1:1
+    # audit identified this as the missing CLI-reachable interaction.
+    registry = ctx.scratch.get("command_registry")
+    if registry is None:
+        st.error("command registry missing; cannot sign in")
+        st.stop()
+    line = f"auth.login {shlex.quote(username)} {shlex.quote(password)}"
+    result = registry.run_gui(line, ctx.as_command_context())
+    if result.ok:
+        # The command returns the authenticated username in data.
+        signed_in_as = (result.data or {}).get("username") or username
+        st.session_state["user"] = signed_in_as
         st.rerun()
     else:
-        st.error(res.get("reason") or "Incorrect username or password.")
+        st.error(result.message or "Incorrect username or password.")
         st.stop()

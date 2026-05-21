@@ -158,10 +158,23 @@ def _session_list(ctx: CommandContext, args: List[str]) -> CommandResult:
 
 
 def _session_respawn(ctx: CommandContext, args: List[str]) -> CommandResult:
-    # Signal the runtime to re-spawn on next rerun. We can't actually
-    # rebuild cache_resource singletons from a handler; we set a scratch
-    # flag the runtime reads.
+    """Signal the runtime to re-spawn on next rerun + clear the
+    Streamlit cached runtime so the next rerun rebuilds it.
+
+    Folds the GUI-only ``st.cache_resource.clear()`` side-channel into
+    the command handler so the CLI-bridge invocation produces the same
+    effect as a button click. Per the 2026-05-21 GUI/CLI 1:1 audit.
+    The cache clear is best-effort — when streamlit isn't importable
+    (headless tests) the clear is a no-op.
+    """
     ctx.scratch["respawn_session"] = True
+    try:
+        import streamlit as st
+        st.cache_resource.clear()
+    except Exception:
+        # Headless / pre-runtime / streamlit-missing path; the scratch
+        # flag is the durable signal the runtime reads.
+        pass
     return CommandResult.ok_msg("respawn flagged — will fire on next rerun")
 
 
@@ -912,6 +925,78 @@ def build_ui_commands() -> List[Command]:
 
 
 # ---------------------------------------------------------------------------
+# Auth — every interaction (including the login form) has a CLI verb.
+# Closes the 2026-05-21 audit gap where the login form dispatched
+# directly against auth_gate_main and was unreachable from the CLI
+# bridge.
+# ---------------------------------------------------------------------------
+
+
+def _auth_login(ctx: CommandContext, args: List[str]) -> CommandResult:
+    """Authenticate against auth_gate_main. The result lands in
+    view-state and is returned as data so the GUI surface can decide
+    what to do (write session_state["user"], rerun) while the CLI
+    surface can act on the boolean directly.
+    """
+    if len(args) < 2:
+        return CommandResult.err("usage: auth.login <username> <password>")
+    username, password = args[0], " ".join(args[1:])
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="auth_gate_main",
+        action_name="authenticate",
+        payload={"username": username, "password": password},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "auth_gate_main")
+    res = view.get("last_authenticate", {})
+    if not res.get("ok"):
+        return CommandResult.err(res.get("reason") or "authentication failed")
+    return CommandResult.ok_msg(f"signed in as {res['username']}", data=res)
+
+
+def _auth_list_accounts(ctx: CommandContext, args: List[str]) -> CommandResult:
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="auth_gate_main",
+        action_name="list_accounts", payload={},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "auth_gate_main")
+    res = view.get("last_list_accounts", {})
+    if not res.get("ok"):
+        return CommandResult.err(res.get("reason") or "list_accounts failed")
+    accounts = res.get("accounts", [])
+    if not accounts:
+        return CommandResult.ok_msg("(no accounts)", data=[])
+    return CommandResult.ok_msg("\n".join(f"  {a}" for a in accounts), data=accounts)
+
+
+def _auth_has_any_account(ctx: CommandContext, args: List[str]) -> CommandResult:
+    from engine import actions as engine_actions
+    engine_actions.dispatch_action(
+        ctx.engine, renderer_id="auth_gate_main",
+        action_name="has_any_account", payload={},
+    )
+    view = engine_actions.get_view_state(ctx.engine, "auth_gate_main")
+    res = view.get("last_has_any_account", {})
+    if not res.get("ok"):
+        return CommandResult.err(res.get("reason") or "has_any_account failed")
+    return CommandResult.ok_msg(
+        "true" if res["present"] else "false", data=res["present"]
+    )
+
+
+def build_auth_commands() -> List[Command]:
+    return [
+        Command("auth.login", "authenticate username + password",
+                _auth_login, arg_help="<username> <password>"),
+        Command("auth.list-accounts", "list known account usernames",
+                _auth_list_accounts),
+        Command("auth.has-any-account", "check whether the store has any account",
+                _auth_has_any_account),
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Aggregate registration
 # ---------------------------------------------------------------------------
 
@@ -926,4 +1011,5 @@ def register_all(registry: CommandRegistry) -> None:
     registry.register_many(build_items_commands())
     registry.register_many(build_chat_commands())
     registry.register_many(build_ui_commands())
+    registry.register_many(build_auth_commands())
     registry.register_many(build_meta_commands(registry))
