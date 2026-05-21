@@ -36,6 +36,7 @@ class Runtime:
     config: RuntimeConfig
     default_session_id: Optional[str]
     command_registry: Any = None
+    inbox_pump: Any = None
 
 
 @st.cache_resource(show_spinner="booting Apeiron engine…")
@@ -85,6 +86,14 @@ def boot_runtime(config_kwargs: tuple) -> Runtime:
     registry = CommandRegistry()
     register_all(registry)
 
+    # Drain inbox files addressed to active session UUIDs into their
+    # stdin pipes. Without this, messages written directly to
+    # Alethea-cc/nodes/ never reach the spawned claude session — only
+    # GUI-typed chat input would.
+    from tools.workflow.inbox_pump import InboxPump
+    inbox_pump = InboxPump(sm, inbox, state_dir)
+    inbox_pump.start()
+
     return Runtime(
         engine=engine,
         session_manager=sm,
@@ -93,6 +102,7 @@ def boot_runtime(config_kwargs: tuple) -> Runtime:
         config=cfg,
         default_session_id=default_session_id,
         command_registry=registry,
+        inbox_pump=inbox_pump,
     )
 
 
