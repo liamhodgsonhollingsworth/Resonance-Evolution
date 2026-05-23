@@ -23,9 +23,21 @@ from pathlib import Path
 from typing import List
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 from engine.node import Channels, EmitContext, Manifest, View
+# Shared text-rendering + screen-paste helpers — extracted from this module
+# (and list_renderer.py + computer.py) into engine/screen.py per brief 03
+# commit 1 of the Resonance website implementation arc. The names ARE the
+# API; importing them under the same names preserves every existing call
+# site verbatim. See engine/screen.py docstring + tests/test_engine_screen.py
+# for the regression contract.
+from engine.screen import (
+    _get_font,
+    _paste_onto_screen_rectangle,
+    _render_text_to_array,
+    _wrap_line,
+)
 
 
 def manifest() -> Manifest:
@@ -120,99 +132,6 @@ def _read_log(log_path: str) -> str:
         return f"(failed to read log: {e})"
 
 
-def _get_font(size: int):
-    """Try a few common system fonts; fall back to PIL's default."""
-    for name in ("arial.ttf", "Arial.ttf", "DejaVuSans.ttf", "FreeMono.ttf", "Courier.ttf"):
-        try:
-            return ImageFont.truetype(name, size)
-        except (IOError, OSError):
-            continue
-    return ImageFont.load_default()
-
-
-def _render_text_to_array(text: str, width: int, height: int, font_size: int,
-                          text_color: np.ndarray, background_color: np.ndarray) -> np.ndarray:
-    """Render `text` to an RGB numpy array of shape (height, width, 3) in [0,1]."""
-    bg = tuple(int(c * 255) for c in background_color)
-    fg = tuple(int(c * 255) for c in text_color)
-    img = Image.new("RGB", (width, height), color=bg)
-    draw = ImageDraw.Draw(img)
-    font = _get_font(font_size)
-
-    margin = max(4, font_size // 3)
-    line_height = font_size + 4
-    max_chars_per_line = max(10, (width - 2 * margin) // (font_size // 2))
-
-    y = margin
-    for raw_line in text.splitlines():
-        # Soft-wrap long lines
-        for piece in _wrap_line(raw_line, max_chars_per_line):
-            if y + line_height > height - margin:
-                break
-            draw.text((margin, y), piece, fill=fg, font=font)
-            y += line_height
-        if y + line_height > height - margin:
-            break
-
-    arr = np.asarray(img, dtype=np.float32) / 255.0
-    return arr
-
-
-def _wrap_line(line: str, max_chars: int):
-    if len(line) <= max_chars:
-        yield line
-        return
-    words = line.split(" ")
-    cur = ""
-    for w in words:
-        if not cur:
-            cur = w
-        elif len(cur) + 1 + len(w) <= max_chars:
-            cur = cur + " " + w
-        else:
-            yield cur
-            cur = w
-    if cur:
-        yield cur
-
-
-def _paste_onto_screen_rectangle(view: View, screen_w: float, screen_h: float,
-                                 internal_color: np.ndarray) -> Channels:
-    """Ray-cast outer view against the screen rectangle in the XY plane at
-    z=0; UV-sample internal_color onto inside-screen pixels. Same
-    primitive as Computer/Portal — factored here when ChatInterface and
-    other text-displaying nodes need it. Future: lift into a shared
-    helper module."""
-    out_w, out_h = view.width, view.height
-    half_h = np.tan(view.fov_y_radians / 2)
-    half_w_view = half_h * view.aspect()
-    xs = np.linspace(-1.0, 1.0, out_w) * half_w_view
-    ys = np.linspace(1.0, -1.0, out_h) * half_h
-    gx, gy = np.meshgrid(xs, ys)
-    dirs_cam = np.stack([gx, gy, -np.ones_like(gx)], axis=-1)
-    dirs_cam = dirs_cam / np.linalg.norm(dirs_cam, axis=-1, keepdims=True)
-    dirs_world = dirs_cam @ view.orientation.T
-
-    origin = view.position
-    eps = 1e-9
-    safe_dz = np.where(np.abs(dirs_world[..., 2]) < eps,
-                       eps * np.sign(dirs_world[..., 2] + eps),
-                       dirs_world[..., 2])
-    t = -origin[2] / safe_dz
-    x_hit = origin[0] + t * dirs_world[..., 0]
-    y_hit = origin[1] + t * dirs_world[..., 1]
-    inside = (t > 0) & (np.abs(x_hit) <= screen_w / 2.0) & (np.abs(y_hit) <= screen_h / 2.0)
-
-    color_out = np.zeros((out_h, out_w, 3), dtype=np.float32)
-    depth_out = np.full((out_h, out_w), np.inf, dtype=np.float32)
-
-    int_h, int_w = internal_color.shape[:2]
-    u = (x_hit + screen_w / 2.0) / screen_w
-    v = 1.0 - (y_hit + screen_h / 2.0) / screen_h
-    sample_x = np.clip((u * int_w).astype(int), 0, int_w - 1)
-    sample_y = np.clip((v * int_h).astype(int), 0, int_h - 1)
-    sampled = internal_color[sample_y, sample_x]
-    color_out = np.where(inside[..., None], sampled, color_out)
-    depth_out = np.where(inside, t.astype(np.float32), depth_out)
-
-    return {"color": color_out, "depth": depth_out}
+# `_get_font`, `_render_text_to_array`, `_wrap_line`, `_paste_onto_screen_rectangle`
+# now live at engine/screen.py and are imported at the top of this module
+# (brief 03 commit 1 extraction; names ARE the API at every call site below).

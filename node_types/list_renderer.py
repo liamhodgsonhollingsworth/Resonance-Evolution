@@ -38,10 +38,23 @@ subagent flagged this as recommended-but-not-required).
 from typing import Any, Dict, List, Optional
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 from engine.actions import VIEW_STATE_CACHE_KEY
 from engine.node import Channels, EmitContext, Manifest, View
+# Shared text-rendering + screen-paste helpers — extracted from this module
+# (and chat_interface.py + computer.py) into engine/screen.py per brief 03
+# commit 1 of the Resonance website implementation arc. The names ARE the
+# API; importing them under the same names preserves every existing call
+# site verbatim. See engine/screen.py docstring + tests/test_engine_screen.py
+# for the regression contract.
+from engine.screen import (
+    _get_font,
+    _measure,
+    _paste_onto_screen_rectangle,
+    _truncate,
+    _wrap,
+)
 
 
 DEFAULT_STATUS_GLYPHS = {
@@ -342,14 +355,10 @@ def _resolve_target_id(conn) -> str:
 # ---------------------------------------------------------------------------
 # rendering
 # ---------------------------------------------------------------------------
-
-def _get_font(size: int):
-    for name in ("arial.ttf", "Arial.ttf", "DejaVuSans.ttf", "FreeMono.ttf", "Courier.ttf"):
-        try:
-            return ImageFont.truetype(name, size)
-        except (IOError, OSError):
-            continue
-    return ImageFont.load_default()
+#
+# `_get_font` + the wrap / measure / truncate helpers + `_paste_onto_screen_rectangle`
+# now live at engine/screen.py and are imported at the top of this module
+# (the names ARE the API at every call site below — no rewrites needed).
 
 
 def _render_panel_to_array(
@@ -508,73 +517,5 @@ def _render_expanded_to_array(
     return np.asarray(img, dtype=np.float32) / 255.0
 
 
-def _wrap(text, width, font_size, margin):
-    max_chars = max(10, (width - 2 * margin) // (font_size // 2))
-    line = ""
-    for word in text.split(" "):
-        if not line:
-            line = word
-        elif len(line) + 1 + len(word) <= max_chars:
-            line += " " + word
-        else:
-            yield line
-            line = word
-    if line:
-        yield line
-
-
-def _measure(text, font) -> int:
-    if hasattr(font, "getlength"):
-        return int(font.getlength(text))
-    if hasattr(font, "getsize"):
-        return int(font.getsize(text)[0])
-    return len(text) * 7  # crude fallback
-
-
-def _truncate(text, max_w, font) -> str:
-    for i in range(len(text), 0, -1):
-        candidate = text[:i] + "…"
-        if _measure(candidate, font) <= max_w:
-            return candidate
-    return ""
-
-
-# ---------------------------------------------------------------------------
-# screen-rectangle paste (shared shape with chat_interface.py + computer.py)
-# ---------------------------------------------------------------------------
-
-def _paste_onto_screen_rectangle(view: View, screen_w: float, screen_h: float,
-                                 internal_color: np.ndarray) -> Channels:
-    out_w, out_h = view.width, view.height
-    half_h = np.tan(view.fov_y_radians / 2)
-    half_w_view = half_h * view.aspect()
-    xs = np.linspace(-1.0, 1.0, out_w) * half_w_view
-    ys = np.linspace(1.0, -1.0, out_h) * half_h
-    gx, gy = np.meshgrid(xs, ys)
-    dirs_cam = np.stack([gx, gy, -np.ones_like(gx)], axis=-1)
-    dirs_cam = dirs_cam / np.linalg.norm(dirs_cam, axis=-1, keepdims=True)
-    dirs_world = dirs_cam @ view.orientation.T
-
-    origin = view.position
-    eps = 1e-9
-    safe_dz = np.where(np.abs(dirs_world[..., 2]) < eps,
-                       eps * np.sign(dirs_world[..., 2] + eps),
-                       dirs_world[..., 2])
-    t = -origin[2] / safe_dz
-    x_hit = origin[0] + t * dirs_world[..., 0]
-    y_hit = origin[1] + t * dirs_world[..., 1]
-    inside = (t > 0) & (np.abs(x_hit) <= screen_w / 2.0) & (np.abs(y_hit) <= screen_h / 2.0)
-
-    color_out = np.zeros((out_h, out_w, 3), dtype=np.float32)
-    depth_out = np.full((out_h, out_w), np.inf, dtype=np.float32)
-
-    int_h, int_w = internal_color.shape[:2]
-    u = (x_hit + screen_w / 2.0) / screen_w
-    v = 1.0 - (y_hit + screen_h / 2.0) / screen_h
-    sample_x = np.clip((u * int_w).astype(int), 0, int_w - 1)
-    sample_y = np.clip((v * int_h).astype(int), 0, int_h - 1)
-    sampled = internal_color[sample_y, sample_x]
-    color_out = np.where(inside[..., None], sampled, color_out)
-    depth_out = np.where(inside, t.astype(np.float32), depth_out)
-
-    return {"color": color_out, "depth": depth_out}
+# `_wrap`, `_measure`, `_truncate`, `_paste_onto_screen_rectangle` are imported
+# from engine/screen.py at the top of this module (brief 03 commit 1 extraction).
