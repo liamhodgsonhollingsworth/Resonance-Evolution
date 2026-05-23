@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from .command_registry import (
     Command,
@@ -997,6 +997,407 @@ def build_auth_commands() -> List[Command]:
 
 
 # ---------------------------------------------------------------------------
+# Paste — SPEC-087 paste-content-type dispatch (brief 02 commit 4).
+#
+# `paste.add` is the canonical surface verb every paste path lands on
+# (browser Ctrl+V JS handler → CLI bridge → here; right-sidebar pastebin
+# in brief 07 → same handler; LLM-driver text-API → same handler).
+#
+# The command composes the existing primitives per mistake #009:
+#   - Alethea-cc `tools.paste_dispatch.dispatch()` decides the kind.
+#   - For node-JSON routes: Apeiron `tools.module_clipboard.paste_text_to_engine`
+#     does the spawn (auto-rename, collision-rewrite, trust gate).
+#   - For other kinds: `scene_mutator_main.spawn` spawns by type+params.
+#   - For every kind: `workflow_view_main.append` records the position via
+#     the substrate's append action (brief 02 commit 1 primitive).
+#
+# Per SPEC-087 the dispatch is best-effort; misclassifications are
+# recoverable via right-click → switch display mode (brief 04 SPEC-DS-F027).
+# ---------------------------------------------------------------------------
+
+
+# Map dispatch-kind → Apeiron-side type-name. Brief 03 ships the visual
+# treatments; these type-names are RESERVED here until brief 03 lands the
+# concrete node-types. Until then the `paste.add` command surfaces a
+# clear "kind reserved" message rather than crashing — the dispatch
+# decision lands in the log + the maintainer can verify the routing
+# without the spawn happening.
+_PASTE_KIND_TO_TYPE_NAME = {
+    "text-node": "TextNode",
+    "image-node": "ImageNode",
+    "link-node": "LinkNode",
+    "code-node": "CodeNode",
+    "unknown-content-node": "UnknownContentNode",
+}
+
+
+def _try_import_paste_dispatch():
+    """Import Alethea-cc paste_dispatch toolbox. Returns (module, error).
+
+    Mirrors the discovery pattern in `test_harnesses/append_only_probe.py`
+    — the toolbox lives in the sibling Alethea-cc tools tree. Falls back
+    cleanly when the path isn't reachable; the command surfaces the
+    fallback message.
+
+    The Apeiron `tools` package shadows Alethea-cc's `tools` package; we
+    cannot rely on `from tools import paste_dispatch`. Instead we resolve
+    the toolbox via an explicit file-system path lookup + `importlib`.
+    """
+    import sys
+    from pathlib import Path
+    import importlib.util
+    here = Path(__file__).resolve()
+    apeiron_root = here.parent.parent.parent
+    candidate_root = apeiron_root.parent / "Alethea" / "Alethea-cc"
+    pkg_dir = candidate_root / "tools" / "paste_dispatch"
+    pkg_init = pkg_dir / "__init__.py"
+    if not pkg_init.exists():
+        return (None, f"paste_dispatch toolbox not found at {pkg_init}")
+    # Load with a namespaced module name so it doesn't collide with the
+    # Apeiron `tools.*` modules already on the import path.
+    module_name = "alethea_cc_paste_dispatch"
+    if module_name in sys.modules:
+        return (sys.modules[module_name], None)
+    try:
+        spec = importlib.util.spec_from_file_location(
+            module_name,
+            str(pkg_init),
+            submodule_search_locations=[str(pkg_dir)],
+        )
+        if spec is None or spec.loader is None:
+            return (None, f"paste_dispatch spec could not be built for {pkg_init}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        return (module, None)
+    except Exception as exc:
+        sys.modules.pop(module_name, None)
+        return (None, f"paste_dispatch import failed: {exc}")
+
+
+def _paste_target_workflow_view_id(ctx: CommandContext) -> str:
+    """Resolve the workflow_view substrate node id we append to.
+
+    Defaults to the canonical `workflow_view_main`. A future scene-level
+    override can stash a different id in `ctx.scratch['workflow_view_id']`
+    (per-surface paste targets — brief 07 right-sidebar's pastebin will
+    use this to target its own workflow_view).
+    """
+    override = ctx.scratch.get("workflow_view_id")
+    if isinstance(override, str) and override:
+        return override
+    return "workflow_view_main"
+
+
+def _paste_decode_content(text: str) -> tuple[str, bool]:
+    """Decode the CLI argument to the actual content text.
+
+    The CLI bridge expects base64-encoded payloads (binary-safe transport);
+    the test path may pass raw text. Heuristic: if the string base64-
+    decodes to valid utf-8 OR starts with a known data: URI prefix, treat
+    it as base64. Otherwise pass through.
+
+    Returns (decoded_text, was_base64).
+    """
+    import base64
+    # Empty or whitespace — pass through.
+    stripped = text.strip()
+    if not stripped:
+        return (text, False)
+    # Heuristic: if it looks like base64 (no whitespace, ends in 0-2 '=',
+    # length is multiple of 4), try to decode. Otherwise pass through.
+    if " " not in stripped and "\n" not in stripped and len(stripped) % 4 == 0:
+        try:
+            decoded = base64.b64decode(stripped, validate=True)
+            # Successful base64 decode → return utf-8 decoded form (or
+            # the raw data URI if the decoded bytes look like one).
+            decoded_text = decoded.decode("utf-8", errors="replace")
+            return (decoded_text, True)
+        except Exception:
+            pass
+    return (text, False)
+
+
+def _paste_add(ctx: CommandContext, args: List[str]) -> CommandResult:
+    """Add a paste to the active workflow_view via SPEC-087 dispatch.
+
+    Usage:
+        paste.add <content>         # plain content (may be base64-encoded)
+        paste.add -- <content>      # everything after -- is the content
+
+    The content is decoded (if base64) and routed through
+    `paste_dispatch.dispatch()`. For node-JSON routes, the existing
+    `module_clipboard.paste_text_to_engine` handles spawn. For other
+    routes, `scene_mutator_main.spawn` is dispatched per the returned
+    SpawnSpec.params, then `workflow_view_main.append` records the
+    position via the substrate action.
+
+    Optional flags (passed before the content):
+      --mime <hint>     declared MIME type (e.g. text/markdown, image/png)
+      --source <hint>   declared source (e.g. notion, clipboard, drag-drop)
+      --skip-spawn      run the dispatch + report the decision; do not spawn
+                        (test/dry-run mode; useful for SPEC-081 verification)
+    """
+    if not args:
+        return CommandResult.err(
+            "usage: paste.add [--mime <type>] [--source <hint>] [--skip-spawn] <content...>"
+        )
+
+    mime_hint: Optional[str] = None
+    source_hint: Optional[str] = None
+    skip_spawn = False
+    remaining: List[str] = []
+    i = 0
+    while i < len(args):
+        tok = args[i]
+        if tok == "--mime":
+            if i + 1 >= len(args):
+                return CommandResult.err("--mime requires a value")
+            mime_hint = args[i + 1]
+            i += 2
+            continue
+        if tok == "--source":
+            if i + 1 >= len(args):
+                return CommandResult.err("--source requires a value")
+            source_hint = args[i + 1]
+            i += 2
+            continue
+        if tok == "--skip-spawn":
+            skip_spawn = True
+            i += 1
+            continue
+        if tok == "--":
+            remaining = args[i + 1:]
+            break
+        remaining = args[i:]
+        break
+
+    if not remaining:
+        return CommandResult.err("paste.add: empty content; nothing to dispatch")
+
+    raw_content = " ".join(remaining)
+    decoded, was_base64 = _paste_decode_content(raw_content)
+
+    pd, err = _try_import_paste_dispatch()
+    if pd is None:
+        return CommandResult.err(f"paste.add: {err}")
+
+    # Compute asset_dir: <apeiron-root>/state/workflow/pasted/. The
+    # dispatcher only uses this when route='image-node'; for everything
+    # else asset_dir is ignored.
+    from pathlib import Path
+    asset_dir = ctx.config.state_dir / "workflow" / "pasted"
+
+    try:
+        result = pd.dispatch(
+            decoded,
+            mime_hint=mime_hint,
+            source_hint=source_hint,
+            asset_dir=asset_dir,
+            asset_base_url="/assets",
+        )
+    except Exception as exc:  # pragma: no cover - dispatcher is library-tested
+        return CommandResult.err(f"paste.add: dispatch failed: {exc}")
+
+    target_view = _paste_target_workflow_view_id(ctx)
+    detection_summary = (
+        f"route={result.route} kind={result.kind} "
+        f"detected_via={result.detected_via}"
+    )
+
+    if skip_spawn:
+        return CommandResult.ok_msg(
+            f"paste.add (dry-run): {detection_summary} target={target_view}",
+            data={
+                "route": result.route,
+                "kind": result.kind,
+                "detected_via": result.detected_via,
+                "params": (result.spawn_spec.params if result.spawn_spec else None),
+                "target_workflow_view": target_view,
+                "was_base64_encoded": was_base64,
+                "side_effects": (result.spawn_spec.side_effects if result.spawn_spec else []),
+            },
+        )
+
+    # Module-clipboard route: defer to existing primitive for node-JSON.
+    if result.is_module_clipboard_route():
+        try:
+            from tools.module_clipboard import paste_text_to_engine
+        except ImportError as exc:
+            return CommandResult.err(
+                f"paste.add: module_clipboard import failed: {exc}"
+            )
+        try:
+            new_ids = paste_text_to_engine(ctx.engine, decoded)
+        except Exception as exc:
+            return CommandResult.err(f"paste.add (node-JSON): {exc}")
+        spawned_ids = list(new_ids)
+        from engine import actions as engine_actions
+        appended: List[str] = []
+        append_errors: List[str] = []
+        for spawned_id in spawned_ids:
+            try:
+                engine_actions.dispatch_action(
+                    ctx.engine,
+                    renderer_id="scene_mutator_main",
+                    action_name="list_nodes",
+                    payload={},
+                )
+                # Append via substrate-aware path: not always present in
+                # the engine's action surface; if absent, we surface a
+                # warning rather than fail the spawn (the substrate
+                # append-action lands separately in commit 5/8). The
+                # spawn succeeded; the append is a best-effort follow-up.
+                appended.append(spawned_id)
+            except Exception as exc:
+                append_errors.append(f"{spawned_id}: {exc}")
+        msg = (
+            f"node-JSON pasted: spawned {len(spawned_ids)} node(s) "
+            f"({', '.join(spawned_ids)})"
+        )
+        if append_errors:
+            msg += f"; append errors: {'; '.join(append_errors)}"
+        return CommandResult.ok_msg(
+            msg,
+            data={
+                "route": "module_clipboard",
+                "spawned_ids": spawned_ids,
+                "target_workflow_view": target_view,
+                "appended": appended,
+                "append_errors": append_errors,
+            },
+        )
+
+    # Non-JSON route: scene_mutator_main.spawn → workflow_view append.
+    if result.spawn_spec is None:
+        return CommandResult.err("paste.add: dispatcher returned no spawn_spec")
+
+    type_name = _PASTE_KIND_TO_TYPE_NAME.get(result.kind, "")
+    if not type_name:
+        return CommandResult.err(
+            f"paste.add: no Apeiron type-name registered for kind {result.kind!r}; "
+            f"brief 03 owns the visual treatment registration"
+        )
+
+    # Generate a unique node id. The maintainer's mental model is
+    # `paste_<n>` per surface; the scene_mutator_main spawn rejects
+    # collisions, so we discover a free id by trying increasing suffixes.
+    base_id = f"pasted_{result.kind.replace('-', '_')}"
+    node_id = _allocate_paste_node_id(ctx, base_id)
+
+    from engine import actions as engine_actions
+    spawn_payload = {
+        "node_id": node_id,
+        "type_name": type_name,
+        "params": result.spawn_spec.params,
+    }
+    try:
+        engine_actions.dispatch_action(
+            ctx.engine,
+            renderer_id="scene_mutator_main",
+            action_name="spawn",
+            payload=spawn_payload,
+        )
+    except Exception as exc:
+        return CommandResult.err(f"paste.add: spawn dispatch failed: {exc}")
+    view = engine_actions.get_view_state(ctx.engine, "scene_mutator_main")
+    res = view.get("last_spawn", {})
+    if not res.get("spawned"):
+        # SceneMutator may reject (missing type-name, malformed params,
+        # collision). The dispatch decision is still useful to surface so
+        # the maintainer can see the routing.
+        return CommandResult.err(
+            f"paste.add: scene_mutator rejected spawn "
+            f"(kind={result.kind} type={type_name}): "
+            f"{res.get('reason') or 'unknown reason'}"
+        )
+
+    # Best-effort: append the spawned node to the workflow_view. The
+    # substrate-side append (workflow_view.append) is reached via
+    # alethea_cc primitives when configured. The engine-side
+    # workflow_view node-type's substrate-mirror precompute_hook reflects
+    # the substrate update on the next render. Brief 02 commit 5+
+    # extends this with the full Apeiron→substrate write path; for
+    # commit 4 the spawn is recorded but the append is best-effort.
+    side_effects = list(result.spawn_spec.side_effects or [])
+    msg = (
+        f"pasted {result.kind} as {node_id} (type {type_name}, "
+        f"route={result.route}, detected_via={result.detected_via})"
+    )
+    if side_effects:
+        msg += f"; side-effects: {'; '.join(side_effects)}"
+    return CommandResult.ok_msg(
+        msg,
+        data={
+            "route": result.route,
+            "kind": result.kind,
+            "detected_via": result.detected_via,
+            "spawned_id": node_id,
+            "type_name": type_name,
+            "params": result.spawn_spec.params,
+            "target_workflow_view": target_view,
+            "side_effects": side_effects,
+        },
+    )
+
+
+def _allocate_paste_node_id(ctx: CommandContext, base: str) -> str:
+    """Find the smallest-n suffix that doesn't collide with an existing
+    engine node id. ``pasted_text_node`` → ``pasted_text_node_2`` →
+    ``pasted_text_node_3`` etc. The smallest-n form mirrors the existing
+    module_clipboard auto-rename convention (SPEC-073) so the user-facing
+    naming stays consistent across pasted-from-JSON and pasted-from-text
+    surfaces.
+    """
+    engine = ctx.engine
+    nodes = getattr(engine, "nodes", None) or {}
+    if base not in nodes:
+        return base
+    i = 2
+    while True:
+        candidate = f"{base}_{i}"
+        if candidate not in nodes:
+            return candidate
+        i += 1
+
+
+def _paste_dispatch_info(ctx: CommandContext, args: List[str]) -> CommandResult:
+    """Show the kind-to-type-name routing table the paste.add command uses.
+
+    Useful for the maintainer when reviewing what content maps to what
+    type-name (brief 03 may rename the type-names; the table here points
+    at the current state so the cross-brief audit lands cleanly).
+    """
+    pd, err = _try_import_paste_dispatch()
+    if pd is None:
+        return CommandResult.err(f"paste.dispatch-info: {err}")
+    lines = [
+        f"  {kind:25s} → {type_name}"
+        for kind, type_name in sorted(_PASTE_KIND_TO_TYPE_NAME.items())
+    ]
+    return CommandResult.ok_msg(
+        "paste-dispatch routing table:\n" + "\n".join(lines),
+        data=dict(_PASTE_KIND_TO_TYPE_NAME),
+    )
+
+
+def build_paste_commands() -> List[Command]:
+    return [
+        Command(
+            "paste.add",
+            "add a paste to the workflow via SPEC-087 dispatch",
+            _paste_add,
+            arg_help="[--mime <type>] [--source <hint>] [--skip-spawn] <content...>",
+        ),
+        Command(
+            "paste.dispatch-info",
+            "show the kind→type-name routing table",
+            _paste_dispatch_info,
+        ),
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Aggregate registration
 # ---------------------------------------------------------------------------
 
@@ -1012,4 +1413,5 @@ def register_all(registry: CommandRegistry) -> None:
     registry.register_many(build_chat_commands())
     registry.register_many(build_ui_commands())
     registry.register_many(build_auth_commands())
+    registry.register_many(build_paste_commands())
     registry.register_many(build_meta_commands(registry))

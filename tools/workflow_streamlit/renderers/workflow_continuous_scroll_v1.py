@@ -334,13 +334,22 @@ def _build_positions_index(positions: List[dict]) -> Dict[str, dict]:
 
 
 def _renderer_script(workflow_view_id: str, window_param_str: str) -> str:
-    """Emit the JS that wires lazy-load + URL-hash updates.
+    """Emit the JS that wires lazy-load + URL-hash updates + paste capture.
 
-    Brief 02 commit 2 ships the SHELL: the script declares the renderer-
-    surface contract (data-renderer attr, data-window attr) and exposes
-    a `window.__workflow_scroll` namespace consumers can extend. The
-    full lazy-load + paste handlers land in commits 4 + 5 + 7 + 8 (each
-    commit composes against this shell rather than redefining it).
+    Brief 02 commit 2 ships the renderer SHELL: the script declares the
+    renderer-surface contract (data-renderer attr, data-window attr) and
+    exposes a `window.__workflow_scroll` namespace.
+
+    Brief 02 commit 4 adds the paste handler: when the maintainer
+    Ctrl+V's on the workflow surface, the JS captures the
+    ClipboardEvent, prefers image > node-JSON > text/uri-list > text in
+    that order (per Decision B3's first-match-wins routing), base64-
+    encodes the highest-priority payload, and POSTs to the CLI bridge
+    as `paste.add <base64>`. The CLI bridge drains and dispatches per
+    SPEC-087.
+
+    Brief 02 commits 5 + 7 + 8 layer additional handlers on top of this
+    namespace without redefining it.
 
     The minimal phase-1 behavior:
       - Updates `window.location.hash` to the canonical deep-link form
@@ -351,6 +360,8 @@ def _renderer_script(workflow_view_id: str, window_param_str: str) -> str:
         attach handlers without re-querying the DOM.
       - Provides a `__workflow_scroll.report_scroll(scroll_y)` hook that
         the lazy-load layer (commit 4) wires up to the CLI bridge.
+      - **Commit 4: ClipboardEvent paste handler** attached to the
+        workflow surface element. Routes pasted content per Decision B3.
     """
     safe_view_id = escape(workflow_view_id)
     safe_window = escape(window_param_str)
@@ -368,7 +379,87 @@ def _renderer_script(workflow_view_id: str, window_param_str: str) -> str:
         "  try { if (window.location.hash !== hash) {"
         " window.history.replaceState(null, '', hash); } } catch (e) {}\n"
         "  ns.report_scroll = function(y) {"
-        " /* lazy-load wiring lands in commit 4 */ };\n"
+        " /* lazy-load wiring lands in commit 5+ */ };\n"
+        "\n"
+        "  // ----- Commit 4: paste capture (SPEC-087) -----\n"
+        "  // Per Decision B3 first-match priority: image > node-JSON >\n"
+        "  // text/uri-list > text/plain. The highest-priority payload\n"
+        "  // is base64-encoded and POSTed to the CLI bridge as\n"
+        "  // `paste.add --mime <hint> <base64>`. The CLI bridge drains\n"
+        "  // and dispatches per SPEC-087.\n"
+        "  function b64utf8(s) {\n"
+        "    try {\n"
+        "      // unescape/escape pre-encode to support unicode safely.\n"
+        "      return btoa(unescape(encodeURIComponent(s)));\n"
+        "    } catch (e) { return btoa(s); }\n"
+        "  }\n"
+        "  function postPasteCommand(content, mime) {\n"
+        "    var b64 = b64utf8(content);\n"
+        "    var url = '/cli-bridge/queue';\n"
+        "    var cmd = mime\n"
+        "      ? ('paste.add --mime ' + mime + ' ' + b64)\n"
+        "      : ('paste.add ' + b64);\n"
+        "    try {\n"
+        "      fetch(url, {method: 'POST', headers: {'Content-Type':'text/plain'}, body: cmd}).catch(function(){});\n"
+        "    } catch (e) { /* environment without fetch — no-op */ }\n"
+        "    if (ns.on_paste) { try { ns.on_paste(cmd); } catch (e) {} }\n"
+        "  }\n"
+        "  ns.handle_paste_event = function(ev) {\n"
+        "    if (!ev || !ev.clipboardData) return;\n"
+        "    var cd = ev.clipboardData;\n"
+        "    // 1) image/* binary path (highest priority).\n"
+        "    if (cd.items) {\n"
+        "      for (var i = 0; i < cd.items.length; i++) {\n"
+        "        var item = cd.items[i];\n"
+        "        if (item && item.kind === 'file' && item.type && item.type.indexOf('image/') === 0) {\n"
+        "          var blob = item.getAsFile();\n"
+        "          if (blob) {\n"
+        "            var reader = new FileReader();\n"
+        "            reader.onload = function(r) {\n"
+        "              var dataUri = r.target && r.target.result;\n"
+        "              if (typeof dataUri === 'string') {\n"
+        "                // data URI is utf-8 string already — encode whole URI.\n"
+        "                postPasteCommand(dataUri, item.type);\n"
+        "              }\n"
+        "            };\n"
+        "            reader.readAsDataURL(blob);\n"
+        "            if (ev.preventDefault) ev.preventDefault();\n"
+        "            return;\n"
+        "          }\n"
+        "        }\n"
+        "      }\n"
+        "    }\n"
+        "    // 2) text/uri-list (drag-dropped link list).\n"
+        "    var uriList = cd.getData ? cd.getData('text/uri-list') : '';\n"
+        "    if (uriList) {\n"
+        "      postPasteCommand(uriList, 'text/uri-list');\n"
+        "      if (ev.preventDefault) ev.preventDefault();\n"
+        "      return;\n"
+        "    }\n"
+        "    // 3) text/plain (covers node-JSON, plain text, markdown,\n"
+        "    //    code — the dispatcher handles further classification).\n"
+        "    var text = cd.getData ? cd.getData('text/plain') : '';\n"
+        "    if (text) {\n"
+        "      postPasteCommand(text, null);\n"
+        "      if (ev.preventDefault) ev.preventDefault();\n"
+        "      return;\n"
+        "    }\n"
+        "    // 4) html fallback when text/plain is empty.\n"
+        "    var html = cd.getData ? cd.getData('text/html') : '';\n"
+        "    if (html) {\n"
+        "      postPasteCommand(html, 'text/html');\n"
+        "      if (ev.preventDefault) ev.preventDefault();\n"
+        "    }\n"
+        "  };\n"
+        "  if (ns.surface) {\n"
+        "    ns.surface.addEventListener('paste', ns.handle_paste_event);\n"
+        "    // Make the surface focusable so paste events route here\n"
+        "    // when the user has selected it (Streamlit doesn't focus\n"
+        "    // a markdown block by default).\n"
+        "    if (!ns.surface.hasAttribute('tabindex')) {\n"
+        "      ns.surface.setAttribute('tabindex', '0');\n"
+        "    }\n"
+        "  }\n"
         "})();\n"
         "</script>"
     )
