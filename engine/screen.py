@@ -35,7 +35,7 @@ See also: ``notes/website_planning_arc/planning_briefs/existing_primitives_audit
 (toolbox-10 line — flagged the duplication this module resolves).
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -256,6 +256,192 @@ def _paste_onto_screen_rectangle(view: View, screen_w: float, screen_h: float,
 
 
 # ---------------------------------------------------------------------------
+# Layer-ordering conflict resolution (Decision A5 / SPEC-094)
+# ---------------------------------------------------------------------------
+#
+# Brief 03 commit 2 ships this helper alongside BoxNode/TextBoxNode/
+# ToolboxNode per the per-module plan's N-F028 module-spec step 2:
+# "Add a `_resolve_layer_conflicts()` helper in `engine/screen.py` that
+# runs the auto-reflow algorithm before emit."
+#
+# Algorithm per Decision A5:
+#   1. Sort primitives by insertion order (the input list IS the
+#      insertion order — earlier indices = earlier inserts).
+#   2. For each primitive, in order: detect overlap with any
+#      already-placed primitive on the SAME LAYER. If overlap is
+#      detected, attempt to relocate via a brute-force grid scan
+#      within `parent_bounds` (the auto-reflow). If no non-overlapping
+#      position fits within parent_bounds, bump the primitive's layer
+#      to `max(layer + 1, max_layer_so_far + 1)` (the layer-bump
+#      fallback).
+#   3. Composes against the same overlap math
+#      PanelPositioner.snap_to_peers uses (Apeiron
+#      `node_types/panel_positioner.py:_compute_peer_snap`); the
+#      bounding-box overlap check is the same shape.
+#
+# The helper is pure: takes records in, returns adjusted records +
+# diagnostics (the SAME records when nothing changed, supporting the
+# idempotent-on-already-resolved-input contract that the renderer
+# pipeline can call this before every emit without paying for
+# duplicate work).
+
+
+def _bbox_overlaps(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+    """Axis-aligned bounding-box overlap test (open interval).
+
+    Two boxes overlap when their projections on both axes overlap. Edge-
+    sharing (a.x + a.w == b.x) is treated as NOT overlapping so adjacent
+    placement is permitted per the maintainer's "next to each other"
+    framing of N-F028.
+    """
+    ax1, ay1 = float(a["x"]), float(a["y"])
+    ax2, ay2 = ax1 + float(a["w"]), ay1 + float(a["h"])
+    bx1, by1 = float(b["x"]), float(b["y"])
+    bx2, by2 = bx1 + float(b["w"]), by1 + float(b["h"])
+    return (ax1 < bx2) and (bx1 < ax2) and (ay1 < by2) and (by1 < ay2)
+
+
+def _find_non_overlapping_position(
+    record: Dict[str, Any],
+    placed: list,
+    parent_bounds: Dict[str, float],
+    grid_px: int,
+) -> Dict[str, float]:
+    """Brute-force grid scan for a non-overlapping (x, y) within
+    parent_bounds for ``record`` against the already-placed list (same
+    layer only — caller filters).
+
+    Returns the new (x, y) when a slot is found; returns the
+    sentinel ``{"x": -1.0, "y": -1.0}`` when no slot fits (caller
+    handles via layer-bump per Decision A5).
+
+    The scan walks rows top-to-bottom, columns left-to-right — the
+    insertion-order-preserving heuristic the maintainer's directive
+    implies (later-inserted lands wherever the earlier ones leave a
+    gap, not flips the earlier-inserted around).
+    """
+    px_min = float(parent_bounds.get("x_min", 0.0))
+    py_min = float(parent_bounds.get("y_min", 0.0))
+    px_max = float(parent_bounds.get("x_max", 0.0))
+    py_max = float(parent_bounds.get("y_max", 0.0))
+    w = float(record["w"])
+    h = float(record["h"])
+    grid = max(1, int(grid_px))
+
+    y = py_min
+    while y + h <= py_max + 1e-9:
+        x = px_min
+        while x + w <= px_max + 1e-9:
+            candidate = {"x": x, "y": y, "w": w, "h": h}
+            if not any(_bbox_overlaps(candidate, p) for p in placed):
+                return {"x": x, "y": y}
+            x += grid
+        y += grid
+    return {"x": -1.0, "y": -1.0}
+
+
+def _resolve_layer_conflicts(
+    records: list,
+    parent_bounds: Optional[Dict[str, float]] = None,
+    grid_px: int = 12,
+) -> Dict[str, Any]:
+    """Resolve same-layer overlap via auto-reflow + layer-bump fallback.
+
+    ``records`` is a list of dicts with at minimum these fields::
+
+        {"id": <str>, "x": <float>, "y": <float>,
+         "w": <float>, "h": <float>, "layer": <int>}
+
+    Additional fields (e.g., ``corner_radius``, ``displayed_by``) pass
+    through untouched. The function preserves input order — the list
+    index IS the insertion order; earlier indices are placed first
+    (they stay; later ones move).
+
+    ``parent_bounds`` defaults to ``{"x_min": 0, "y_min": 0,
+    "x_max": 10000, "y_max": 10000}`` — a generous default so simple
+    test cases don't have to specify bounds. Surface integrations
+    (workflow surface, GUI builder) pass real bounds.
+
+    Returns ``{"records": [adjusted_records...],
+    "diagnostics": {"reflow_count": N, "layer_bump_count": M,
+    "moved_ids": [...], "bumped_ids": [...], "final_max_layer": L}}``.
+    Idempotent: a second call on the returned records produces the
+    same records + zero counts.
+    """
+    if parent_bounds is None:
+        parent_bounds = {
+            "x_min": 0.0, "y_min": 0.0,
+            "x_max": 10000.0, "y_max": 10000.0,
+        }
+
+    adjusted: list = []
+    reflow_count = 0
+    layer_bump_count = 0
+    moved_ids: list = []
+    bumped_ids: list = []
+
+    for record in records:
+        if not isinstance(record, dict):
+            adjusted.append(record)
+            continue
+        # Copy so we don't mutate the input. Pass-through unknown fields.
+        cur = dict(record)
+        layer = int(cur.get("layer", 0))
+
+        # Same-layer placed records (from the adjusted list, after any
+        # earlier bumps). Reading from `adjusted` (not `records`) lets
+        # bumped-earlier records be considered at their NEW layer.
+        peers = [p for p in adjusted
+                 if isinstance(p, dict) and int(p.get("layer", 0)) == layer]
+        # If no overlap, accept as-is.
+        if not any(_bbox_overlaps(cur, p) for p in peers):
+            adjusted.append(cur)
+            continue
+
+        # Same-layer collision — try auto-reflow first.
+        new_pos = _find_non_overlapping_position(cur, peers, parent_bounds, grid_px)
+        if new_pos["x"] >= 0.0 and new_pos["y"] >= 0.0:
+            if new_pos["x"] != cur["x"] or new_pos["y"] != cur["y"]:
+                reflow_count += 1
+                rec_id = cur.get("id")
+                if rec_id is not None:
+                    moved_ids.append(rec_id)
+                cur["x"] = new_pos["x"]
+                cur["y"] = new_pos["y"]
+            adjusted.append(cur)
+            continue
+
+        # Auto-reflow exhausted — layer-bump per Decision A5.
+        max_layer_so_far = max(
+            (int(p.get("layer", 0)) for p in adjusted if isinstance(p, dict)),
+            default=layer,
+        )
+        new_layer = max(layer + 1, max_layer_so_far + 1)
+        cur["layer"] = new_layer
+        layer_bump_count += 1
+        rec_id = cur.get("id")
+        if rec_id is not None:
+            bumped_ids.append(rec_id)
+        adjusted.append(cur)
+
+    final_max_layer = max(
+        (int(p.get("layer", 0)) for p in adjusted if isinstance(p, dict)),
+        default=0,
+    )
+
+    return {
+        "records": adjusted,
+        "diagnostics": {
+            "reflow_count": reflow_count,
+            "layer_bump_count": layer_bump_count,
+            "moved_ids": moved_ids,
+            "bumped_ids": bumped_ids,
+            "final_max_layer": final_max_layer,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # __all__ — re-exports for the call sites
 # ---------------------------------------------------------------------------
 
@@ -267,4 +453,6 @@ __all__ = [
     "_truncate",
     "_render_text_to_array",
     "_paste_onto_screen_rectangle",
+    "_resolve_layer_conflicts",
+    "_bbox_overlaps",
 ]
