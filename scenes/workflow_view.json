@@ -204,6 +204,11 @@
       "params": {"panel_name": "scene-picker", "mount_point": "sidebar", "order": 20}
     },
     {
+      "id": "streamlit_panel_workflow_continuous_scroll",
+      "type": "StreamlitPanel",
+      "params": {"panel_name": "workflow-continuous-scroll", "mount_point": "main", "order": 5}
+    },
+    {
       "id": "streamlit_panel_chat",
       "type": "StreamlitPanel",
       "params": {"panel_name": "chat", "mount_point": "main", "order": 10}
