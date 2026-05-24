@@ -26,6 +26,12 @@ from .command_registry import (
 )
 
 
+# APEIRON_ROOT — the repo root (used by notion-mirror import-by-path).
+# Resolved via this file's location: tools/workflow_streamlit/commands.py
+# → tools/workflow_streamlit → tools → Apeiron-root.
+APEIRON_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
 # ---------------------------------------------------------------------------
 # Idea queue — dispatched through idea_queue_main (logic node). Every
 # verb here is a thin wrapper around engine.actions.dispatch_action;
@@ -1398,6 +1404,292 @@ def build_paste_commands() -> List[Command]:
 
 
 # ---------------------------------------------------------------------------
+# Notion-mirror — brief 02 commit 5 (SPEC-088 / Decision B4).
+#
+# Composes the existing `Alethea-cc/tools/notion_workflow_mirror.py` +
+# `notion_workflow_pump.py` modules. The CLI surface gives the maintainer
+# manual + status + watch verbs for the polling daemon.
+#
+# Per mistake #009: no new daemon-shape code lives here — the daemon's
+# threading + tick loop is inside notion_workflow_pump.NotionWorkflowPump.
+# This namespace exposes the manual + lifecycle verbs around that class.
+# ---------------------------------------------------------------------------
+
+
+_NOTION_PUMP_SINGLETON = {"pump": None}  # process-local singleton handle
+
+
+def _try_import_notion_mirror():
+    """Discover `notion_workflow_mirror` + `notion_workflow_pump` in
+    Alethea-cc/tools/. Returns ``(mirror_module, pump_module, err)``."""
+    import importlib.util
+    candidate = APEIRON_ROOT.parent / "Alethea" / "Alethea-cc" / "tools"
+    mirror_init = candidate / "notion_workflow_mirror.py"
+    pump_init = candidate / "notion_workflow_pump.py"
+    if not mirror_init.exists():
+        return (
+            None,
+            None,
+            f"notion_workflow_mirror.py not found at {mirror_init}",
+        )
+    if not pump_init.exists():
+        return (
+            None,
+            None,
+            f"notion_workflow_pump.py not found at {pump_init}",
+        )
+    try:
+        import sys as _sys
+        cand_str = str(candidate)
+        if cand_str not in _sys.path:
+            _sys.path.insert(0, cand_str)
+        spec_m = importlib.util.spec_from_file_location(
+            "alethea_notion_workflow_mirror", mirror_init
+        )
+        mirror_mod = importlib.util.module_from_spec(spec_m)
+        spec_m.loader.exec_module(mirror_mod)
+        spec_p = importlib.util.spec_from_file_location(
+            "alethea_notion_workflow_pump", pump_init
+        )
+        pump_mod = importlib.util.module_from_spec(spec_p)
+        spec_p.loader.exec_module(pump_mod)
+        return (mirror_mod, pump_mod, None)
+    except Exception as exc:  # pragma: no cover
+        return (None, None, f"notion-mirror import failed: {exc}")
+
+
+def _notion_target_view(ctx: CommandContext, args: List[str]) -> str:
+    """Resolve --target <view-id> from args; defaults to workflow_view_main."""
+    for i, tok in enumerate(args):
+        if tok == "--target" and i + 1 < len(args):
+            return args[i + 1]
+    return "workflow_view_main"
+
+
+def _notion_mirror_sync(ctx: CommandContext, args: List[str]) -> CommandResult:
+    """notion.mirror sync <page-id> [--target <view-id>]
+
+    Manual one-shot sync. Pulls the Notion page, diffs against the per-page
+    last-synced state, appends new blocks via the substrate execute()
+    primitive.
+    """
+    if not args:
+        return CommandResult.err(
+            "usage: notion.mirror sync <page-id> [--target <view-id>]"
+        )
+    page_id = args[0]
+    target = _notion_target_view(ctx, args[1:])
+    mirror, _pump, err = _try_import_notion_mirror()
+    if mirror is None:
+        return CommandResult.err(f"notion.mirror sync: {err}")
+    try:
+        result = mirror.sync(page_id, target)
+    except Exception as exc:  # pragma: no cover
+        return CommandResult.err(f"notion.mirror sync: {exc}")
+    summary = result.summary() if hasattr(result, "summary") else result
+    appended_count = len(summary.get("appended") or [])
+    err_count = len(summary.get("errors") or [])
+    msg = (
+        f"notion.mirror sync {page_id} → {target}: "
+        f"appended={appended_count} errors={err_count} "
+        f"no_change={summary.get('no_change', False)}"
+    )
+    return CommandResult.ok_msg(msg, data=summary)
+
+
+def _notion_mirror_status(ctx: CommandContext, args: List[str]) -> CommandResult:
+    """notion.mirror status
+
+    Show per-page last-synced state + the live pump status (if running).
+    """
+    mirror, pump, err = _try_import_notion_mirror()
+    if mirror is None:
+        return CommandResult.err(f"notion.mirror status: {err}")
+
+    state_dir = ctx.config.state_dir / "workflow" / "notion_sync_state"
+    pump_running = _NOTION_PUMP_SINGLETON["pump"] is not None
+    page_states: dict = {}
+    if pump_running:
+        try:
+            page_states = {
+                pid: {
+                    "last_seen_edited_time": ps.last_seen_edited_time,
+                    "last_sync_at": ps.last_sync_at,
+                    "pending_change_observed_at": ps.pending_change_observed_at,
+                }
+                for pid, ps in _NOTION_PUMP_SINGLETON["pump"].page_states().items()
+            }
+        except Exception:
+            page_states = {}
+
+    state_files = []
+    if state_dir.exists():
+        for p in sorted(state_dir.glob("*.md")):
+            try:
+                text = p.read_text(encoding="utf-8")
+                import re as _re
+                m = _re.search(r"```json\s*\n(.*?)\n```", text, _re.DOTALL)
+                if m:
+                    payload = json.loads(m.group(1))
+                else:
+                    payload = {}
+            except Exception:
+                payload = {}
+            state_files.append(
+                {
+                    "path": str(p.relative_to(ctx.config.apeiron_root)),
+                    "page_id": payload.get("page_id"),
+                    "synced_at": payload.get("synced_at"),
+                    "last_edited_time": payload.get("last_edited_time"),
+                    "block_count": payload.get("block_count"),
+                }
+            )
+    lines = [
+        f"pump-running: {pump_running}",
+        f"state-files: {len(state_files)}",
+    ]
+    if page_states:
+        lines.append("pump-pages:")
+        for pid, ps in page_states.items():
+            lines.append(
+                f"  {pid}: last_seen={ps['last_seen_edited_time']} "
+                f"pending={ps['pending_change_observed_at'] is not None}"
+            )
+    if state_files:
+        lines.append("synced-pages:")
+        for sf in state_files:
+            lines.append(
+                f"  {sf['page_id']}: synced_at={sf['synced_at']} blocks={sf['block_count']}"
+            )
+    return CommandResult.ok_msg(
+        "\n".join(lines),
+        data={
+            "pump_running": pump_running,
+            "page_states": page_states,
+            "state_files": state_files,
+        },
+    )
+
+
+def _notion_mirror_watch(ctx: CommandContext, args: List[str]) -> CommandResult:
+    """notion.mirror watch start|stop [--page-ids <id1>,<id2>] [--interval <s>] [--debounce <s>] [--target <view>]
+    """
+    if not args:
+        return CommandResult.err(
+            "usage: notion.mirror watch start|stop [--page-ids ...] [--interval N] [--debounce N] [--target view]"
+        )
+    sub = args[0]
+    mirror, pump_mod, err = _try_import_notion_mirror()
+    if mirror is None:
+        return CommandResult.err(f"notion.mirror watch: {err}")
+
+    if sub == "stop":
+        pump = _NOTION_PUMP_SINGLETON["pump"]
+        if pump is None:
+            return CommandResult.ok_msg(
+                "notion.mirror watch stop: no pump was running",
+                data={"was_running": False},
+            )
+        try:
+            pump.stop()
+        finally:
+            _NOTION_PUMP_SINGLETON["pump"] = None
+        return CommandResult.ok_msg(
+            "notion.mirror watch stop: pump stopped",
+            data={"was_running": True},
+        )
+
+    if sub != "start":
+        return CommandResult.err(
+            f"notion.mirror watch: unknown sub-verb {sub!r} (use start|stop)"
+        )
+
+    if _NOTION_PUMP_SINGLETON["pump"] is not None:
+        return CommandResult.err(
+            "notion.mirror watch start: a pump is already running; stop first"
+        )
+
+    page_ids: List[str] = []
+    interval = pump_mod.DEFAULT_INTERVAL
+    debounce = pump_mod.DEFAULT_DEBOUNCE
+    target = "workflow_view_main"
+    i = 1
+    while i < len(args):
+        tok = args[i]
+        if tok == "--page-ids" and i + 1 < len(args):
+            page_ids = [p.strip() for p in args[i + 1].split(",") if p.strip()]
+            i += 2
+            continue
+        if tok == "--interval" and i + 1 < len(args):
+            try:
+                interval = float(args[i + 1])
+            except ValueError:
+                return CommandResult.err(f"--interval requires a number; got {args[i + 1]!r}")
+            i += 2
+            continue
+        if tok == "--debounce" and i + 1 < len(args):
+            try:
+                debounce = float(args[i + 1])
+            except ValueError:
+                return CommandResult.err(f"--debounce requires a number; got {args[i + 1]!r}")
+            i += 2
+            continue
+        if tok == "--target" and i + 1 < len(args):
+            target = args[i + 1]
+            i += 2
+            continue
+        i += 1
+
+    if not page_ids:
+        return CommandResult.err(
+            "notion.mirror watch start: --page-ids required"
+        )
+
+    config = pump_mod.PumpConfig(
+        page_ids=page_ids,
+        target_view_id=target,
+        interval=interval,
+        debounce=debounce,
+        state_dir=ctx.config.state_dir / "workflow" / "notion_sync_state",
+    )
+    pump = pump_mod.NotionWorkflowPump(config)
+    pump.start()
+    _NOTION_PUMP_SINGLETON["pump"] = pump
+    return CommandResult.ok_msg(
+        f"notion.mirror watch start: pump running for {len(page_ids)} page(s), "
+        f"interval={interval}s debounce={debounce}s target={target}",
+        data={
+            "page_ids": page_ids,
+            "interval": interval,
+            "debounce": debounce,
+            "target_view_id": target,
+        },
+    )
+
+
+def build_notion_commands() -> List[Command]:
+    return [
+        Command(
+            "notion.mirror.sync",
+            "manual sync of a Notion page into a workflow_view (SPEC-088)",
+            _notion_mirror_sync,
+            arg_help="<page-id> [--target <view-id>]",
+        ),
+        Command(
+            "notion.mirror.status",
+            "show notion-mirror pump + per-page sync state",
+            _notion_mirror_status,
+        ),
+        Command(
+            "notion.mirror.watch",
+            "start/stop the notion-mirror polling daemon",
+            _notion_mirror_watch,
+            arg_help="start|stop [--page-ids ...] [--interval N] [--debounce N] [--target view]",
+        ),
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Aggregate registration
 # ---------------------------------------------------------------------------
 
@@ -1414,4 +1706,5 @@ def register_all(registry: CommandRegistry) -> None:
     registry.register_many(build_ui_commands())
     registry.register_many(build_auth_commands())
     registry.register_many(build_paste_commands())
+    registry.register_many(build_notion_commands())
     registry.register_many(build_meta_commands(registry))
