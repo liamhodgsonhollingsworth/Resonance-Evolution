@@ -15,6 +15,7 @@ launcher that runs this with the current python interpreter.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 import uuid
@@ -53,6 +54,31 @@ def _emit(obj: dict) -> None:
 
 
 def main() -> int:
+    # Optional: spawn a long-lived "grandchild" before reading input.
+    # Used by tests/test_session_manager_tree_kill.py to verify
+    # SessionManager.archive walks the process tree on Windows (the
+    # cmd.exe wrapper -> fake_claude -> grandchild chain mirrors
+    # cmd.exe -> claude -> any-claude-child in production). The path
+    # the grandchild PID is published to is taken from
+    # FAKE_CLAUDE_GRANDCHILD_PID_FILE; absent => no grandchild.
+    grandchild_pid_file = os.environ.get("FAKE_CLAUDE_GRANDCHILD_PID_FILE")
+    if grandchild_pid_file:
+        import subprocess  # local import keeps the no-grandchild path tiny
+        # The grandchild itself is just a python process that sleeps.
+        # We use sys.executable so the test doesn't depend on `sleep`
+        # being on PATH (Windows-friendly).
+        gc = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(3600)"],
+        )
+        # Publish atomically: write to a temp sibling then rename, so
+        # a test that reads the file mid-write doesn't see a partial
+        # PID. Path.replace is atomic on Windows + POSIX.
+        from pathlib import Path as _Path
+        target = _Path(grandchild_pid_file)
+        tmp = target.with_suffix(target.suffix + ".part")
+        tmp.write_text(str(gc.pid), encoding="utf-8")
+        tmp.replace(target)
+
     # Emit a system/init event up-front so the SessionManager sees a
     # plausible boot sequence.
     _emit({"type": "system", "subtype": "init", "session_id": str(uuid.uuid4())})
@@ -81,7 +107,6 @@ def main() -> int:
             #   WRITE_NODE_TYPE <abs-path>
             # The script writes a tiny working node-type module to the
             # given absolute path, then emits a completion message.
-            import os
             target = body[len("WRITE_NODE_TYPE "):].strip()
             os.makedirs(os.path.dirname(target), exist_ok=True)
             with open(target, "w", encoding="utf-8") as fh:
