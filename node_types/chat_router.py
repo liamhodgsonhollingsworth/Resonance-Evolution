@@ -196,6 +196,7 @@ def _send_via_core(engine: Any, target: Optional[str], text: str) -> Dict[str, A
     reason — preserving the legacy "session_manager missing" behavior.
     """
     from tools.workflow.chat_router_core import route_chat as _route_chat
+    from tools.workflow.route_chat_audit_log import audit_log_writer
 
     workflow = engine.cache.get("__workflow__") or {}
     sm = workflow.get("session_manager")
@@ -212,11 +213,25 @@ def _send_via_core(engine: Any, target: Optional[str], text: str) -> Dict[str, A
             "reason": "session_manager not registered in engine.cache['__workflow__']",
         }
 
+    # Deferred-concerns #15: install the default JSONL audit-log
+    # writer when no other hook is plugged into engine.cache. The
+    # writer caches in engine.cache so subsequent calls reuse it
+    # (cheap to reconstruct, but the cached writer's in-process lock
+    # is shared across calls).
+    audit_log = workflow.get("route_chat_audit_log")
+    if audit_log is None:
+        audit_log = audit_log_writer()
+        workflow["route_chat_audit_log"] = audit_log
+        # engine.cache may be a fresh dict on this call; write back
+        # so the next call sees the cached writer.
+        engine.cache["__workflow__"] = workflow
+
     return _route_chat(
         text,
         session_manager=sm,
         inbox=inbox,
         active_session_id=target,
+        audit_log=audit_log,
     )
 
 

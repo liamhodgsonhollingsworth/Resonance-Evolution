@@ -33,9 +33,13 @@ control of its own UX:
 
   - ``audit_log(entry)`` — called with the routing-decision dict on
     every successful + soft-fail invocation. The website's existing
-    ``_log_entry`` is plugged in here; Tk + Streamlit pass ``None``
-    until deferred-concerns #15 lands a JSONL writer with rotation
-    conventions.
+    ``_log_entry`` is plugged in here; the Apeiron-side surfaces
+    (Tk gui_shell, terminal/Streamlit chat_router node) pass the
+    default JSONL writer from ``route_chat_audit_log.audit_log_writer()``
+    so routing decisions land at
+    ``<apeiron-root>/state/workflow/route_chat_decisions.jsonl``
+    with 10 MB rotation (deferred-concerns #15, closed 2026-05-26).
+    Pass ``None`` to suppress audit logging entirely.
 
   - ``default_target_picker(sessions)`` — selects a fallback target
     when the caller's explicit ``active_session_id`` is ``None``. The
@@ -143,7 +147,7 @@ def route_chat(
             "message": "",
             "reason": "empty body",
         }
-        _emit(audit_log, result, actor)
+        _emit(audit_log, result, actor, input_session=active_session_id)
         _surface_if_failed(surface_failure, result)
         return result
 
@@ -153,7 +157,7 @@ def route_chat(
             text[len("/all"):].strip(),
             session_manager=session_manager,
         )
-        _emit(audit_log, result, actor)
+        _emit(audit_log, result, actor, input_session=active_session_id)
         _surface_if_failed(surface_failure, result)
         return result
 
@@ -166,7 +170,7 @@ def route_chat(
             session_manager=session_manager,
             inbox=inbox,
         )
-        _emit(audit_log, result, actor)
+        _emit(audit_log, result, actor, input_session=active_session_id)
         _surface_if_failed(surface_failure, result)
         return result
 
@@ -197,7 +201,7 @@ def route_chat(
                         f"with your message as the seed prompt"
                     ),
                 }
-                _emit(audit_log, result, actor)
+                _emit(audit_log, result, actor, input_session=active_session_id)
                 return result
             err = spawn_result.get("error") or "auto-spawn failed"
             result = {
@@ -207,7 +211,7 @@ def route_chat(
                 "message": text,
                 "reason": f"natural-language routing failed: {err}",
             }
-            _emit(audit_log, result, actor)
+            _emit(audit_log, result, actor, input_session=active_session_id)
             _surface_if_failed(surface_failure, result)
             return result
 
@@ -219,7 +223,7 @@ def route_chat(
             "message": text,
             "reason": "no active session — open Chat tab to pick one",
         }
-        _emit(audit_log, result, actor)
+        _emit(audit_log, result, actor, input_session=active_session_id)
         _surface_if_failed(surface_failure, result)
         return result
 
@@ -230,7 +234,7 @@ def route_chat(
         session_manager=session_manager,
         inbox=inbox,
     )
-    _emit(audit_log, result, actor)
+    _emit(audit_log, result, actor, input_session=active_session_id)
     _surface_if_failed(surface_failure, result)
     return result
 
@@ -541,13 +545,23 @@ def _emit(
     audit_log: Optional[AuditLogHook],
     result: Dict[str, Any],
     actor: str,
+    input_session: Optional[str] = None,
 ) -> None:
-    """Best-effort audit-log emit. Never raises."""
+    """Best-effort audit-log emit. Never raises.
+
+    ``input_session`` carries the caller-supplied ``active_session_id``
+    so the audit consumer can discriminate the active-session path
+    from the default-picker path without re-running the routing
+    logic. Defaults to ``None`` for backward-compatibility with
+    hooks that don't need it (the website's ``_audit`` ignores it).
+    """
     if audit_log is None:
         return
     try:
         entry = dict(result)
         entry["actor"] = actor
+        if input_session is not None:
+            entry["input_session"] = input_session
         audit_log(entry)
     except Exception:
         pass

@@ -3141,12 +3141,22 @@ class GuiShell:
         ``_on_chat_submit`` writeback.
         """
         from tools.workflow.chat_router_core import route_chat as _route_chat
+        from tools.workflow.route_chat_audit_log import audit_log_writer
+        # Deferred-concerns #15: default JSONL audit-log writer
+        # appends every routing decision to
+        # <apeiron-root>/state/workflow/route_chat_decisions.jsonl
+        # (10 MB rotation). Cached on the shell so each route_chat
+        # call doesn't reconstruct the writer (cheap, but the cache
+        # also means the in-process lock is shared across calls).
+        if getattr(self, "_route_chat_audit_log", None) is None:
+            self._route_chat_audit_log = audit_log_writer()
         return _route_chat(
             text,
             session_manager=self.sm,
             inbox=None,  # GUI shell renders inbox separately; no echo
             active_session_id=self.active_session_id,
             surface_failure=self._surface_chat_failure,
+            audit_log=self._route_chat_audit_log,
             lock=self._chat_lock,
         )
 
