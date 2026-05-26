@@ -253,6 +253,19 @@ class SessionManager:
     def send(self, session_id: str, body: str) -> None:
         with self._lock:
             s = self._sessions.get(session_id)
+        # SPEC-068 fix (2026-05-26): a fresh SessionManager (e.g. one
+        # constructed per-request by the website's terminal_bridge
+        # session.send verb) has an empty in-memory _sessions dict.
+        # The on-disk record exists; hydrate it on cache-miss so
+        # send() can reactivate the session rather than fail with
+        # "Unknown session". The long-running shell path is
+        # unaffected — the session was spawned in the same process
+        # so the in-memory entry is already present, and _hydrate
+        # is idempotent.
+        if s is None:
+            self._hydrate()
+            with self._lock:
+                s = self._sessions.get(session_id)
         if s is None:
             raise SessionError(f"Unknown session: {session_id}")
         if s.child is None or s.child.poll() is not None:

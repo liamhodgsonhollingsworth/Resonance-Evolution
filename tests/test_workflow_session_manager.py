@@ -193,3 +193,53 @@ def test_missing_claude_binary_raises(tmp_path):
     with pytest.raises(SessionError):
         sm.spawn(session_type="test", display_name="should-fail")
     sm.shutdown()
+
+
+def test_send_hydrates_on_cache_miss(tmp_path, monkeypatch):
+    """SPEC-068 regression: a SessionManager constructed AFTER another
+    process spawned a session must be able to send to that session via
+    on-demand hydration from the persisted JSON file.
+
+    The website's terminal_bridge constructs a new SessionManager per
+    request. Before this fix, ``send()`` raised ``SessionError('Unknown
+    session: ...')`` because the in-memory ``_sessions`` dict was empty;
+    only ``list()`` and ``reactivate()`` called ``_hydrate``. The fix
+    triggers hydration on cache-miss inside ``send()`` so the spawn-
+    in-process-A / send-from-process-B flow that SPEC-068 requires
+    works through the website surface.
+
+    Test approach: spawn via SessionManager-A, write the JSON to disk,
+    construct SessionManager-B against the same state_dir, then send.
+    Pre-fix: SessionError; post-fix: succeeds (reactivates from disk).
+    """
+    sm_a = _make_sm(tmp_path, monkeypatch)
+    rec = sm_a.spawn(session_type="test", display_name="cross-proc")
+    _wait_for_events(sm_a, {"spawned"}, timeout_s=3.0)
+    # Confirm record is persisted on disk.
+    on_disk = sm_a.sessions_dir / f"{rec.id}.json"
+    assert on_disk.exists()
+    sm_a.shutdown()
+
+    # Fresh SessionManager-B against the same state_dir (e.g. a website
+    # request-handler creating a per-request manager).
+    launcher = tmp_path / "fake_claude_launcher.bat"
+    if os.name == "nt":
+        claude_bin = str(launcher)
+    else:
+        launcher = tmp_path / "fake_claude_launcher.sh"
+        claude_bin = str(launcher)
+    sm_b = SessionManager(state_dir=tmp_path / "state", claude_bin=claude_bin)
+    # Pre-condition: sm_b's in-memory dict is empty.
+    assert sm_b._sessions == {}
+    # Send should hydrate, find the on-disk record, then attempt reactivation.
+    # Reactivation may relaunch the subprocess; we accept either silent
+    # success or BrokenPipeError (the previous child terminated on
+    # sm_a.shutdown). The test asserts the function does NOT raise
+    # SessionError('Unknown session: ...') — that's the bug we fixed.
+    try:
+        sm_b.send(rec.id, "post-fix should hydrate from disk")
+    except SessionError as exc:
+        assert "Unknown session" not in str(exc), (
+            f"hydrate-on-cache-miss broken: send still raised Unknown session: {exc}"
+        )
+    sm_b.shutdown()
