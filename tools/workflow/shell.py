@@ -330,56 +330,71 @@ class Shell:
         next send).
 
         Returns the active session id, or None if spawn failed.
+
+        Deferred-concerns #17 consolidation: delegates to
+        ``tools.workflow.chat_router_core.ensure_default_workflow_mgmt_session``
+        — the same canonical implementation the GUI shell + Streamlit
+        runtime both call. The terminal-side surface still prints the
+        ready/spawn/failure messages via ``_println``; the print
+        hooks live as callbacks the core invokes.
         """
+        from tools.workflow.chat_router_core import (
+            ensure_default_workflow_mgmt_session as _ensure,
+        )
+
+        # The core helper doesn't print the "ready" line for the resume
+        # path (it can't — it's UI-agnostic), so wrap it with a
+        # before/after print pair that preserves the legacy UX.
         marker = self._default_session_marker_path()
+        was_resumable = False
         existing_id: Optional[str] = None
         if marker.exists():
             try:
                 existing_id = marker.read_text(encoding="utf-8").strip() or None
             except Exception:
                 existing_id = None
+            if existing_id:
+                rec_check = self.sm.get(existing_id)
+                if rec_check is not None and rec_check.status != "archived":
+                    was_resumable = True
 
-        if existing_id:
-            rec = self.sm.get(existing_id)
-            if rec is not None and rec.status != "archived":
-                self.active_session_id = existing_id
-                self._println(
-                    f"[shell] default workflow-management session ready: "
-                    f"{rec.display_name} ({existing_id[:8]}). Bare text routes here."
-                )
-                return existing_id
-            # Marker exists but session is gone or archived; fall through to fresh spawn.
+        def _surface_failure(reason: str, hint: Optional[str]) -> None:
+            msg = f"[shell] {reason}"
+            if hint:
+                msg += f" {hint}"
+            self._println(msg)
 
-        seed = _build_workflow_mgmt_seed(
-            apeiron_root=self.root,
-            alethea_root=self.alethea_root,
+        sid = _ensure(
+            session_manager=self.sm,
+            seed_builder=lambda: _build_workflow_mgmt_seed(
+                apeiron_root=self.root,
+                alethea_root=self.alethea_root,
+            ),
+            cwd=self.root,
+            surface_failure=_surface_failure,
+            lock=self._lock,
         )
-        try:
-            rec = self.sm.spawn(
-                session_type="workflow-management",
-                display_name="workflow-mgmt-default",
-                cwd=self.root,
-                seed_message=seed,
-            )
-        except SessionError as exc:
-            self._println(
-                f"[shell] could not auto-spawn the default workflow-management "
-                f"session ({exc}). The shell still works; spawn manually with "
-                f"`/spawn workflow-management <name>` once `claude` is on PATH."
-            )
+        if sid is None:
             return None
+        self.active_session_id = sid
 
-        self.active_session_id = rec.id
-        try:
-            marker.parent.mkdir(parents=True, exist_ok=True)
-            marker.write_text(rec.id, encoding="utf-8")
-        except Exception:
-            pass
-        self._println(
-            f"[shell] auto-spawned default workflow-management session "
-            f"{rec.display_name} ({rec.id[:8]}). Bare text routes here from now on."
-        )
-        return rec.id
+        # Print the legacy ready/spawn line so terminal users see the
+        # same UX they had before the consolidation.
+        if was_resumable and sid == existing_id:
+            rec = self.sm.get(sid)
+            display = rec.display_name if rec is not None else "workflow-mgmt-default"
+            self._println(
+                f"[shell] default workflow-management session ready: "
+                f"{display} ({sid[:8]}). Bare text routes here."
+            )
+        else:
+            rec = self.sm.get(sid)
+            display = rec.display_name if rec is not None else "workflow-mgmt-default"
+            self._println(
+                f"[shell] auto-spawned default workflow-management session "
+                f"{display} ({sid[:8]}). Bare text routes here from now on."
+            )
+        return sid
 
     # ----- entry -----
 

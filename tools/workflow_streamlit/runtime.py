@@ -137,33 +137,22 @@ def _ensure_default_session(sm: Any, cfg: RuntimeConfig) -> Optional[str]:
     but never blocks the Streamlit page on spawn failure (a missing
     ``claude`` CLI on PATH just leaves ``default_session_id`` as None and
     the chat panel surfaces the situation rather than crashing).
+
+    Deferred-concerns #17 consolidation: delegates to
+    ``tools.workflow.chat_router_core.ensure_default_workflow_mgmt_session``
+    — the same canonical implementation the terminal + GUI shells both
+    call. Streamlit is single-threaded per session so no lock is
+    needed; ``surface_failure`` is omitted because spawn failures
+    surface via ``default_session_id is None`` in the chat panel.
     """
-    marker = cfg.state_dir / "default_workflow_mgmt.txt"
-    existing_id: Optional[str] = None
-    if marker.exists():
-        try:
-            existing_id = marker.read_text(encoding="utf-8").strip() or None
-        except Exception:
-            existing_id = None
-    if existing_id:
-        rec = sm.get(existing_id)
-        if rec is not None and rec.status != "archived":
-            return existing_id
-    try:
-        rec = sm.spawn(
-            session_type="workflow-management",
-            display_name="workflow-mgmt-default",
-            cwd=cfg.apeiron_root,
-            seed_message=_default_seed_message(cfg),
-        )
-    except Exception:
-        return None
-    try:
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text(rec.id, encoding="utf-8")
-    except Exception:
-        pass
-    return rec.id
+    from tools.workflow.chat_router_core import (
+        ensure_default_workflow_mgmt_session as _ensure,
+    )
+    return _ensure(
+        session_manager=sm,
+        seed_builder=lambda: _default_seed_message(cfg),
+        cwd=cfg.apeiron_root,
+    )
 
 
 def _default_seed_message(cfg: RuntimeConfig) -> str:
