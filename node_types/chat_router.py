@@ -113,6 +113,15 @@ def handle_action(
     and fall back to node.state. This is the same separation that
     ``architecture.md`` commits to and that ``engine/actions.py``
     enforces on the engine side.
+
+    Deferred-concerns #17: the node-type's routing logic now delegates
+    to ``tools.workflow.chat_router_core`` — the single canonical
+    implementation shared with the Tk + terminal shells and the
+    website ``_route_natural_language``. The composition through
+    ``inbox_echo_main`` / ``session_sender_main`` / ``session_resolver_main``
+    / ``session_lister_main`` is preserved when those nodes exist in
+    the scene; otherwise the node-type falls back to direct
+    SessionManager + Inbox calls via the core helper.
     """
     view = engine.cache.setdefault("__view_state__", {}).setdefault(node.id, {})
     current_default = view.get("default_target", state.get("default_target"))
@@ -131,20 +140,97 @@ def handle_action(
 def _send(engine: Any, target: Optional[str], text: str) -> Dict[str, Any]:
     """Route one chat-submit body. v2: parses /all + @<name> + bare.
 
-    Composes other nodes via dispatch_action — does NOT call inbox.post
-    or sm.send directly. The composition surface:
-      - ``inbox_echo_main`` — for the inbox-echo step (post to inbox).
-      - ``session_resolver_main`` — for @<name> → session_id resolution.
-      - ``session_sender_main`` — for the actual stdin delivery.
-      - ``session_lister_main`` — for the /all broadcast enumeration.
+    Two modes:
 
-    Three syntactic forms:
-      - ``/all body`` — broadcast to every non-archived session.
-      - ``@<name-or-id> body`` — resolve and route to that session.
-      - bare body — echo + (if target) deliver to target.
+      A. **Compositional mode** — when ``inbox_echo_main`` /
+         ``session_sender_main`` / ``session_resolver_main`` /
+         ``session_lister_main`` are present in the scene, this
+         delegates through them via ``dispatch_action`` so the
+         message flow remains observable + visualizable. This is the
+         scene-level composition pattern the architectural-direction
+         commitment specifies.
 
-    Outcomes follow the v1 contract: ``routed=True/False`` +
-    ``target`` + ``delivered_to`` + ``reason`` for caller inspection.
+      B. **Direct mode** — when those composition nodes are absent
+         (the Tk + terminal shells don't load them; they hand the
+         router a SessionManager + Inbox pair via
+         ``engine.cache['__workflow__']``), this delegates to
+         ``tools.workflow.chat_router_core.route_chat`` — the single
+         canonical SPEC-002 implementation. Closes deferred-concerns
+         #17 (the routing logic now exists in one place).
+
+    The mode is selected per-call by ``_has_composition_nodes(engine)``:
+    if the named composition nodes are loaded, mode A; otherwise mode
+    B. Both modes return the same routing-decision dict shape so the
+    caller code doesn't need to know which mode fired.
+    """
+    if _has_composition_nodes(engine):
+        return _send_via_composition(engine, target, text)
+    return _send_via_core(engine, target, text)
+
+
+def _has_composition_nodes(engine: Any) -> bool:
+    """True iff the scene contains the four composition node-ids the
+    compositional-mode dispatch path needs. Cheap check; called once
+    per send."""
+    try:
+        nodes = getattr(engine, "nodes", {}) or {}
+        return all(
+            nid in nodes
+            for nid in (
+                "inbox_echo_main",
+                "session_sender_main",
+                "session_resolver_main",
+                "session_lister_main",
+            )
+        )
+    except Exception:
+        return False
+
+
+def _send_via_core(engine: Any, target: Optional[str], text: str) -> Dict[str, Any]:
+    """Direct-mode dispatch through chat_router_core.
+
+    Reads SessionManager + Inbox from ``engine.cache['__workflow__']``
+    (the convention the Tk + terminal shells already use). If neither
+    is registered, the core helper soft-fails cleanly with a clear
+    reason — preserving the legacy "session_manager missing" behavior.
+    """
+    from tools.workflow.chat_router_core import route_chat as _route_chat
+
+    workflow = engine.cache.get("__workflow__") or {}
+    sm = workflow.get("session_manager")
+    inbox = workflow.get("inbox")
+
+    # Preserve the legacy soft-fail shape for the missing-SM case.
+    if sm is None:
+        # Empty body still wins (matches the legacy empty-body branch
+        # which fires before the SM check).
+        if not (text or "").strip():
+            return {"routed": False, "target": target, "reason": "empty body"}
+        return {
+            "routed": False, "target": target, "delivered_to": [],
+            "reason": "session_manager not registered in engine.cache['__workflow__']",
+        }
+
+    return _route_chat(
+        text,
+        session_manager=sm,
+        inbox=inbox,
+        active_session_id=target,
+    )
+
+
+def _send_via_composition(
+    engine: Any, target: Optional[str], text: str
+) -> Dict[str, Any]:
+    """Compositional-mode dispatch through scene-level node neighbors.
+
+    This preserves the v2 ChatRouter behavior where the routing
+    decision is observable as a sequence of ``dispatch_action`` calls
+    through ``inbox_echo_main`` / ``session_sender_main`` /
+    ``session_resolver_main`` / ``session_lister_main``. The
+    behavioral semantics match ``chat_router_core.route_chat``;
+    only the dispatch mechanism differs.
     """
     text = (text or "").strip()
     if not text:

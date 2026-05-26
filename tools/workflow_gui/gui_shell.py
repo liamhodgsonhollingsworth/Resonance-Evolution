@@ -531,6 +531,18 @@ class GuiShell:
 
         # Chat routing.
         self.active_session_id: Optional[str] = None
+        # Deferred-concerns #13 + #14 + #17 consolidation: a single
+        # process-local lock serializes (a) the marker-check + spawn
+        # flow in ``ensure_default_workflow_mgmt_session`` and (b) the
+        # active-session resolution in ``route_chat``. Concurrent
+        # Tk-UI-thread + text-API-thread calls cannot race against
+        # ``self.active_session_id`` or orphan-spawn the default
+        # session. The lock is passed through to
+        # ``chat_router_core``'s routing helpers via the ``lock``
+        # argument; surfaces that don't need locking (Streamlit
+        # single-threaded) pass ``None``.
+        import threading as _threading
+        self._chat_lock = _threading.Lock()
 
         # File watcher (set externally; the shell holds a reference for
         # shutdown).
@@ -3112,132 +3124,53 @@ class GuiShell:
              "delivered_to": [<sid>, ...],
              "message": <body_sent>,
              "reason": <human-readable note>}
+
+        Deferred-concerns #17 consolidation: this method now delegates
+        to ``tools.workflow.chat_router_core.route_chat`` — the single
+        canonical implementation shared with the terminal shell, the
+        Streamlit chat-router node-type, and the website-side
+        ``_route_natural_language``. The Tk surface no longer carries
+        its own copy of the routing rules.
+
+        Lock-protection (#13 + #14): ``self._chat_lock`` serializes the
+        active-session resolution so concurrent Tk-UI and text-API
+        calls cannot race against ``self.active_session_id``.
+        Failure-surfacing (#16): soft-fails route through
+        ``_surface_chat_failure`` which writes back into the chat
+        input — the same UX the legacy implementation produced via the
+        ``_on_chat_submit`` writeback.
         """
-        text = (text or "").strip()
-        if not text:
-            return {
-                "routed": False,
-                "target": None,
-                "delivered_to": [],
-                "message": "",
-                "reason": "empty body",
-            }
+        from tools.workflow.chat_router_core import route_chat as _route_chat
+        return _route_chat(
+            text,
+            session_manager=self.sm,
+            inbox=None,  # GUI shell renders inbox separately; no echo
+            active_session_id=self.active_session_id,
+            surface_failure=self._surface_chat_failure,
+            lock=self._chat_lock,
+        )
 
-        # /all broadcast (matches "/all body" or bare "/all").
-        if text == "/all" or text.startswith("/all "):
-            body = text[len("/all"):].strip()
-            if not body:
-                return {
-                    "routed": False,
-                    "target": "all",
-                    "delivered_to": [],
-                    "message": "",
-                    "reason": "/all with empty body",
-                }
-            delivered: List[str] = []
-            errors: List[str] = []
-            try:
-                records = list(self.sm.list())
-            except Exception as exc:
-                return {
-                    "routed": False,
-                    "target": "all",
-                    "delivered_to": [],
-                    "message": body,
-                    "reason": f"sm.list failed: {exc}",
-                }
-            for rec in records:
-                if rec.status == "archived":
-                    continue  # skip archived in broadcast
-                try:
-                    self.sm.send(rec.id, body)
-                    delivered.append(rec.id)
-                except Exception as exc:
-                    errors.append(f"{rec.id}: {exc}")
-            return {
-                "routed": True,
-                "target": "all",
-                "delivered_to": delivered,
-                "message": body,
-                "reason": (
-                    f"broadcast to {len(delivered)} session(s)"
-                    + (f"; errors: {errors}" if errors else "")
-                ),
-            }
+    def _surface_chat_failure(
+        self, reason: str, hint: Optional[str] = None
+    ) -> None:
+        """Surface a chat routing failure to the GUI.
 
-        # @<name-or-id> routing.
-        if text.startswith("@"):
-            head, _, body = text[1:].partition(" ")
-            head = head.strip()
-            body = body.strip()
-            if not head or not body:
-                return {
-                    "routed": False,
-                    "target": head or None,
-                    "delivered_to": [],
-                    "message": body,
-                    "reason": "@-prefix requires `@<name> <body>`",
-                }
-            sid = self._resolve_session_id(head)
-            if sid is None:
-                return {
-                    "routed": False,
-                    "target": head,
-                    "delivered_to": [],
-                    "message": body,
-                    "reason": f"no session matched name/id {head!r}",
-                }
-            # Reactivate if archived.
-            try:
-                rec = self.sm.get(sid)
-                if rec is not None and rec.status in ("archived", "idle"):
-                    self.sm.reactivate(sid)
-            except Exception as exc:
-                self.engine.errors.append(f"gui_shell reactivate {sid}: {exc}")
-            try:
-                self.sm.send(sid, body)
-            except Exception as exc:
-                return {
-                    "routed": False,
-                    "target": sid,
-                    "delivered_to": [],
-                    "message": body,
-                    "reason": f"send failed: {exc}",
-                }
-            return {
-                "routed": True,
-                "target": sid,
-                "delivered_to": [sid],
-                "message": body,
-                "reason": f"routed via @-prefix to {sid}",
-            }
-
-        # Bare text → active session (SPEC-002).
-        if self.active_session_id is None:
-            return {
-                "routed": False,
-                "target": None,
-                "delivered_to": [],
-                "message": text,
-                "reason": "no active session — open Chat tab to pick one",
-            }
+        Closes deferred-concerns #16's GUI-side failure-surfacing
+        parity gap (the terminal shell already printed via
+        ``_println``; the GUI silently swallowed before this method
+        existed). The hook lives on the shell so the core router can
+        invoke it via callback; the actual UX choice (writeback into
+        the chat input) stays a GUI-shell concern.
+        """
+        if self._chat_entry is None:
+            return
         try:
-            self.sm.send(self.active_session_id, text)
-        except Exception as exc:
-            return {
-                "routed": False,
-                "target": self.active_session_id,
-                "delivered_to": [],
-                "message": text,
-                "reason": f"send failed: {exc}",
-            }
-        return {
-            "routed": True,
-            "target": self.active_session_id,
-            "delivered_to": [self.active_session_id],
-            "message": text,
-            "reason": f"routed to active session {self.active_session_id}",
-        }
+            # Prepend the reason to the input so the maintainer sees
+            # why their message didn't route. Matches the legacy
+            # _on_chat_submit writeback shape (``(<reason>)``).
+            self._chat_entry.insert(0, f"({reason})")
+        except Exception:
+            pass
 
     def _on_chat_submit(self) -> None:
         if self._chat_entry is None:
@@ -3246,12 +3179,11 @@ class GuiShell:
         if not text:
             return
         self._chat_entry.delete(0, "end")
-        result = self.route_chat(text)
-        if not result.get("routed"):
-            # Surface a hint by writing back into the chat input.
-            reason = result.get("reason", "send failed")
-            self._chat_entry.insert(0, f"({reason})")
-            return
+        # route_chat now dispatches through chat_router_core which
+        # invokes ``_surface_chat_failure`` for soft-fails; the
+        # writeback into the chat input happens there. The legacy
+        # double-writeback path here is gone.
+        self.route_chat(text)
 
     # ----- default session bootstrap -----
 
@@ -3265,45 +3197,30 @@ class GuiShell:
         Records the spawned session id on a marker file so subsequent
         launches resume the same workflow-management session rather
         than spawning a fresh one each time.
+
+        Deferred-concerns #17 consolidation: delegates to
+        ``tools.workflow.chat_router_core.ensure_default_workflow_mgmt_session``
+        — the same canonical implementation the terminal shell and
+        Streamlit runtime both call. Closes #13 (marker-file race) via
+        ``self._chat_lock`` + atomic ``open(..., "x")`` and #16
+        (GUI-silent-on-failure) via ``self._surface_chat_failure``.
         """
-        marker = Path(self.sm.state_dir) / "default_workflow_mgmt.txt"
-        existing_id: Optional[str] = None
-        if marker.exists():
-            try:
-                existing_id = marker.read_text(encoding="utf-8").strip() or None
-            except Exception:
-                existing_id = None
-
-        if existing_id:
-            rec = self.sm.get(existing_id)
-            if rec is not None and rec.status != "archived":
-                self.active_session_id = existing_id
-                return existing_id
-
-        # Reuse the terminal shell's seed builder to keep the prompt
-        # identical across both surfaces.
+        from tools.workflow.chat_router_core import (
+            ensure_default_workflow_mgmt_session as _ensure,
+        )
         from tools.workflow.shell import _build_workflow_mgmt_seed
 
-        seed = (seed_builder or _build_workflow_mgmt_seed)(
-            self.root, alethea_root
+        _seed_fn = seed_builder or _build_workflow_mgmt_seed
+        sid = _ensure(
+            session_manager=self.sm,
+            seed_builder=lambda: _seed_fn(self.root, alethea_root),
+            cwd=self.root,
+            surface_failure=self._surface_chat_failure,
+            lock=self._chat_lock,
         )
-        try:
-            rec = self.sm.spawn(
-                session_type="workflow-management",
-                display_name="workflow-mgmt-default",
-                cwd=self.root,
-                seed_message=seed,
-            )
-        except SessionError:
-            return None
-
-        self.active_session_id = rec.id
-        try:
-            marker.parent.mkdir(parents=True, exist_ok=True)
-            marker.write_text(rec.id, encoding="utf-8")
-        except Exception:
-            pass
-        return rec.id
+        if sid is not None:
+            self.active_session_id = sid
+        return sid
 
     # ----- lifecycle -----
 
