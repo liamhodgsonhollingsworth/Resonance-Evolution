@@ -57,6 +57,16 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 
+# Allow direct script invocation (`python tools/gui_test_driver.py`) as well as
+# the documented `python -m tools.gui_test_driver`. When run as a script, the
+# `tools` package is not on sys.path; prepend the project root so the late
+# import below resolves either way.
+if __name__ == "__main__" and __package__ in (None, ""):
+    _PROJECT_ROOT = Path(__file__).resolve().parent.parent
+    if str(_PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(_PROJECT_ROOT))
+
+
 # Late imports so this module loads even when Tk isn't available.
 def _import_gui_shell():
     from tools.workflow_gui.gui_shell import GuiShell, TABS
