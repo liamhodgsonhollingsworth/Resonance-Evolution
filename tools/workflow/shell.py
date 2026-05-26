@@ -309,6 +309,12 @@ class Shell:
         self._last_inbox_scan = 0.0
         self._seen_inbox_paths: set = set()
         self._lock = threading.Lock()
+        # Deferred-concerns #13 + #14 + #17 consolidation: a dedicated
+        # lock for the chat-routing critical section. Separate from
+        # ``self._lock`` (which serializes stdout writes via
+        # ``_println``) so the routing-side ``surface_failure`` callback
+        # can call ``_println`` without re-entrant deadlock.
+        self._chat_lock = threading.Lock()
         # Seed inbox baseline so existing messages don't all flood on first scan.
         for msg in self.inbox.list_all():
             self._seen_inbox_paths.add(str(msg.path))
@@ -372,7 +378,7 @@ class Shell:
             ),
             cwd=self.root,
             surface_failure=_surface_failure,
-            lock=self._lock,
+            lock=self._chat_lock,
         )
         if sid is None:
             return None
