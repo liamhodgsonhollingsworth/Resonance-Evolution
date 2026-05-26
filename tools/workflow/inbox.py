@@ -168,6 +168,15 @@ class Inbox:
 
         When no ``sender_trust`` is configured the call falls through to
         ``list_all`` so legacy callers continue to work.
+
+        WARNING: ``list_main()`` + ``list_quarantine()`` is NOT atomic
+        under concurrent trust-set mutations. Each call internally walks
+        ``list_all`` and filters; between the two calls the trust-set may
+        flip, so a boundary message can appear in BOTH lists or NEITHER.
+        Callers that want both surfaces (and need the
+        main+quarantine=all invariant) MUST use
+        ``partition_main_quarantine`` which walks once. See FM-R1 in
+        ``tests/test_phase1b_failure_modes.py`` for the demonstration.
         """
         if self.sender_trust is None:
             return self.list_all(unread_only=unread_only)
@@ -181,6 +190,10 @@ class Inbox:
 
         When no ``sender_trust`` is configured the quarantine is empty by
         definition — without a trust-set there is no notion of untrusted.
+
+        See ``list_main`` for the atomicity caveat against concurrent
+        trust mutations; ``partition_main_quarantine`` is the atomic
+        equivalent.
         """
         if self.sender_trust is None:
             return []

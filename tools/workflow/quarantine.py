@@ -117,13 +117,65 @@ class ScanReport:
         }
 
 
+def _normalize_for_pattern_match(text: str) -> str:
+    """Fold Unicode look-alikes to their ASCII counterparts before regex match.
+
+    Phase 1b verification surfaced FM-C5: an attacker substitutes a
+    Greek omicron (U+03BF) for ASCII 'o' in 'ignore previous
+    instructions' and bypasses every prompt-injection pattern because
+    the patterns are ASCII regex. NFKC normalization is not enough —
+    Greek omicron does not normalize to Latin o. We need an explicit
+    homoglyph fold for the high-value confusable characters.
+
+    The fold is intentionally conservative: only the most common
+    Cyrillic + Greek look-alikes that the Unicode Confusables data
+    flags as high-confidence. Adding to this map is the accumulator
+    pattern; surface a new bypass with a test and extend the map.
+    """
+    if not text:
+        return text
+    # Confusable folds (sources: Unicode TR36, security-confusables.txt).
+    # Only ASCII-target folds — the goal is to expose hidden ASCII regex
+    # matches, not to canonicalize for display.
+    fold_map = {
+        # Cyrillic look-alikes for Latin lowercase
+        "а": "a", "е": "e", "о": "o", "р": "p",
+        "с": "c", "х": "x", "у": "y", "һ": "h",
+        "ӏ": "l", "ѕ": "s", "і": "i", "ј": "j",
+        "ҫ": "c",
+        # Cyrillic look-alikes for Latin uppercase
+        "А": "A", "В": "B", "С": "C", "Е": "E",
+        "Н": "H", "К": "K", "М": "M", "О": "O",
+        "Р": "P", "Т": "T", "Х": "X",
+        # Greek look-alikes
+        "ο": "o", "α": "a", "ε": "e", "ι": "i",
+        "ρ": "p", "τ": "t", "ν": "v",
+        "Α": "A", "Β": "B", "Ε": "E", "Η": "H",
+        "Ι": "I", "Κ": "K", "Μ": "M", "Ν": "N",
+        "Ο": "O", "Ρ": "P", "Τ": "T", "Χ": "X",
+        "Υ": "Y", "Ζ": "Z",
+        # Fullwidth ASCII (U+FF01..U+FF5E → 0x21..0x7E)
+        **{chr(0xFF00 + n): chr(0x20 + n) for n in range(1, 0x5E + 1)},
+    }
+    return "".join(fold_map.get(c, c) for c in text)
+
+
 def scan_for_prompt_injection(text: str) -> List[ScanFinding]:
-    """Match known prompt-injection patterns. Returns one ScanFinding per match."""
+    """Match known prompt-injection patterns. Returns one ScanFinding per match.
+
+    The text is folded via _normalize_for_pattern_match before matching so
+    Unicode look-alike bypasses (Cyrillic а for Latin a, Greek omicron for
+    Latin o, fullwidth ASCII) are caught. The original-text excerpt is
+    preserved for the maintainer's review surface.
+    """
     out: List[ScanFinding] = []
     if not text:
         return out
+    folded = _normalize_for_pattern_match(text)
     for pattern, severity, detail in _PROMPT_INJECTION_PATTERNS:
-        for m in pattern.finditer(text):
+        for m in pattern.finditer(folded):
+            # Excerpt from the ORIGINAL text using the matched folded indices.
+            # The fold is 1:1 (character-for-character), so indices align.
             excerpt = _excerpt_around(text, m.start(), m.end())
             out.append(ScanFinding(
                 severity=severity,
@@ -233,8 +285,26 @@ def scan_text(text: str) -> ScanReport:
 
 
 def scan_message(msg: "InboxMessage") -> ScanReport:
-    """Scan a full ``InboxMessage`` — body + summary + sender fields."""
-    parts = [msg.summary or "", msg.body or "", msg.sender or "", msg.kind or ""]
+    """Scan a full ``InboxMessage`` — every attacker-controlled string field.
+
+    Phase 1b verification surfaced FM-C2/C3: an attacker could hide a
+    prompt-injection payload in ``replies_to`` or ``connects_to`` and
+    bypass the scanner, knowing that a downstream LLM might serialize
+    the full message (including threading metadata) into its context.
+    The fix is to scan every string field the message exposes, not
+    just summary+body+sender+kind.
+    """
+    parts = [
+        msg.summary or "",
+        msg.body or "",
+        msg.sender or "",
+        msg.kind or "",
+        msg.to or "",
+        msg.replies_to or "",
+    ]
+    # connects_to is a list[str]; flatten in.
+    for c in msg.connects_to or []:
+        parts.append(str(c))
     combined = "\n".join(parts)
     return scan_text(combined)
 
