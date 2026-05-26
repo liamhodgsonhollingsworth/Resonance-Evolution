@@ -251,6 +251,12 @@ class SessionManager:
         return rec
 
     def send(self, session_id: str, body: str) -> None:
+        # Cross-process hydration: a fresh SessionManager has no entries
+        # in _sessions until _hydrate() reads sessions/*.json. Without
+        # this, a website-bridge-side session.send fails with "Unknown
+        # session" for any session it did not spawn itself. Surfaced
+        # 2026-05-26 Phase 1b functional verification (SPEC-148).
+        self._hydrate()
         with self._lock:
             s = self._sessions.get(session_id)
         if s is None:
@@ -272,6 +278,8 @@ class SessionManager:
         self._persist(s.record)
 
     def reactivate(self, session_id: str) -> SessionRecord:
+        # Cross-process hydration; same rationale as send / archive.
+        self._hydrate()
         with self._lock:
             s = self._sessions.get(session_id)
         if s is None:
@@ -282,6 +290,12 @@ class SessionManager:
         return s.record
 
     def archive(self, session_id: str) -> None:
+        # Cross-process hydration before lookup. A fresh SessionManager
+        # spawned via the website's HTTP bridge has an empty _sessions
+        # dict; without this hydrate call, archive() silently returns
+        # and the session file stays in sessions/. Surfaced 2026-05-26
+        # Phase 1b functional verification (SPEC-148 undo path).
+        self._hydrate()
         with self._lock:
             s = self._sessions.get(session_id)
         if s is None:
