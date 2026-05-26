@@ -193,3 +193,50 @@ def test_missing_claude_binary_raises(tmp_path):
     with pytest.raises(SessionError):
         sm.spawn(session_type="test", display_name="should-fail")
     sm.shutdown()
+
+
+def test_archive_cross_process_hydrates(tmp_path, monkeypatch):
+    """A fresh SessionManager must archive a session that a DIFFERENT
+    manager instance spawned. This is the common case once the website's
+    HTTP bridge mediates session.* verbs - every /api/dispatch call
+    constructs a new SessionManager, so archive without hydration is a
+    silent no-op (the in-memory _sessions dict is empty).
+
+    Surfaced 2026-05-26 Phase 1b functional verification of SPEC-148.
+    Regression guard for the _hydrate() call that archive() performs.
+    """
+    sm1 = _make_sm(tmp_path, monkeypatch)
+    rec = sm1.spawn(session_type="test", display_name="archive-cross-proc")
+    _wait_for_events(sm1, {"spawned"}, timeout_s=3.0)
+    sm1.shutdown()
+
+    sm2 = SessionManager(state_dir=tmp_path / "state", claude_bin=sm1.claude_bin)
+    src = sm2.sessions_dir / f"{rec.id}.json"
+    assert src.exists(), "session file must persist for the cross-process test"
+
+    sm2.archive(rec.id)
+
+    dst = sm2.archive_dir / f"session_{rec.id}.json"
+    assert _wait_until(lambda: dst.exists(), timeout_s=3.0), (
+        "archive() did not move the session file - _hydrate() is missing"
+    )
+    assert not src.exists(), "session file still in sessions/ after archive"
+    sm2.shutdown()
+
+
+def test_send_cross_process_hydrates(tmp_path, monkeypatch):
+    """Same regression guard for SessionManager.send: a fresh manager
+    must reach a session another manager spawned.
+    """
+    sm1 = _make_sm(tmp_path, monkeypatch)
+    rec = sm1.spawn(session_type="test", display_name="send-cross-proc")
+    _wait_for_events(sm1, {"spawned"}, timeout_s=3.0)
+    sm1.shutdown()
+
+    sm2 = SessionManager(state_dir=tmp_path / "state", claude_bin=sm1.claude_bin)
+    sm2.send(rec.id, "hello-cross-proc")
+    events = _wait_for_events(sm2, {"communication"}, timeout_s=5.0)
+    assert any("echo:" in (e.payload.get("text") or "") for e in events), (
+        "send() to a cross-process session did not reach the subprocess"
+    )
+    sm2.shutdown()
