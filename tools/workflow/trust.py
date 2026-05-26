@@ -23,11 +23,15 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import logging
 import os
 import threading
 import time
 from pathlib import Path
 from typing import Iterable, List, Optional, Set
+
+
+_logger = logging.getLogger(__name__)
 
 
 DEFAULT_TRUSTED_SOURCES_PATH = Path("state/trusted_sources.json")
@@ -132,11 +136,25 @@ class TrustSet:
         try:
             with self.path.open("r", encoding="utf-8") as f:
                 data = json.load(f)
-        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            # FM-O1: fail-closed (empty trusted set) is correct security
+            # behavior, but the maintainer needs an observable signal
+            # otherwise they may believe their explicit trust list is in
+            # effect when it isn't. Surface the failure at WARNING level.
+            _logger.warning(
+                "TrustSet file %s failed to parse (%s: %s); "
+                "treating as empty trust list (fail-closed)",
+                self.path, type(exc).__name__, exc,
+            )
             self._cache_set = set()
             self._cache_key = key
             return set()
         if not isinstance(data, dict):
+            _logger.warning(
+                "TrustSet file %s did not contain a JSON object "
+                "(got %s); treating as empty trust list",
+                self.path, type(data).__name__,
+            )
             self._cache_set = set()
             self._cache_key = key
             return set()
