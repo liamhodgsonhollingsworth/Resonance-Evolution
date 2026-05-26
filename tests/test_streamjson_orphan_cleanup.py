@@ -287,44 +287,49 @@ def test_streamjson_subprocess_cleanup_with_pipe_eof_child(tmp_path):
     )
 
 
-def test_streamjson_subprocess_orphans_when_child_ignores_stdin(tmp_path):
+def test_streamjson_subprocess_no_orphan_when_child_ignores_stdin(tmp_path):
     """
     Scenario B: the spawned subprocess IGNORES stdin and sleeps forever.
     Models a real `claude` process busy on a tool-use that hasn't
     returned to its stdin-read loop, or any long-running tool
     subprocess.
 
-    EXPECTED on the current implementation: the child IS orphaned - no
-    supervisor-level cleanup (Windows Job Object / POSIX
-    PR_SET_PDEATHSIG) is registered, so the OS does not reap the child
-    when the parent dies uncatchably. The test recognises the orphan
-    via xfail so the suite stays green but the gap is loudly visible in
-    the pytest report.
+    EXPECTED on the post-Wave-2b implementation: the child is NOT
+    orphaned. The SessionManager registers every spawned subprocess
+    with an OS-level supervisor primitive at spawn time:
 
-    This is the SANITY-CHECK arm of the orphan-probe: it proves the
-    probe DOES catch a real orphan when one exists, so the positive
-    outcome of `test_streamjson_subprocess_cleanup_with_pipe_eof_child`
-    above is a credible "cleanup sufficient for that scenario" signal
-    rather than a test bug.
+    - Windows: AssignProcessToJobObject into a process-wide Job Object
+      configured with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE. When the
+      parent dies uncatchably, the OS releases the job handle, which
+      kills every assigned child unconditionally.
+    - Linux: PR_SET_PDEATHSIG=SIGKILL installed in the child via
+      preexec_fn. The kernel delivers SIGKILL to the child the moment
+      the parent dies.
+    - macOS: no equivalent primitive exists; on that platform the
+      cooperative shutdown path remains the only line of defence and
+      this test will see the orphan and skip rather than fail.
 
-    If a future change registers stream-json children with a Job Object
-    or equivalent, this test will flip to "no orphan" and the xfail
-    will turn into XPASS - promote it to a plain pass-asserting test
-    and update the finding section in the PR description.
+    History: prior to Wave 2b (deferred-concerns #20) this test was
+    `xfail` — it documented the gap. The xfail-to-pass transition is
+    the regression signal Wave 2b shipped. If this test ever starts
+    failing again (orphan re-detected), the supervisor primitive
+    regressed and needs investigation in
+    tools/workflow/session_manager.py::_install_supervisor.
     """
+    if sys.platform == "darwin":
+        pytest.skip(
+            "macOS has no PR_SET_PDEATHSIG equivalent; supervisor "
+            "primitive deliberately skipped on this platform. The "
+            "cooperative archive/shutdown path is still tested elsewhere."
+        )
     _, child_pid, child_orphaned = _run_orphan_probe(tmp_path, STUBBORN_CLAUDE)
-    if not child_orphaned:
-        # Pleasant surprise: supervisor-level cleanup IS sufficient even
-        # for the stubborn-child case. Test PASSES.
-        return
-    pytest.xfail(
-        f"SPEC-022 orphan confirmed (stubborn-child PID {child_pid} "
-        "survived non-catchable harness death). Production-code fix "
-        "would register stream-json children with a Windows Job Object "
-        "(CREATE_BREAKAWAY_FROM_JOB cleared + AssignProcessToJobObject "
-        "with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE) or POSIX "
-        "PR_SET_PDEATHSIG so the OS reaps the child on parent death. "
-        "Out of scope for the test-only arc; flagged for Wave 2 follow-up."
+    assert not child_orphaned, (
+        f"SPEC-022 regression: stubborn-child PID {child_pid} survived "
+        f"uncatchable harness death on {sys.platform}. The supervisor "
+        "primitive (Windows Job Object on win32, PR_SET_PDEATHSIG via "
+        "preexec_fn on Linux) failed to register the child for OS-level "
+        "cleanup. Investigate tools/workflow/session_manager.py "
+        "_install_supervisor and _set_pdeathsig."
     )
 
 
