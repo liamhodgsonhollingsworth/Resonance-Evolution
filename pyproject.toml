@@ -28,3 +28,16 @@ include = ["engine*", "node_types*", "renderers*", "tools*"]
 apeiron-render = "tools.render:main"
 apeiron-text = "tools.text_test:main"
 apeiron-realtime = "tools.realtime:main"
+
+[tool.pytest.ini_options]
+# `supervisor` marks process-supervisor-level tests that spawn real
+# subprocesses and exercise OS-level lifecycle (e.g. taskkill / SIGKILL).
+# They live alongside unit tests but are not part of the default run -
+# invoke explicitly with `-m supervisor` or by file path.
+# See tests/test_streamjson_orphan_cleanup.py (SPEC-022, deferred-concerns #20).
+markers = [
+    "supervisor: process-supervisor-level test (spawns real subprocesses, OS-level lifecycle)",
+]
+# Exclude `supervisor`-marked tests from the default suite. Run them
+# explicitly with: pytest -m supervisor
+addopts = "-m 'not supervisor'"
