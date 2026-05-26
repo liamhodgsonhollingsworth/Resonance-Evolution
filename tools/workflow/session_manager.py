@@ -51,10 +51,14 @@ Failure modes covered:
 
 from __future__ import annotations
 
+import ctypes
 import json
+import logging
 import os
+import platform
 import queue
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -63,6 +67,9 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+
+
+_log = logging.getLogger(__name__)
 
 
 # ----- public types -----
@@ -408,22 +415,35 @@ class SessionManager:
             "CLAUDE_CODE_USE_VERTEX",
         ):
             env.pop(key, None)
+        # Supervisor primitive: on Linux we install PR_SET_PDEATHSIG via
+        # preexec_fn so the kernel kills the child on uncatchable parent
+        # death. On Windows the equivalent (Job Object assignment) happens
+        # AFTER Popen returns. On macOS / other POSIX, neither path applies
+        # (logged once inside _install_supervisor below).
+        popen_kwargs: Dict[str, Any] = dict(
+            cwd=s.record.cwd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,  # line-buffered
+            encoding="utf-8",
+            env=env,
+        )
+        if _is_linux():
+            popen_kwargs["preexec_fn"] = _set_pdeathsig
         try:
-            child = subprocess.Popen(
-                args,
-                cwd=s.record.cwd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,  # line-buffered
-                encoding="utf-8",
-                env=env,
-            )
+            child = subprocess.Popen(args, **popen_kwargs)
         except FileNotFoundError as exc:
             s.record.status = "error"
             self._persist(s.record)
             raise SessionError(f"failed to spawn claude: {exc}") from exc
+
+        # Windows: assign to the process-wide Job Object so the OS kills the
+        # child on uncatchable parent death. Linux: no-op (PDEATHSIG already
+        # installed via preexec_fn above). macOS: logged-once skip.
+        # See _install_supervisor for the per-platform contract.
+        _install_supervisor(child)
 
         s.child = child
         s.record.pid = child.pid
@@ -645,6 +665,272 @@ def _detect_claude() -> Optional[str]:
         if resolved:
             return resolved
     return None
+
+
+# ----- supervisor primitive: kill children when the parent dies uncatchably -----
+#
+# Why this exists: ``_kill_child_tree`` above handles *cooperative* shutdown
+# (the explicit ``archive`` / ``shutdown`` paths). If the parent process dies
+# *uncatchably* — SIGKILL on POSIX, ``taskkill /F`` on Windows, OOM killer,
+# kernel panic, segfault — those code paths never run and the spawned
+# children orphan. Wave 1c's supervisor-marked test
+# ``tests/test_streamjson_orphan_cleanup.py`` characterised the bug; this
+# block ships the OS-level supervisor primitives that close the gap.
+#
+# Strategy per platform:
+# - Windows: assign each spawned subprocess to a process-wide Job Object
+#   that has ``JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE``. The job handle is owned
+#   by the parent process; when the parent dies (cleanly or uncatchably),
+#   the OS closes every handle the process owned, which triggers
+#   KILL_ON_JOB_CLOSE and unconditionally terminates every assigned child.
+# - POSIX Linux: pass ``preexec_fn`` to ``subprocess.Popen`` that calls
+#   ``prctl(PR_SET_PDEATHSIG, SIGKILL)`` in the child *after fork, before
+#   exec*. The kernel then automatically delivers SIGKILL to the child the
+#   instant the parent dies.
+# - POSIX non-Linux (macOS, BSDs): no PR_SET_PDEATHSIG equivalent exists.
+#   The fallback would be a parent-side SIGCHLD watcher + setpgrp tree-kill
+#   on shutdown — significantly more complex and out of scope for this arc.
+#   We log once and skip cleanly; on those platforms the cooperative
+#   ``_kill_child_tree`` path remains the only line of defence.
+#
+# Composes with the existing ``_kill_child_tree`` (Wave 1a, deferred-concerns
+# #21): that handles the explicit shutdown path; this handles uncatchable
+# parent death. Neither obsoletes the other.
+#
+# Implemented via ctypes (not pywin32) to keep the dependency surface clean.
+# pyproject.toml has no Windows-specific dependency today and we want to
+# keep it that way.
+
+
+# Windows Job Object constants — values from windows.h (winnt.h, jobapi2.h).
+_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+_JobObjectExtendedLimitInformation = 9
+_PROCESS_ALL_ACCESS = 0x1F0FFF
+_PROCESS_TERMINATE = 0x0001
+_PROCESS_SET_QUOTA = 0x0100
+
+# Linux prctl constant. PR_SET_PDEATHSIG = 1. See <sys/prctl.h>.
+_PR_SET_PDEATHSIG = 1
+
+
+def _is_windows() -> bool:
+    return sys.platform == "win32"
+
+
+def _is_linux() -> bool:
+    return sys.platform.startswith("linux")
+
+
+# Module-level cache: one Job Object per Python process. Lazily created on
+# first ``_install_supervisor`` call. Held as a ctypes HANDLE so the OS keeps
+# the job alive for the process lifetime; releasing the handle (whether by
+# clean GC or by parent-process death) closes the job, which terminates every
+# assigned child via KILL_ON_JOB_CLOSE.
+_win_job_handle: Optional[Any] = None
+_win_job_lock = threading.Lock()
+_macos_skip_logged = False
+
+
+class _JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("PerProcessUserTimeLimit", ctypes.c_int64),
+        ("PerJobUserTimeLimit", ctypes.c_int64),
+        ("LimitFlags", ctypes.c_uint32),
+        ("MinimumWorkingSetSize", ctypes.c_size_t),
+        ("MaximumWorkingSetSize", ctypes.c_size_t),
+        ("ActiveProcessLimit", ctypes.c_uint32),
+        ("Affinity", ctypes.c_size_t),
+        ("PriorityClass", ctypes.c_uint32),
+        ("SchedulingClass", ctypes.c_uint32),
+    ]
+
+
+class _IO_COUNTERS(ctypes.Structure):
+    _fields_ = [
+        ("ReadOperationCount", ctypes.c_uint64),
+        ("WriteOperationCount", ctypes.c_uint64),
+        ("OtherOperationCount", ctypes.c_uint64),
+        ("ReadTransferCount", ctypes.c_uint64),
+        ("WriteTransferCount", ctypes.c_uint64),
+        ("OtherTransferCount", ctypes.c_uint64),
+    ]
+
+
+class _JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("BasicLimitInformation", _JOBOBJECT_BASIC_LIMIT_INFORMATION),
+        ("IoInfo", _IO_COUNTERS),
+        ("ProcessMemoryLimit", ctypes.c_size_t),
+        ("JobMemoryLimit", ctypes.c_size_t),
+        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+        ("PeakJobMemoryUsed", ctypes.c_size_t),
+    ]
+
+
+def _get_or_create_win_job() -> Optional[Any]:
+    """Return the process-wide Job Object handle, creating it on first call.
+
+    Returns None if the Job Object could not be created or configured (e.g.
+    the running platform isn't Windows, or the Win32 APIs returned NULL).
+    Callers must treat None as "supervisor unavailable; orphans possible if
+    parent dies uncatchably" and degrade gracefully.
+
+    The handle is intentionally NOT closed — it lives for the process
+    lifetime. When the process dies (cleanly or via SIGKILL / taskkill /F /
+    OOM / kernel panic), the OS releases every handle the process owned,
+    which closes the job, which triggers JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    and terminates every assigned child unconditionally.
+    """
+    global _win_job_handle
+    if not _is_windows():
+        return None
+    with _win_job_lock:
+        if _win_job_handle is not None:
+            return _win_job_handle
+        try:
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        except OSError:
+            return None
+
+        # HANDLE CreateJobObjectW(LPSECURITY_ATTRIBUTES, LPCWSTR);
+        kernel32.CreateJobObjectW.restype = ctypes.c_void_p
+        kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+
+        # BOOL SetInformationJobObject(HANDLE, JOBOBJECTINFOCLASS, LPVOID, DWORD);
+        kernel32.SetInformationJobObject.restype = ctypes.c_int
+        kernel32.SetInformationJobObject.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+        ]
+
+        job = kernel32.CreateJobObjectW(None, None)
+        if not job:
+            err = ctypes.get_last_error()
+            _log.warning(
+                "SessionManager: CreateJobObjectW failed (err=%s); "
+                "spawned children will orphan if parent dies uncatchably.",
+                err,
+            )
+            return None
+
+        info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        ok = kernel32.SetInformationJobObject(
+            job,
+            _JobObjectExtendedLimitInformation,
+            ctypes.byref(info),
+            ctypes.sizeof(info),
+        )
+        if not ok:
+            err = ctypes.get_last_error()
+            _log.warning(
+                "SessionManager: SetInformationJobObject(KILL_ON_JOB_CLOSE) "
+                "failed (err=%s); spawned children will orphan if parent dies "
+                "uncatchably.",
+                err,
+            )
+            # Best effort: still cache the handle. It won't kill on close,
+            # but it doesn't hurt anything either.
+        _win_job_handle = job
+        return job
+
+
+def _set_pdeathsig() -> None:
+    """preexec_fn for subprocess.Popen on Linux: ask the kernel to SIGKILL
+    this child the moment its parent dies, regardless of cause.
+
+    Runs in the child between fork() and exec(). Failure here must not raise
+    — we don't want preexec_fn errors to take down the spawn — so we
+    swallow exceptions. The worst case is the same as the pre-fix behaviour:
+    the child orphans on uncatchable parent death.
+    """
+    try:
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        # int prctl(int option, unsigned long arg2, ...);
+        libc.prctl(_PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0)
+    except Exception:
+        pass
+
+
+def _install_supervisor(child: subprocess.Popen) -> None:
+    """Register ``child`` with the OS-level supervisor so it dies when the
+    parent dies, even on uncatchable parent death.
+
+    Windows: assign to the process-wide Job Object created by
+    ``_get_or_create_win_job``. Linux: no-op (PR_SET_PDEATHSIG was already
+    installed via preexec_fn during spawn). macOS / other POSIX: log once
+    and skip cleanly — no equivalent primitive ships in those kernels.
+
+    Safe to call on already-dead children (the AssignProcessToJobObject call
+    will fail; we log and move on).
+    """
+    if child.pid is None:
+        return
+    if _is_windows():
+        job = _get_or_create_win_job()
+        if job is None:
+            return  # already logged inside _get_or_create_win_job
+        try:
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        except OSError:
+            return
+
+        # HANDLE OpenProcess(DWORD, BOOL, DWORD);
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        kernel32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+        # BOOL AssignProcessToJobObject(HANDLE, HANDLE);
+        kernel32.AssignProcessToJobObject.restype = ctypes.c_int
+        kernel32.AssignProcessToJobObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        # BOOL CloseHandle(HANDLE);
+        kernel32.CloseHandle.restype = ctypes.c_int
+        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+
+        # PROCESS_TERMINATE + PROCESS_SET_QUOTA are the access rights
+        # AssignProcessToJobObject requires; PROCESS_ALL_ACCESS is a superset
+        # that also works and matches the standard pattern.
+        proc_handle = kernel32.OpenProcess(_PROCESS_ALL_ACCESS, 0, ctypes.c_uint32(child.pid))
+        if not proc_handle:
+            err = ctypes.get_last_error()
+            _log.warning(
+                "SessionManager: OpenProcess(pid=%s) failed (err=%s); "
+                "child not assigned to Job Object — will orphan on uncatchable "
+                "parent death.",
+                child.pid, err,
+            )
+            return
+        try:
+            ok = kernel32.AssignProcessToJobObject(job, proc_handle)
+            if not ok:
+                err = ctypes.get_last_error()
+                # ERROR_ACCESS_DENIED (5) can occur if the child is already
+                # in another job that doesn't allow breakaway. Rare but not
+                # fatal; log and move on.
+                _log.warning(
+                    "SessionManager: AssignProcessToJobObject(pid=%s) failed "
+                    "(err=%s); child will orphan on uncatchable parent death.",
+                    child.pid, err,
+                )
+        finally:
+            kernel32.CloseHandle(proc_handle)
+        return
+
+    if _is_linux():
+        # Already installed via preexec_fn at spawn time; nothing to do here.
+        return
+
+    # POSIX non-Linux (macOS, BSDs). No PR_SET_PDEATHSIG equivalent.
+    global _macos_skip_logged
+    if not _macos_skip_logged:
+        _macos_skip_logged = True
+        _log.info(
+            "SessionManager: no uncatchable-parent-death supervisor available "
+            "on platform=%s; spawned children may orphan on parent SIGKILL. "
+            "Cooperative shutdown (archive/shutdown) still works via "
+            "_kill_child_tree.",
+            sys.platform,
+        )
 
 
 def _kill_child_tree(child: subprocess.Popen, wait_timeout_s: float = 2.0) -> None:
