@@ -301,10 +301,10 @@ class SessionManager:
         if s is None:
             return
         if s.child is not None and s.child.poll() is None:
-            try:
-                s.child.terminate()
-            except Exception:
-                pass
+            # Tree-kill on Windows (cmd.exe wrapper + claude grandchild);
+            # plain terminate on POSIX. See _kill_child_tree docstring +
+            # deferred-concerns entry #21.
+            _kill_child_tree(s.child)
         s.record.status = "archived"
         self._persist(s.record)
         # Move the session JSON into archive/.
@@ -336,14 +336,11 @@ class SessionManager:
             if s is None:
                 continue
             if s.child is not None and s.child.poll() is None:
-                try:
-                    s.child.terminate()
-                    s.child.wait(timeout=2)
-                except Exception:
-                    try:
-                        s.child.kill()
-                    except Exception:
-                        pass
+                # Tree-kill on Windows; terminate+wait+kill-fallback on
+                # POSIX. The previous inline pattern only killed the
+                # cmd.exe wrapper on Windows, orphaning claude — see
+                # _kill_child_tree + deferred-concerns entry #21.
+                _kill_child_tree(s.child)
             if s.raw_log is not None:
                 try:
                     s.raw_log.close()
@@ -648,3 +645,74 @@ def _detect_claude() -> Optional[str]:
         if resolved:
             return resolved
     return None
+
+
+def _kill_child_tree(child: subprocess.Popen, wait_timeout_s: float = 2.0) -> None:
+    """Terminate ``child`` AND every descendant it spawned.
+
+    Why this exists: on Windows, ``SessionManager`` invokes
+    ``claude.cmd``, which is a batch shim that ``cmd.exe`` interprets.
+    The ``subprocess.Popen`` object is the ``cmd.exe`` wrapper, not the
+    spawned ``claude`` (and its grandchildren). Calling ``child.terminate()``
+    only signals the wrapper; the real ``claude`` process is orphaned,
+    keeps holding file handles, and keeps writing to log files that the
+    archive flow expected to be quiescent. This is deferred-concerns
+    entry #21 (HIGH severity).
+
+    Strategy:
+    - Windows: ``taskkill /PID <pid> /T /F``. ``/T`` walks the process
+      tree, ``/F`` forces unconditional termination. Non-zero exit from
+      taskkill (e.g. PID already gone) is treated as success — the goal
+      is "child + descendants are dead at end of call", not "taskkill
+      succeeded".
+    - POSIX: existing ``terminate()`` + ``wait()`` is sufficient because
+      ``claude`` is the direct child (no shim layer), and SIGTERM
+      propagation is the OS's job.
+
+    Pattern lifted from ``Resonance-Website/tools/launch_mvp_helper._kill_pid_tree``;
+    duplicated rather than cross-repo imported because the two projects
+    don't depend on each other.
+
+    Safe to call when the child has already exited (no-op on POSIX
+    because ``terminate()`` after exit is harmless; no-op on Windows
+    because taskkill returns non-zero which we treat as success).
+    """
+    if child.poll() is not None:
+        return  # already dead
+    if sys.platform == "win32":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(child.pid), "/T", "/F"],
+                capture_output=True,
+                timeout=10.0,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            # taskkill missing or hung — fall back to terminate() so the
+            # cmd.exe wrapper at least dies. The grandchild may orphan
+            # in that degraded path; surface no exception either way.
+            try:
+                child.terminate()
+            except Exception:
+                pass
+        # Best-effort reap so the Popen object's poll() reflects death.
+        try:
+            child.wait(timeout=wait_timeout_s)
+        except subprocess.TimeoutExpired:
+            pass
+        except Exception:
+            pass
+        return
+    # POSIX: terminate the child; the OS handles signal propagation.
+    try:
+        child.terminate()
+        try:
+            child.wait(timeout=wait_timeout_s)
+        except subprocess.TimeoutExpired:
+            # Escalate to SIGKILL if the child ignored SIGTERM.
+            try:
+                child.kill()
+                child.wait(timeout=wait_timeout_s)
+            except Exception:
+                pass
+    except Exception:
+        pass
