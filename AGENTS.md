@@ -1,3 +1,12 @@
+---
+schema-version: 2
+title: AGENTS.md — Apeiron
+type: agent-entry-point
+worldline_tier: realized
+time_position: '2026-05-28T12:00:00Z'
+applies-to: every AI agent (Claude Code, Cursor, Aider, OpenAI SDK, future agents) entering this repo
+---
+
 # AGENTS.md — Apeiron
 
 This file is the vendor-neutral agent-discoverable entry point for the Apeiron project. Any AI agent (Claude, GPT, open-source models, future agents) reads this file at the start of any session in this repo to orient itself in the project's conventions, capabilities, and current state.
@@ -28,7 +37,7 @@ Working name **Apeiron** is a placeholder — better-name suggestions go in `nam
 | **Resonance Wavefront (meta-layer)** | `C:/Users/Liam/Desktop/Resonance/` | github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront | Conventions + ideas graph |
 | **Resonance Website** | `C:/Users/Liam/Desktop/Resonance-Website/` | github.com/liamhodgsonhollingsworth/Resonance-Website | Immersive science-fiction website |
 | **Resonance Hub** | `C:/Users/Liam/Desktop/Resonance-Hub/` | github.com/liamhodgsonhollingsworth/Resonance-Hub | Open-edit collaborator entry point |
-| **conversation-bridge** | — | github.com/liamhodgsonhollingsworth/conversation-bridge | Chrome extension + FastAPI for cross-surface comms |
+| **conversation-bridge** | `C:/Users/Liam/Desktop/conversation-bridge/` | github.com/liamhodgsonhollingsworth/conversation-bridge | Chrome extension + FastAPI for cross-surface comms (CBP v1) |
 
 ## Where to find what
 
@@ -44,6 +53,7 @@ Working name **Apeiron** is a placeholder — better-name suggestions go in `nam
 | Scene data graphs | `scenes/<scene>.json` |
 | Engine core | `engine/` |
 | Bundle output examples | `output/` |
+| Tool-versioning discipline (this file follows it) | `https://github.com/liamhodgsonhollingsworth/Alethea/blob/main/skills/versioning-discipline.md` |
 | Operational discipline (response shape, communication conventions) | `https://github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront/blob/main/conventions/discipline.md` |
 
 ## What conventions every agent inherits
@@ -56,6 +66,8 @@ Working name **Apeiron** is a placeholder — better-name suggestions go in `nam
 - **Node-grain claims**: concurrent sessions claim node-types or renderer-modules before substantive work via Alethea's `claim-node-scope` skill; the cross-repo inbox lives at `Alethea-cc/nodes/inbox_msg_*.md`.
 - **CODEOWNERS gating**: Atlas-linked paths (README Atlas links, `architecture.md`) are maintainer-edited only; non-Atlas paths are editable by any session.
 - **GitHub operations are session-handled**: agents do their own `gh` operations (PR creation, merge, branch delete). Maintainer takes zero github actions.
+- **Worldline-tier-aware authoring**: when new nodes are created under Apeiron that compose with the broader Alethea corpus, the `worldline_tier`, `time_position`, `connections`, and optionally `abstractables` axes apply per the [worldline crystallization umbrella](https://github.com/liamhodgsonhollingsworth/Alethea/blob/main/notes/worldline_crystallization/axes.md). Pure engine-internal nodes (node-type files, renderer files) are exempt; corpus-connected nodes carry the axes.
+- **Tool-versioning discipline**: every skill, every MCP plugin spec, every tool surface in the network carries `schema-version` frontmatter + a `## Changelog` section at the foot. This AGENTS.md follows the discipline (see frontmatter + changelog at foot).
 
 ## Bundle contract with the painterly module engine
 
@@ -102,5 +114,10 @@ The `ChatInterface` node-type owns a screen rectangle in the outer world and ren
 - The painterly module engine downstream of Apeiron's bundles is documented in the meta-layer (`ideas/painterly_module_engine.md`) but not yet implemented; the bundle contract is forward-defined to its input requirements
 - The Resonance Hub repo is listed in the projects atlas but does not exist on disk as of 2026-05-28; treat as aspirational until created
 - The OpenGL + browser renderers are scoped in `whats_built.md` but not yet implemented
+
+## Changelog
+
+- v1, 2026-05-28, initial vendor-neutral agent-discoverability surface; cross-vendor mirror of `CLAUDE.md` for any AI agent stack entering this repo. Filed during foundation arc F5.
+- v2, 2026-05-28, added `schema-version: 2` frontmatter + this Changelog section per the [tool-versioning discipline](https://github.com/liamhodgsonhollingsworth/Alethea/blob/main/skills/versioning-discipline.md); added conversation-bridge row to the Network map (previously omitted); added worldline-tier-aware-authoring bullet for cross-corpus nodes; added tool-versioning row to "Where to find what". Backward-compatible per Line 4 (additive). Filed during the cross-repo AGENTS.md sync audit (SPEC-467).
 
 This file is an evolving idea; agents that find gaps should propose extensions via PRs.
