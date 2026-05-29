@@ -1,0 +1,198 @@
+# renderer_registry.weft
+#
+# Schema-version: 1
+# Filed: 2026-05-29 per MVP plan Wave 2 (Subagent W2-B + W1-B follow-up)
+# Authored by: session jovial-margulis-52985e in worktree
+#              C:/Users/Liam/Desktop/Alethea/.claude/worktrees/jovial-margulis-52985e/
+#
+# The renderer-kind registry — the wave-1 bottleneck identified by Sophia's
+# dependency-map review (nothing in the corpus to lean on; has to be built
+# fresh). This file is the canonical specification. The Python runtime at
+# `registry.py` mirrors this graph 1:1 until Weft's batch CLI lands (per
+# `skills/weavemind-first.md` Exception case 5 + queue entry #050; same
+# hybrid posture as `Alethea-cc/tools/temporal_propagation/`).
+#
+# Purpose
+# -------
+# Maps `node_kind` (the substrate-frontmatter `kind:` value of a renderer
+# node — `window`, `tasks-list-item`, `chat-bubble`, `3d-canvas`, etc.)
+# to its `renderer_implementation`: the Apeiron-engine module that emits
+# the node's projection (DOM, canvas, or bundle channels). Every node-type
+# the MVP introduces must be discoverable through this registry; reverse-
+# direction queries ("which kinds does this Apeiron primitive serve?") are
+# first-class.
+#
+# Sophia's dependency-map finding: ~50% of MVP effort is wiring existing
+# Apeiron primitives through to a DOM renderer. The registry IS the wiring
+# manifest. Adding a new feature = registering one row + writing the
+# renderer module (or composing existing kinds when shape matches).
+#
+# Composition contract
+# --------------------
+# This Group's output ports are the contract every renderer-tick + drag-
+# drop dispatcher + node-spawn MCP call consumes. Downstream nodes (the
+# drag-drop dispatcher, the node-renderer pipeline, the paste-target
+# spawn, the from-within `node_spawn_request`) read through the same
+# four ports; the registry is the single source of truth.
+
+# ============================================================================
+# Phase 1 — Discovery. Scan Apeiron's `node_types/` + `renderers/` and bind
+#           every manifest()-exposing module to its declared kind name. This
+#           reuses Apeiron's existing engine.Engine.discover() rather than
+#           parallel-implementing a scanner.
+# ============================================================================
+
+apeiron_root = Text {
+  label: "Apeiron repo root (the discovery surface)"
+  value: "C:/Users/Liam/Desktop/Apeiron"
+}
+
+# The discovery scanner reuses Apeiron's engine.Engine.discover(). It walks
+# `node_types/` and `renderers/` (both directories already discoverable),
+# imports every .py file with a manifest() function, and emits one
+# RendererBinding per module.
+discovery = ApeironDiscovery -> (bindings: List[RendererBinding]) {
+  label: "Scan Apeiron primitives + emit bindings"
+  scan_dirs: ["node_types", "renderers"]
+  require_manifest: true
+  # RendererBinding shape (per module discovered):
+  #   kind          : Text             (the manifest().name, lowercased + slug-cased)
+  #   module_path   : Text             (the .py file path relative to apeiron_root)
+  #   module_name   : Text             (the importable module name)
+  #   version       : Text             (manifest().version)
+  #   renderer_id   : Text             (manifest().renderer_id — "raster" | "dom" | "text" | "ascii")
+  #   inputs        : Map[Text, Text]  (manifest().inputs schema)
+  #   outputs       : Map[Text, Text]  (manifest().outputs schema)
+  #   description   : Text             (manifest().description)
+  #   load_status   : Text             ("ok" | "broken" | "untrusted" | "no-manifest")
+  reuse_engine_discover: true
+}
+discovery.root = apeiron_root.value
+
+# ============================================================================
+# Phase 2 — Substrate-kind augmentation. The Apeiron discovery emits the
+#           native kinds (Cube, Sphere, Computer, WorkflowView, etc.). The
+#           MVP also introduces new substrate-side kinds the website renders
+#           but Apeiron doesn't yet ship (`window`, `tasks-list`, `tasks-
+#           list-item`, `calendar`, `calendar-entry`, `idea-card`, `chat-
+#           thread`, `chat-bubble`, `3d-canvas`, `paste-target`, `render-
+#           bundle`, `painterly-output`, `right-click-menu`). These are
+#           declared as virtual bindings — module_path empty, renderer_id
+#           "dom" or "canvas", marked as MVP-side-only.
+# ============================================================================
+
+mvp_virtual_kinds = VirtualKindDeclarations -> (virtuals: List[RendererBinding]) {
+  label: "Declare MVP-side renderer kinds not yet backed by Apeiron modules"
+  # One row per kind the MVP's renderer pipeline must serve. The runtime
+  # composes existing Apeiron primitives where possible (e.g., `window`
+  # composes `panel_positioner` + `group` + `key_bindings`); compositions
+  # live in the substrate as renderer-spec nodes, not as new .py files.
+  kinds:
+    window:           {renderer_id: "dom",    composes: ["panel_positioner", "group", "key_bindings"]}
+    panel:            {renderer_id: "dom",    composes: ["panel_positioner"]}
+    tasks-list:       {renderer_id: "dom",    composes: ["list_renderer", "idea_queue"]}
+    tasks-list-item:  {renderer_id: "dom",    composes: ["text_box", "button"]}
+    calendar:         {renderer_id: "dom",    composes: ["panel_positioner"]}
+    calendar-entry:   {renderer_id: "dom",    composes: ["text_box"]}
+    idea-card:        {renderer_id: "dom",    composes: ["idea_queue", "dropdown", "bar"]}
+    chat-thread:      {renderer_id: "dom",    composes: ["chat_interface", "scroll_bar"]}
+    chat-bubble:      {renderer_id: "dom",    composes: ["chat_interpreter"]}
+    paste-target:     {renderer_id: "dom",    composes: ["panel_positioner"]}
+    palette-item:     {renderer_id: "dom",    composes: ["button"]}
+    wire:             {renderer_id: "dom",    composes: []}
+    right-click-menu: {renderer_id: "dom",    composes: ["button", "panel_positioner"]}
+    workspace:        {renderer_id: "dom",    composes: ["panel_positioner"]}
+    3d-canvas:        {renderer_id: "canvas", composes: ["computer"]}
+    render-bundle:    {renderer_id: "data",   composes: []}
+    painterly-output: {renderer_id: "canvas", composes: ["painterly_post_processor"]}
+    camera:           {renderer_id: "canvas", composes: ["computer"]}
+    viewer-state:     {renderer_id: "data",   composes: []}
+    planned-node:     {renderer_id: "dom",    composes: []}
+    sci-fi-node:      {renderer_id: "dom",    composes: []}
+    renderer-node:    {renderer_id: "dom",    composes: []}
+  # Every `composes:` reference must resolve to an Apeiron-discovered kind;
+  # the validate step enforces this.
+}
+
+# ============================================================================
+# Phase 3 — Merge. Combine the Apeiron-discovered native bindings with the
+#           MVP virtual declarations into one unified registry. Apeiron-side
+#           kinds win on collision (the substrate cannot mask a native
+#           module).
+# ============================================================================
+
+merger = BindingMerger -> (registry: Map[Kind, RendererBinding]) {
+  label: "Merge discovered + virtual bindings"
+  collision_rule: "apeiron_native_wins"
+  dedupe_by: "kind"
+}
+merger.native = discovery.bindings
+merger.virtual = mvp_virtual_kinds.virtuals
+
+# ============================================================================
+# Phase 4 — Validation gate. Every virtual binding's `composes:` reference
+#           must resolve to a kind in the merged registry. Every renderer_id
+#           must be one of the known categories. Broken bindings are surfaced
+#           as a structured error list — the runtime fails-loud rather than
+#           silently dropping rows.
+# ============================================================================
+
+validator = RegistryValidator -> (
+  valid: Map[Kind, RendererBinding]
+  errors: List[ValidationError]
+) {
+  label: "Validate references + categories"
+  renderer_id_allowlist: ["raster", "dom", "canvas", "text", "ascii", "data"]
+  # ValidationError shape:
+  #   kind        : Text   (the row whose declaration is broken)
+  #   error_type  : Text   ("missing_compose" | "bad_renderer_id" | "duplicate" | "no_manifest")
+  #   detail      : Text   (one-line explanation for the operator)
+  fail_loud: true
+}
+validator.registry = merger.registry
+
+# ============================================================================
+# Phase 5 — Lookup interface. The four ports downstream consumers (drag-drop
+#           dispatcher, render-tick scheduler, paste-target spawn, node-
+#           spawn MCP call) read through. Each is a pure query — the
+#           registry never mutates during reads.
+# ============================================================================
+
+lookup = RendererLookup -> (
+  resolve: (Kind) -> RendererBinding?           # kind -> binding or null if unknown
+  list_kinds: () -> List[Kind]                  # every registered kind
+  filter_by_renderer_id: (Text) -> List[Kind]   # kinds with renderer_id = X
+  filter_by_composes: (Kind) -> List[Kind]      # kinds that reuse a given native primitive
+) {
+  label: "Read-only query surface"
+  read_only: true
+}
+lookup.registry = validator.valid
+
+# ============================================================================
+# Phase 6 — Hot-reload semantics. When an Apeiron module changes on disk
+#           OR the substrate's virtual-kind declaration is edited, the
+#           registry rebuilds. Downstream consumers re-resolve on the next
+#           render-tick; in-flight queries finish against the old snapshot.
+# ============================================================================
+
+hot_reload = HotReloadHook -> (rebuilt_at: Text, kinds_changed: List[Kind]) {
+  label: "Triggered when a backing module or substrate row changes"
+  watch_paths: [
+    "{apeiron_root}/node_types/*.py"
+    "{apeiron_root}/renderers/*.py"
+    "{apeiron_root}/tools/renderer_registry/registry.py"
+  ]
+  debounce: "P250MS"
+  preserve_old_snapshot_until: "next_render_tick"
+}
+hot_reload.lookup = lookup
+
+# ============================================================================
+# Group output — the contract every downstream consumer reads
+# ============================================================================
+
+self.lookup            = lookup
+self.errors            = validator.errors      # structured error list; empty when valid
+self.last_rebuild_at   = hot_reload.rebuilt_at
+self.kinds_count       = list_kinds().count    # diagnostic — how many kinds resolved
