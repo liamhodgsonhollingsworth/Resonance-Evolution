@@ -1,0 +1,280 @@
+{
+  "schema_version": 1,
+  "filed": "2026-05-29",
+  "purpose": "Adversarial test set for the WeaveMind evaluation gate. Same cases run against both drag_drop_dispatcher.weft and drag_drop_dispatcher_baseline.py. Each case names an edge condition the dispatcher must handle correctly.",
+  "filed_by": "session jovial-margulis-52985e (Wave 1 / Subagent W1-A)",
+  "cases": [
+    {
+      "name": "01_happy_path_tasks_to_calendar",
+      "purpose": "Standard drop — tasks-list-item onto calendar-entry. Should produce a `realizes` edge with confidence 0.85.",
+      "event": {
+        "source_id": "task_buy_milk",
+        "source_kind": "tasks-list-item",
+        "source_tier": "in-progress",
+        "target_id": "cal_2026_05_30",
+        "target_kind": "calendar-entry",
+        "target_tier": "in-progress",
+        "modifier_keys": [],
+        "pointer_position": {"x": 120.0, "y": 440.0}
+      },
+      "initial_graph": {"connections": []},
+      "expected": {
+        "edit": {
+          "operation": "add",
+          "source": "task_buy_milk",
+          "relation": "realizes",
+          "target": "cal_2026_05_30"
+        },
+        "rejection_kind": null
+      }
+    },
+    {
+      "name": "02_self_drop_rejected",
+      "purpose": "Edge — dropping a node onto itself. Must be rejected with self_drop reason.",
+      "event": {
+        "source_id": "task_buy_milk",
+        "source_kind": "tasks-list-item",
+        "source_tier": "in-progress",
+        "target_id": "task_buy_milk",
+        "target_kind": "tasks-list-item",
+        "target_tier": "in-progress",
+        "modifier_keys": [],
+        "pointer_position": {"x": 100.0, "y": 100.0}
+      },
+      "initial_graph": {"connections": []},
+      "expected": {
+        "edit": null,
+        "rejection_kind": "self_drop"
+      }
+    },
+    {
+      "name": "03_null_target_empty_canvas",
+      "purpose": "Edge — dropping on empty canvas (no target). Must reject with null_target (layout-only operation).",
+      "event": {
+        "source_id": "task_buy_milk",
+        "source_kind": "tasks-list-item",
+        "source_tier": "in-progress",
+        "target_id": null,
+        "target_kind": null,
+        "target_tier": null,
+        "modifier_keys": [],
+        "pointer_position": {"x": 600.0, "y": 600.0}
+      },
+      "initial_graph": {"connections": []},
+      "expected": {
+        "edit": null,
+        "rejection_kind": "null_target"
+      }
+    },
+    {
+      "name": "04_invalid_target_kind",
+      "purpose": "Edge — dropping onto a node with an unknown renderer-kind. Must reject with invalid_kind.",
+      "event": {
+        "source_id": "task_buy_milk",
+        "source_kind": "tasks-list-item",
+        "source_tier": "in-progress",
+        "target_id": "weird_target",
+        "target_kind": "unknown-future-kind",
+        "target_tier": "planned",
+        "modifier_keys": [],
+        "pointer_position": {"x": 100.0, "y": 100.0}
+      },
+      "initial_graph": {"connections": []},
+      "expected": {
+        "edit": null,
+        "rejection_kind": "invalid_kind"
+      }
+    },
+    {
+      "name": "05_tier_skip_blocked",
+      "purpose": "Edge — dragging a sci-fi node onto a maintained node skips 4 tiers (window=2). Must reject with invalid_tier.",
+      "event": {
+        "source_id": "scifi_alethea_v2",
+        "source_kind": "sci-fi-node",
+        "source_tier": "sci-fi",
+        "target_id": "maintained_substrate",
+        "target_kind": "renderer-node",
+        "target_tier": "maintained",
+        "modifier_keys": [],
+        "pointer_position": {"x": 50.0, "y": 50.0}
+      },
+      "initial_graph": {"connections": []},
+      "expected": {
+        "edit": null,
+        "rejection_kind": "invalid_tier"
+      }
+    },
+    {
+      "name": "06_tier_at_window_boundary",
+      "purpose": "Edge — tier distance EXACTLY at window (sci-fi to in-progress = 2 hops). Must accept.",
+      "event": {
+        "source_id": "scifi_apeiron_3d",
+        "source_kind": "sci-fi-node",
+        "source_tier": "sci-fi",
+        "target_id": "inprogress_3d_canvas",
+        "target_kind": "planned-node",
+        "target_tier": "in-progress",
+        "modifier_keys": [],
+        "pointer_position": {"x": 50.0, "y": 50.0}
+      },
+      "initial_graph": {"connections": []},
+      "expected": {
+        "edit": {
+          "operation": "add",
+          "source": "scifi_apeiron_3d",
+          "relation": "crystallizes-to",
+          "target": "inprogress_3d_canvas"
+        },
+        "rejection_kind": null
+      }
+    },
+    {
+      "name": "07_modifier_override_ctrl_references",
+      "purpose": "Edge — ctrl+drag forces `references` regardless of dispatch table.",
+      "event": {
+        "source_id": "task_buy_milk",
+        "source_kind": "tasks-list-item",
+        "source_tier": "in-progress",
+        "target_id": "cal_2026_05_30",
+        "target_kind": "calendar-entry",
+        "target_tier": "in-progress",
+        "modifier_keys": ["ctrl"],
+        "pointer_position": {"x": 100.0, "y": 100.0}
+      },
+      "initial_graph": {"connections": []},
+      "expected": {
+        "edit": {
+          "operation": "add",
+          "source": "task_buy_milk",
+          "relation": "references",
+          "target": "cal_2026_05_30"
+        },
+        "rejection_kind": null
+      }
+    },
+    {
+      "name": "08_modifier_override_alt_depends_on",
+      "purpose": "Edge — alt+drag forces `depends-on`.",
+      "event": {
+        "source_id": "idea_painterly_pipeline",
+        "source_kind": "idea-card",
+        "source_tier": "planned",
+        "target_id": "idea_3d_mode",
+        "target_kind": "idea-card",
+        "target_tier": "planned",
+        "modifier_keys": ["alt"],
+        "pointer_position": {"x": 200.0, "y": 200.0}
+      },
+      "initial_graph": {"connections": []},
+      "expected": {
+        "edit": {
+          "operation": "add",
+          "source": "idea_painterly_pipeline",
+          "relation": "depends-on",
+          "target": "idea_3d_mode"
+        },
+        "rejection_kind": null
+      }
+    },
+    {
+      "name": "09_replace_existing_same_pair",
+      "purpose": "Edge — same source+target already connected with different relation. New drag must REPLACE not add.",
+      "event": {
+        "source_id": "idea_painterly_pipeline",
+        "source_kind": "idea-card",
+        "source_tier": "planned",
+        "target_id": "idea_3d_mode",
+        "target_kind": "idea-card",
+        "target_tier": "planned",
+        "modifier_keys": [],
+        "pointer_position": {"x": 200.0, "y": 200.0}
+      },
+      "initial_graph": {
+        "connections": [
+          {"source": "idea_painterly_pipeline", "relation": "references", "target": "idea_3d_mode"}
+        ]
+      },
+      "expected": {
+        "edit": {
+          "operation": "replace",
+          "source": "idea_painterly_pipeline",
+          "relation": "composes-with",
+          "target": "idea_3d_mode"
+        },
+        "rejection_kind": null
+      }
+    },
+    {
+      "name": "10_dragging_a_group_target_renderer_node",
+      "purpose": "Edge — dragging a paste-target onto a generic renderer-node. Should produce `instantiates`.",
+      "event": {
+        "source_id": "paste_target_main",
+        "source_kind": "paste-target",
+        "source_tier": "realized",
+        "target_id": "renderer_chat_module",
+        "target_kind": "renderer-node",
+        "target_tier": "realized",
+        "modifier_keys": [],
+        "pointer_position": {"x": 300.0, "y": 300.0}
+      },
+      "initial_graph": {"connections": []},
+      "expected": {
+        "edit": {
+          "operation": "add",
+          "source": "paste_target_main",
+          "relation": "instantiates",
+          "target": "renderer_chat_module"
+        },
+        "rejection_kind": null
+      }
+    },
+    {
+      "name": "11_panel_displays_window_inverse_kind_pair",
+      "purpose": "Edge — kind-pair direction matters. panel->window = displays. window->panel is a DIFFERENT pair (and falls to fallback).",
+      "event": {
+        "source_id": "panel_tasks_main",
+        "source_kind": "panel",
+        "source_tier": "realized",
+        "target_id": "window_workspace",
+        "target_kind": "window",
+        "target_tier": "realized",
+        "modifier_keys": [],
+        "pointer_position": {"x": 100.0, "y": 100.0}
+      },
+      "initial_graph": {"connections": []},
+      "expected": {
+        "edit": {
+          "operation": "add",
+          "source": "panel_tasks_main",
+          "relation": "displays",
+          "target": "window_workspace"
+        },
+        "rejection_kind": null
+      }
+    },
+    {
+      "name": "12_fallback_unknown_kind_pair_references_lowconf",
+      "purpose": "Edge — a kind-pair not in the dispatch table falls back to `references` with low confidence (0.3).",
+      "event": {
+        "source_id": "wire_001",
+        "source_kind": "wire",
+        "source_tier": "realized",
+        "target_id": "right_click_menu_001",
+        "target_kind": "right-click-menu",
+        "target_tier": "realized",
+        "modifier_keys": [],
+        "pointer_position": {"x": 100.0, "y": 100.0}
+      },
+      "initial_graph": {"connections": []},
+      "expected": {
+        "edit": {
+          "operation": "add",
+          "source": "wire_001",
+          "relation": "references",
+          "target": "right_click_menu_001"
+        },
+        "rejection_kind": null
+      }
+    }
+  ]
+}

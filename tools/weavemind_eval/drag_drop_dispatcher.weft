@@ -1,0 +1,177 @@
+# drag_drop_dispatcher.weft
+#
+# Schema-version: 1
+# Filed: 2026-05-29 per WeaveMind evaluation gate (MVP plan Wave 1 / Subagent W1-A)
+# Authored by: session jovial-margulis-52985e in worktree
+#              C:/Users/Liam/Desktop/Alethea/.claude/worktrees/jovial-margulis-52985e/
+#
+# The "representative slice" the MVP plan named for the WeaveMind evaluation gate.
+# Question: is the website renderer a natural Weft graph?
+# Answer: this file is the side-by-side artifact. Its Python mirror lives at
+# `drag_drop_dispatcher_baseline.py`. Both consume the same DragEvent shape +
+# emit the same ConnectionEdit shape; both run against the same 12-event
+# adversarial test set in `test_cases.json`. Scoring + verdict in EVALUATION.md.
+#
+# Per skills/weavemind-first.md Exception case 5 ("runtime not yet available"):
+# Weft's batch CLI is not yet installed. Per queue entry #050, the Alethea-side
+# resolution is either an upstream `weft run` mode or a thin PyO3 wrapper. Until
+# that ships, this file is the canonical specification; the Python mirror IS the
+# runtime. The Weft program below is graded for:
+#   (a) Lines-of-code      — line count
+#   (b) Token efficiency   — chars / equivalent semantics
+#   (c) Composition shape  — group reuse, port typing
+#   (d) Error-mode surface — compile-time vs runtime
+#   (e) Iteration shape    — adding a new node-type
+#   (f) Cross-language     — interop story
+#
+# Grammar refresher (from upstream Weft README + propagate_dates.weft):
+#   id = NodeType { config }
+#   id = NodeType -> (port: T) { config }
+#   id = NodeType -> (port: T, port2: T) { config }
+#   target.port = source.port
+#   self.port = local.port              # Group exposes via `self`
+#   Group exposes typed in/out ports for recursive composition
+
+# ============================================================================
+# Inputs to the drag-drop dispatch Group
+# ============================================================================
+
+drag_event = DragEventInput -> (event: DragEvent) {
+  label: "The drag event from the website UI"
+  # Shape:
+  #   source_id        : NodeHandle    (the dragged node)
+  #   source_kind      : RendererKind  (kind: tasks-list-item / chat-bubble / ...)
+  #   source_tier      : WorldlineTier (sci-fi | planned | in-progress | realized | maintained)
+  #   target_id        : NodeHandle    (the drop target — null if dropped on empty canvas)
+  #   target_kind      : RendererKind  (or null)
+  #   target_tier      : WorldlineTier (or null)
+  #   modifier_keys    : List[Text]    ("ctrl" | "shift" | "alt")
+  #   pointer_position : Point         { x: Number, y: Number }
+}
+
+graph_state = CurrentGraphState -> (state: GraphState) {
+  label: "Current renderer + connection state read from corpus"
+  # Includes:
+  #   nodes      : Map[NodeHandle, RendererNode]
+  #   connections: List[Edge]   # {source, relation, target}
+  #   tier_map   : Map[NodeHandle, WorldlineTier]
+}
+
+# ============================================================================
+# Phase 1 — guard the drag event. Reject self-drops, null targets, etc.
+#           Output a typed Either<Reject, ValidEvent> so downstream branches
+#           skip on null (null-propagation pattern per queue entry #010).
+# ============================================================================
+
+guard = DragGuard -> (valid: ValidEvent?, rejection: RejectionReason?) {
+  label: "Validate the drag event"
+  rejections:
+    self_drop:      "source_id == target_id — cannot drop a node on itself"
+    null_target:    "target_id is null — drop on empty canvas is layout-only, not connection"
+    invalid_tier:   "cannot drop a sci-fi node onto a maintained node (tier-skip blocked)"
+    invalid_kind:   "renderer-kind not registered in the kind-registry"
+  # Tier rule (load-bearing): a node can only connect to nodes within +/- 2
+  # worldline tiers of itself. Sci-fi -> planned OK; sci-fi -> maintained NOT OK.
+  tier_window: 2
+}
+guard.event = drag_event.event
+guard.graph = graph_state.state
+
+# ============================================================================
+# Phase 2 — classify the drag-drop INTENT based on modifier keys + source/target
+#           kinds. The classification is the connection-relation choice. This
+#           is the dispatch table — adding a new (source_kind, target_kind)
+#           pair adds one row + one relation.
+# ============================================================================
+
+classifier = RelationClassifier -> (relation: ConnectionRelation, confidence: Number) {
+  label: "Determine the connection-relation for the drop"
+  # The relation-vocabulary (from substrate canonical-vocab):
+  #   depends-on    : downstream node needs upstream completed
+  #   composes-with : parallel sibling
+  #   realizes      : impl satisfies SPEC
+  #   implements    : impl satisfies design
+  #   displays      : renderer node displays content node
+  #   references    : weak link
+  #   crystallizes-to: sci-fi node solidifies into planned/in-progress
+  #   superseded-by : previous-version replaced
+  #
+  # The dispatch table (kind -> kind -> default-relation):
+  dispatch_table:
+    tasks-list-item -> calendar-entry: "realizes"
+    tasks-list-item -> tasks-list-item: "depends-on"
+    chat-bubble -> idea-card: "references"
+    idea-card -> idea-card: "composes-with"
+    idea-card -> planned-node: "crystallizes-to"
+    sci-fi-node -> planned-node: "crystallizes-to"
+    render-bundle -> painterly-output: "displayed_by"
+    3d-canvas -> camera: "composes-with"
+    paste-target -> renderer-node: "instantiates"
+    palette-item -> workspace: "spawns"
+    panel -> window: "displays"
+    chat-thread -> chat-bubble: "displays"
+  # Modifier overrides (ctrl=force-references; shift=force-composes-with;
+  # alt=force-depends-on).
+  modifier_overrides:
+    ctrl: "references"
+    shift: "composes-with"
+    alt: "depends-on"
+}
+classifier.valid = guard.valid     # null-propagates: skip if guard rejected
+classifier.graph = graph_state.state
+
+# ============================================================================
+# Phase 3 — emit the connection edit. This is the only side-effecting step;
+#           it produces a ConnectionEdit that the MCP write path consumes.
+#           The edit shape is what relate() / unrelate() take.
+# ============================================================================
+
+edit_emitter = ConnectionEditEmitter -> (edit: ConnectionEdit?) {
+  label: "Emit the connection-edit payload"
+  # ConnectionEdit shape:
+  #   operation : "add" | "remove" | "replace"
+  #   source    : NodeHandle
+  #   relation  : ConnectionRelation
+  #   target    : NodeHandle
+  #   confidence: Number
+  #   provenance: Text   ("drag-drop on UI" | "modifier-override:ctrl" | ...)
+  default_operation: "add"
+  # Replace-if-existing rule: if a connection already exists between the same
+  # source+target but with a different relation, the new drag-drop REPLACES
+  # rather than adds (the maintainer's last action wins per UI convention).
+  conflict_strategy: "replace_existing_with_same_pair"
+}
+edit_emitter.valid = guard.valid              # null-propagates
+edit_emitter.relation = classifier.relation
+edit_emitter.confidence = classifier.confidence
+
+# ============================================================================
+# Phase 4 — compute the projected next-graph-state. Pure functional projection;
+#           used by the renderer to show the next render-tick optimistically
+#           before the MCP write returns.
+# ============================================================================
+
+projector = NextGraphProjector -> (next_state: GraphState) {
+  label: "Project graph state after applying the edit"
+}
+projector.current = graph_state.state
+projector.edit = edit_emitter.edit             # null-propagates: no edit -> no change
+
+# ============================================================================
+# Phase 5 — emit the rejection trace when guard rejected. Side-channel to the
+#           UI's right-click menu (the rejection becomes a tooltip).
+# ============================================================================
+
+rejection_trace = RejectionEmitter -> (message: Text?) {
+  label: "Emit the rejection tooltip"
+  format: "{kind}: {detail}"
+}
+rejection_trace.rejection = guard.rejection    # null-propagates if no rejection
+
+# ============================================================================
+# Group output — the contract every renderer-tick consumes
+# ============================================================================
+
+self.edit       = edit_emitter.edit             # ConnectionEdit? — null when rejected
+self.next_state = projector.next_state          # projected state for optimistic render
+self.rejection  = rejection_trace.message       # tooltip text for the UI when rejected
