@@ -51,6 +51,12 @@ from tools.visual_regression.runner import (
     run_baseline,
 )
 
+# SPEC-069 phase 2+3 — eagerly register the three canonical baselines
+# (Tasks / Inbox / Chat) so the maintainer-facing text-API verbs see
+# them on first call. Module-level import has no side effect beyond
+# the manifest registration; renderer hooks only execute on demand.
+from tools.visual_regression import baselines as _phase23_baselines  # noqa: F401
+
 
 __all__ = [
     "BaselineManifest",

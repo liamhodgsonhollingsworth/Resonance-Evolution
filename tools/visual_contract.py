@@ -73,7 +73,7 @@ import io
 import re
 import threading
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # 1. Color palette
@@ -105,6 +105,14 @@ _COLORS_DARK: Dict[str, str] = {
     "status-warn": "#f3d973",
     "status-granted": "#73f3a6",
     "status-cancelled": "#8c8c8c",
+    # Extended status tokens — surfaced for list_renderer's 13-entry
+    # legacy status map (SPEC-069 phase 2 migration). Added when phase
+    # 2 unified 2D + 3D status palettes; the original 7 tokens above
+    # cover the gui_shell case, but list_renderer's per-status
+    # rendering needed two more shades to avoid collapsing distinct
+    # in-flight states (granting vs warn, resolved vs in-progress).
+    "status-active": "#f3a673",      # warm orange — granting (in-flight)
+    "status-resolved": "#73d9f3",    # cyan — resolved (terminal-positive)
 }
 
 # Per-view central-pane tints (override ``surface-2`` only). Values
@@ -155,6 +163,88 @@ def list_color_tokens() -> List[str]:
 def list_view_accents() -> List[str]:
     """Return the sorted list of views with a central-pane tint."""
     return sorted(_VIEW_ACCENTS)
+
+
+# Status-key (item-domain) → semantic color token mapping. The keys
+# come from the list_renderer + workflow source-files vocabulary
+# (``pending``/``done``/``in_progress``/etc.); the values are tokens
+# from ``_COLORS_DARK``. ``None`` is the sentinel for "no status";
+# it maps to the muted foreground so unstatused items don't shout.
+_STATUS_KEY_TO_TOKEN: Dict[Optional[str], str] = {
+    "pending": "status-pending",
+    "done": "status-ok",
+    "in_progress": "status-in-progress",
+    "cancelled": "status-cancelled",
+    "granted": "status-granted",
+    "planning": "status-warn",
+    "granting": "status-active",
+    "superseded": "status-cancelled",
+    "resolved": "status-resolved",
+    "alert": "status-alert",
+    "warn": "status-warn",
+    "ok": "status-ok",
+    None: "fg-secondary",
+}
+
+
+def status_token(status: Optional[str]) -> str:
+    """Map a status-key (``pending``/``done``/etc.) to a semantic
+    color token. Unknown keys fall through to ``fg-secondary`` — the
+    same as the ``None`` sentinel — so consumers don't need to
+    special-case "unmapped".
+    """
+    return _STATUS_KEY_TO_TOKEN.get(status, "fg-secondary")
+
+
+def status_color(status: Optional[str], fmt: str = "hex") -> Any:
+    """Resolve a status-key to a color in the requested format.
+
+    ``fmt`` is one of:
+
+    - ``"hex"`` — ``#RRGGBB`` string (Tk-friendly).
+    - ``"rgb01"`` — ``(r, g, b)`` float tuple in [0, 1] (PIL /
+      numpy / list_renderer-friendly).
+    - ``"rgb255"`` — ``(r, g, b)`` int tuple in [0, 255]
+      (PIL.ImageDraw-friendly).
+
+    Unknown statuses fall through to the ``fg-secondary`` token —
+    matching the ``None`` sentinel — so callers don't need to
+    special-case unmapped values.
+    """
+    hex_value = get_color(status_token(status))
+    if fmt == "hex":
+        return hex_value
+    if fmt == "rgb01":
+        return _hex_to_rgb01(hex_value)
+    if fmt == "rgb255":
+        return _hex_to_rgb255(hex_value)
+    raise ValueError(
+        f"unknown fmt {fmt!r}; available: 'hex', 'rgb01', 'rgb255'"
+    )
+
+
+def list_status_keys() -> List[str]:
+    """Return the sorted list of status-keys with a color mapping.
+
+    ``None`` (the no-status sentinel) is omitted — it has no string
+    form to list.
+    """
+    return sorted(k for k in _STATUS_KEY_TO_TOKEN if k is not None)
+
+
+def _hex_to_rgb01(hex_value: str) -> Tuple[float, float, float]:
+    """Convert ``#RRGGBB`` to a 0..1 float triple."""
+    h = hex_value.lstrip("#")
+    r = int(h[0:2], 16) / 255.0
+    g = int(h[2:4], 16) / 255.0
+    b = int(h[4:6], 16) / 255.0
+    return (r, g, b)
+
+
+def _hex_to_rgb255(hex_value: str) -> Tuple[int, int, int]:
+    """Convert ``#RRGGBB`` to a 0..255 int triple."""
+    h = hex_value.lstrip("#")
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
 
 # ---------------------------------------------------------------------------

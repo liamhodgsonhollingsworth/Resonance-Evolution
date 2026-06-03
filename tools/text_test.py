@@ -1047,6 +1047,154 @@ def _cmd_visual_contract_resolve_icon(
     ), view
 
 
+# ---------------------------------------------------------------------------
+# SPEC-069 phase 2+3 — migration audit verbs.
+#
+# After the phase 2 (palette) + phase 3 (typography) migration of
+# ``gui_shell.py`` + ``list_renderer.py``, the audit verbs below scan
+# the same files for any remaining inline hex literals or font tuples.
+# A passing migration reports zero hits; a regression (someone adds a
+# new inline literal in a future edit) re-triggers the audit so the
+# review surface stays visible.
+#
+# The audits intentionally exempt:
+#
+# - ``gui_shell.py``'s ``_FALLBACK_COLORS`` dict (between the
+#   ``# NOTE: hex literals in this dict`` marker and the closing
+#   brace) and the ``"#000000"`` final-fallback default. The fallback
+#   table is the single place hex literals legitimately live so the
+#   shell can boot when ``visual_contract`` is unavailable.
+# - The ``("Helvetica", size...)`` tuple inside the ``_F()`` helper's
+#   own definition / docstring.
+# ---------------------------------------------------------------------------
+
+# Re-use the same exemption logic from ``tests/test_visual_contract_migration.py``
+# so the test and the verb agree exactly on what counts as a migration regression.
+_AUDIT_TARGET_FILES = [
+    "tools/workflow_gui/gui_shell.py",
+    "node_types/list_renderer.py",
+]
+
+_AUDIT_HEX_PATTERN = r'#[0-9a-fA-F]{6}'
+_AUDIT_FONT_PATTERN = (
+    r'\("Helvetica"|\("Cascadia[ A-Za-z]*"|\("Segoe UI"|'
+    r'\("Consolas"|\("Courier[ A-Za-z]*"|\("Arial"'
+)
+
+
+def _audit_repo_root() -> "Path":
+    """Find the Apeiron repo root from this file's location."""
+    from pathlib import Path
+    return Path(__file__).resolve().parent.parent
+
+
+def _audit_scan_file(
+    rel_path: str,
+    pattern: str,
+    exempt_predicate,
+):
+    """Return a list of ``(line_number, line_text)`` tuples where
+    ``pattern`` (a regex) matches a line of ``rel_path`` and the line
+    is not exempted by ``exempt_predicate(rel_path, line_index, line_text)``.
+
+    Used by both audit verbs and the test that mirrors them.
+    """
+    import re
+    from pathlib import Path
+    path = _audit_repo_root() / rel_path
+    if not path.exists():
+        return []
+    pattern_re = re.compile(pattern)
+    hits = []
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for idx, line in enumerate(lines):
+        if not pattern_re.search(line):
+            continue
+        if exempt_predicate(rel_path, idx, line):
+            continue
+        hits.append((idx + 1, line.rstrip()))
+    return hits
+
+
+def _audit_color_exempt(rel_path: str, idx: int, line: str) -> bool:
+    """True iff this hex-matching line is one of the documented
+    exceptions (fallback table entries, ``_C(...)`` helper internals)."""
+    # gui_shell.py: _FALLBACK_COLORS dict entries are quoted strings
+    # like ``"surface-0": "#15171c",`` — every entry has a colon plus
+    # quoted-key shape. Match that prefix to keep them exempt.
+    if rel_path.endswith("gui_shell.py"):
+        stripped = line.strip()
+        # Fallback-table entries (key: "#hex",) — accept the whole row.
+        if (stripped.startswith('"') and ': "#' in stripped
+                and stripped.endswith('",')):
+            return True
+        # The "#000000" final-fallback default inside ``_C``.
+        if 'return _FALLBACK_COLORS.get(token,' in stripped:
+            return True
+    return False
+
+
+def _audit_font_exempt(rel_path: str, idx: int, line: str) -> bool:
+    """True iff this font-tuple-matching line is exempt — the helper
+    ``_F`` body / docstring inside gui_shell.py."""
+    if rel_path.endswith("gui_shell.py"):
+        stripped = line.strip()
+        # Helper docstring + return line.
+        if 'soft-failing to' in stripped:
+            return True
+        if stripped.startswith('return ("Helvetica", size'):
+            return True
+    return False
+
+
+def _cmd_visual_contract_audit_colors(
+    engine: Engine, view: View, *_
+) -> Tuple[str, View]:
+    """Scan SPEC-069 phase 2 migrated files for remaining hex literals.
+
+    A passing run reports ``OK: 0 inline hex literals``; any other
+    output names the offending file + line. Composes with the
+    ``visual_contract_migration`` ready-check probe.
+    """
+    all_hits: List[Tuple[str, int, str]] = []
+    for rel in _AUDIT_TARGET_FILES:
+        hits = _audit_scan_file(
+            rel, _AUDIT_HEX_PATTERN, _audit_color_exempt,
+        )
+        for ln, text in hits:
+            all_hits.append((rel, ln, text))
+    if not all_hits:
+        return "OK: 0 inline hex literals across audited files", view
+    lines = [f"FAIL: {len(all_hits)} inline hex literal(s):"]
+    for rel, ln, text in all_hits:
+        lines.append(f"  {rel}:{ln}  {text}")
+    return "\n".join(lines), view
+
+
+def _cmd_visual_contract_audit_fonts(
+    engine: Engine, view: View, *_
+) -> Tuple[str, View]:
+    """Scan SPEC-069 phase 3 migrated files for remaining inline font tuples.
+
+    A passing run reports ``OK: 0 inline font tuples``; any other
+    output names the offending file + line. Mirrors
+    ``visual-contract-audit-colors`` for the typography axis.
+    """
+    all_hits: List[Tuple[str, int, str]] = []
+    for rel in _AUDIT_TARGET_FILES:
+        hits = _audit_scan_file(
+            rel, _AUDIT_FONT_PATTERN, _audit_font_exempt,
+        )
+        for ln, text in hits:
+            all_hits.append((rel, ln, text))
+    if not all_hits:
+        return "OK: 0 inline font tuples across audited files", view
+    lines = [f"FAIL: {len(all_hits)} inline font tuple(s):"]
+    for rel, ln, text in all_hits:
+        lines.append(f"  {rel}:{ln}  {text}")
+    return "\n".join(lines), view
+
+
 def _cmd_spawn_button(engine: Engine, view: View, *args) -> Tuple[str, View]:
     """Spawn a ButtonNode (SPEC-077).
 
@@ -1593,6 +1741,8 @@ def _cmd_list_commands(engine: Engine, view: View, *_) -> Tuple[str, View]:
     lines.append("  visual-contract-list-icons      -- list icon names registered in the contract (SPEC-069)")
     lines.append("  visual-contract-list-fonts      -- list font aliases + size tokens with probed family (SPEC-069)")
     lines.append("  visual-contract-resolve-icon <name> [size] -- render an icon and report dimensions (SPEC-069)")
+    lines.append("  visual-contract-audit-colors    -- scan migrated files for remaining inline hex literals (SPEC-069)")
+    lines.append("  visual-contract-audit-fonts     -- scan migrated files for remaining inline font tuples (SPEC-069)")
     lines.append("  spawn-button <label> <action> [target] [k=v ...]  -- spawn a ButtonNode (SPEC-077)")
     lines.append("  list-node-history <node-id>     -- list edit history rows for a node (SPEC-076)")
     lines.append("  list-node-connections <node-id> -- list in-edges + out-edges for a node (SPEC-076)")
@@ -1650,6 +1800,8 @@ _COMMANDS = {
     "visual-contract-list-icons": _cmd_visual_contract_list_icons,
     "visual-contract-list-fonts": _cmd_visual_contract_list_fonts,
     "visual-contract-resolve-icon": _cmd_visual_contract_resolve_icon,
+    "visual-contract-audit-colors": _cmd_visual_contract_audit_colors,
+    "visual-contract-audit-fonts": _cmd_visual_contract_audit_fonts,
     "spawn-button": _cmd_spawn_button,
     "list-node-history": _cmd_list_node_history,
     "list-node-connections": _cmd_list_node_connections,

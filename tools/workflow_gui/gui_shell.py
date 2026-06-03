@@ -77,6 +77,77 @@ from tools.workflow_gui.widget_lock import WidgetLock
 
 
 # ---------------------------------------------------------------------------
+# Visual contract integration — SPEC-069 phase 2 (palette) + phase 3
+# (typography). Inline hex literals and Helvetica font tuples have been
+# replaced by ``_C(token)`` / ``_F(size, bold)`` calls below; the
+# helpers soft-fail to the legacy hex/Helvetica values when
+# ``tools.visual_contract`` is unavailable so the shell still boots in
+# a degraded mode rather than crashing on import.
+# ---------------------------------------------------------------------------
+
+try:
+    from tools.visual_contract import (
+        get_color as _vc_get_color,
+        get_font as _vc_get_font,
+    )
+    _VISUAL_CONTRACT_AVAILABLE = True
+except Exception:  # pragma: no cover — import failure is the fallback path
+    _VISUAL_CONTRACT_AVAILABLE = False
+    _vc_get_color = None  # type: ignore[assignment]
+    _vc_get_font = None  # type: ignore[assignment]
+
+
+# Fallback hex values mirror the pre-migration literals so the shell
+# stays usable when ``visual_contract`` import fails (e.g. partial
+# checkout, missing PIL on a downstream consumer). The fallback table
+# is the single place a future migration touches if the palette
+# changes — every ``_C(...)`` call-site resolves through here.
+# NOTE: hex literals in this dict are the single intentional exception
+# the SPEC-069 phase 2 ``visual-contract-audit-colors`` verb excludes
+# from its zero-tolerance scan (see ``tools/text_test.py``). The audit
+# treats any hex literal outside ``_FALLBACK_COLORS`` as a regression.
+_FALLBACK_COLORS: Dict[str, str] = {
+    "surface-0": "#15171c",
+    "surface-1": "#1c1f26",
+    "surface-1b": "#22252b",
+    "surface-2": "#2a2d34",
+    "surface-divider": "#2a2d34",
+    "accent": "#3b4254",
+    "accent-hover": "#4d566d",
+    "fg-primary": "#e8e8ec",
+    "fg-emphasis": "#ffffff",
+    "fg-secondary": "#c8ccd6",
+    "fg-muted": "#8d92a3",
+}
+
+
+def _C(token: str) -> str:
+    """Resolve a visual_contract color token, soft-failing to the
+    pre-migration hex literal when the contract is unavailable.
+    """
+    if _VISUAL_CONTRACT_AVAILABLE and _vc_get_color is not None:
+        try:
+            return _vc_get_color(token)
+        except Exception:
+            pass
+    return _FALLBACK_COLORS.get(token, "#000000")
+
+
+def _F(size: int, bold: bool = False) -> tuple:
+    """Resolve a visual_contract sans-serif font tuple at ``size``,
+    soft-failing to ``("Helvetica", size[, "bold"])`` when the
+    contract is unavailable. ``bold`` appends the ``"bold"`` style
+    flag Tk's font tuple format expects.
+    """
+    if _VISUAL_CONTRACT_AVAILABLE and _vc_get_font is not None:
+        try:
+            return _vc_get_font("sans", size, bold=bold)
+        except Exception:
+            pass
+    return ("Helvetica", size, "bold") if bold else ("Helvetica", size)
+
+
+# ---------------------------------------------------------------------------
 # Icon registry — SPEC-074 standard icons by default.
 # ---------------------------------------------------------------------------
 
@@ -926,12 +997,12 @@ class GuiShell:
         self.tk_root.grid_rowconfigure(1, weight=0)
 
         # Sidebar.
-        self._sidebar_frame = tk.Frame(self.tk_root, bg="#1c1f26")
+        self._sidebar_frame = tk.Frame(self.tk_root, bg=_C("surface-1"))
         self._sidebar_frame.grid(row=0, column=0, rowspan=2, sticky="nsew")
         self._build_sidebar()
 
         # Central pane.
-        self._central_frame = tk.Frame(self.tk_root, bg="#2a2d34")
+        self._central_frame = tk.Frame(self.tk_root, bg=_C("surface-2"))
         self._central_frame.grid(row=0, column=1, sticky="nsew")
 
         # SPEC-007 panel host. A child frame of the central pane that
@@ -941,22 +1012,22 @@ class GuiShell:
         # layout packed/gridded widgets directly into _central_frame;
         # SPEC-007 routes everything through the host so move/resize/
         # snap-to-grid have a single coordinate space to operate in.
-        self._panel_host = tk.Frame(self._central_frame, bg="#2a2d34")
+        self._panel_host = tk.Frame(self._central_frame, bg=_C("surface-2"))
         self._panel_host.place(x=0, y=0, relwidth=1.0, relheight=1.0)
 
         # Chat input bar at the bottom of the right column.
-        chat_bar = tk.Frame(self.tk_root, bg="#15171c", height=64)
+        chat_bar = tk.Frame(self.tk_root, bg=_C("surface-0"), height=64)
         chat_bar.grid(row=1, column=1, sticky="ew")
         chat_bar.grid_propagate(False)
         chat_bar.grid_columnconfigure(0, weight=1)
 
         self._chat_entry = tk.Entry(
             chat_bar,
-            bg="#2a2d34",
-            fg="#e8e8ec",
-            insertbackground="#e8e8ec",
+            bg=_C("surface-2"),
+            fg=_C("fg-primary"),
+            insertbackground=_C("fg-primary"),
             relief="flat",
-            font=("Helvetica", 11),
+            font=_F(11),
         )
         self._chat_entry.grid(row=0, column=0, sticky="ew", padx=(12, 8), pady=14)
         self._chat_entry.bind("<Return>", lambda _e: self._on_chat_submit())
@@ -969,10 +1040,10 @@ class GuiShell:
             chat_bar,
             text="Send",
             command=self._on_chat_submit,
-            bg="#3b4254",
-            fg="#e8e8ec",
+            bg=_C("accent"),
+            fg=_C("fg-primary"),
             relief="flat",
-            font=("Helvetica", 10, "bold"),
+            font=_F(10, bold=True),
             padx=14,
             pady=4,
         )
@@ -1005,9 +1076,9 @@ class GuiShell:
         header = tk.Label(
             self._sidebar_frame,
             text="Apeiron",
-            bg="#1c1f26",
-            fg="#e8e8ec",
-            font=("Helvetica", 14, "bold"),
+            bg=_C("surface-1"),
+            fg=_C("fg-primary"),
+            font=_F(14, bold=True),
             pady=12,
         )
         header.pack(fill="x")
@@ -1016,15 +1087,15 @@ class GuiShell:
             user_label = tk.Label(
                 self._sidebar_frame,
                 text=f"signed in: {self.current_user}",
-                bg="#1c1f26",
-                fg="#8d92a3",
-                font=("Helvetica", 9),
+                bg=_C("surface-1"),
+                fg=_C("fg-muted"),
+                font=_F(9),
                 pady=2,
             )
             user_label.pack(fill="x")
 
         # Separator.
-        sep = tk.Frame(self._sidebar_frame, bg="#2a2d34", height=1)
+        sep = tk.Frame(self._sidebar_frame, bg=_C("surface-divider"), height=1)
         sep.pack(fill="x", pady=(8, 4))
 
         # Tab buttons.
@@ -1037,12 +1108,12 @@ class GuiShell:
             btn_kwargs = dict(
                 master=self._sidebar_frame,
                 anchor="w",
-                bg="#1c1f26",
-                fg="#c8ccd6",
-                activebackground="#2a2d34",
-                activeforeground="#ffffff",
+                bg=_C("surface-1"),
+                fg=_C("fg-secondary"),
+                activebackground=_C("surface-2"),
+                activeforeground=_C("fg-emphasis"),
                 relief="flat",
-                font=("Helvetica", 11),
+                font=_F(11),
                 padx=18,
                 pady=8,
                 command=lambda n=name: self.select_tab(n),
@@ -1099,9 +1170,9 @@ class GuiShell:
     def _highlight_active_tab(self) -> None:
         for name, btn in self._sidebar_buttons.items():
             if name == self.active_tab:
-                btn.configure(bg="#3b4254", fg="#ffffff")
+                btn.configure(bg=_C("accent"), fg=_C("fg-emphasis"))
             else:
-                btn.configure(bg="#1c1f26", fg="#c8ccd6")
+                btn.configure(bg=_C("surface-1"), fg=_C("fg-secondary"))
 
     # ----- hold-Ctrl edit mode (SPEC-072, SPEC-074) -----
 
@@ -1163,9 +1234,9 @@ class GuiShell:
         label = tk.Label(
             tip,
             text=text,
-            bg="#15171c",
-            fg="#e8e8ec",
-            font=("Helvetica", 9),
+            bg=_C("surface-0"),
+            fg=_C("fg-primary"),
+            font=_F(9),
             wraplength=320,
             justify="left",
             padx=8,
@@ -1379,7 +1450,7 @@ class GuiShell:
         """
         new_font_size = max(7, int(round(self._base_font_size * self._sidebar_scale)))
         new_pady = max(2, int(round(self._base_pady * self._sidebar_scale)))
-        font = ("Helvetica", new_font_size)
+        font = _F(new_font_size)
         for btn in self._sidebar_buttons.values():
             try:
                 btn.configure(font=font, pady=new_pady)
@@ -1496,8 +1567,8 @@ class GuiShell:
         # host. Drag handlers on the header reposition this frame by
         # mutating handle.x/y then re-placing.
         host = self._panel_host if self._panel_host is not None else self._central_frame
-        panel_frame = tk.Frame(host, bg="#2a2d34", highlightthickness=1,
-                               highlightbackground="#3b4254")
+        panel_frame = tk.Frame(host, bg=_C("surface-2"), highlightthickness=1,
+                               highlightbackground=_C("accent"))
         panel_frame.place(x=handle.x, y=handle.y, width=handle.w, height=handle.h)
         self._panel_widgets[panel_id] = panel_frame
 
@@ -1505,7 +1576,7 @@ class GuiShell:
         # the panel that drag-resizes by mutating handle.w/h. The grip
         # uses place() with rel-anchors so it stays glued to the SE
         # corner regardless of the panel's current (w, h).
-        grip = tk.Frame(panel_frame, bg="#3b4254", cursor="bottom_right_corner",
+        grip = tk.Frame(panel_frame, bg=_C("accent"), cursor="bottom_right_corner",
                         width=14, height=14)
         grip.place(relx=1.0, rely=1.0, anchor="se")
         grip.bind("<ButtonPress-1>",
@@ -1515,15 +1586,15 @@ class GuiShell:
         grip.bind("<ButtonRelease-1>",
                   lambda e, pid=panel_id: self._on_panel_resize_release(e, pid))
 
-        header = tk.Frame(panel_frame, bg="#2a2d34", cursor="fleur")
+        header = tk.Frame(panel_frame, bg=_C("surface-2"), cursor="fleur")
         header.pack(fill="x", padx=12, pady=(12, 0))
 
         title = tk.Label(
             header,
             text=self.active_tab,
-            bg="#2a2d34",
-            fg="#e8e8ec",
-            font=("Helvetica", 14, "bold"),
+            bg=_C("surface-2"),
+            fg=_C("fg-primary"),
+            font=_F(14, bold=True),
             anchor="w",
             cursor="fleur",
         )
@@ -1532,9 +1603,9 @@ class GuiShell:
         count = tk.Label(
             header,
             text=f"{len(items)} item(s)",
-            bg="#2a2d34",
-            fg="#8d92a3",
-            font=("Helvetica", 10),
+            bg=_C("surface-2"),
+            fg=_C("fg-muted"),
+            font=_F(10),
             anchor="e",
             cursor="fleur",
         )
@@ -1581,11 +1652,11 @@ class GuiShell:
 
         # Action button strip (initially empty; populated when an item
         # is selected).
-        action_bar = tk.Frame(panel_frame, bg="#2a2d34")
+        action_bar = tk.Frame(panel_frame, bg=_C("surface-2"))
         action_bar.pack(fill="x", padx=12, pady=(6, 0))
 
         # Tree + scrollbar in a sub-frame so they share a row.
-        list_frame = tk.Frame(panel_frame, bg="#2a2d34")
+        list_frame = tk.Frame(panel_frame, bg=_C("surface-2"))
         list_frame.pack(fill="both", expand=True, padx=12, pady=12)
 
         style = ttk.Style(panel_frame)
@@ -1595,23 +1666,23 @@ class GuiShell:
             pass
         style.configure(
             "Apeiron.Treeview",
-            background="#22252b",
-            foreground="#e8e8ec",
-            fieldbackground="#22252b",
+            background=_C("surface-1b"),
+            foreground=_C("fg-primary"),
+            fieldbackground=_C("surface-1b"),
             rowheight=24,
-            font=("Helvetica", 10),
+            font=_F(10),
             borderwidth=0,
         )
         style.configure(
             "Apeiron.Treeview.Heading",
-            background="#1c1f26",
-            foreground="#c8ccd6",
-            font=("Helvetica", 10, "bold"),
+            background=_C("surface-1"),
+            foreground=_C("fg-secondary"),
+            font=_F(10, bold=True),
         )
         style.map(
             "Apeiron.Treeview",
-            background=[("selected", "#3b4254")],
-            foreground=[("selected", "#ffffff")],
+            background=[("selected", _C("accent"))],
+            foreground=[("selected", _C("fg-emphasis"))],
         )
 
         tree = ttk.Treeview(
@@ -1631,7 +1702,7 @@ class GuiShell:
         scroll.pack(side="right", fill="y")
 
         # Body display below the list (collapsed by default).
-        body_frame = tk.Frame(panel_frame, bg="#1c1f26")
+        body_frame = tk.Frame(panel_frame, bg=_C("surface-1"))
         # Packed/unpacked dynamically on expand.
 
         from node_types.list_renderer import DEFAULT_STATUS_GLYPHS
@@ -1663,12 +1734,12 @@ class GuiShell:
 
                 btn_kwargs = dict(
                     master=action_bar,
-                    bg="#3b4254",
-                    fg="#e8e8ec",
-                    activebackground="#4d566d",
-                    activeforeground="#ffffff",
+                    bg=_C("accent"),
+                    fg=_C("fg-primary"),
+                    activebackground=_C("accent-hover"),
+                    activeforeground=_C("fg-emphasis"),
                     relief="flat",
-                    font=("Helvetica", 9),
+                    font=_F(9),
                     padx=10,
                     pady=2,
                     command=lambda a=act, it=item: self._on_action(a, it),
@@ -2234,10 +2305,10 @@ class GuiShell:
         win = tk.Toplevel(self.tk_root)
         win.title(f"Properties — {target_id}")
         win.geometry("320x220")
-        win.configure(bg="#1c1f26")
+        win.configure(bg=_C("surface-1"))
         text = tk.Text(
-            win, bg="#15171c", fg="#e8e8ec",
-            font=("Helvetica", 10), relief="flat",
+            win, bg=_C("surface-0"), fg=_C("fg-primary"),
+            font=_F(10), relief="flat",
             wrap="word",
         )
         if target_kind == "panel":
@@ -2512,9 +2583,9 @@ class GuiShell:
         title = tk.Label(
             body_frame,
             text=item.get("title", ""),
-            bg="#1c1f26",
-            fg="#e8e8ec",
-            font=("Helvetica", 11, "bold"),
+            bg=_C("surface-1"),
+            fg=_C("fg-primary"),
+            font=_F(11, bold=True),
             anchor="w",
             padx=12,
             pady=6,
@@ -2524,9 +2595,9 @@ class GuiShell:
         body_text = item.get("body") or "(no body)"
         text = tk.Text(
             body_frame,
-            bg="#15171c",
-            fg="#c8ccd6",
-            font=("Helvetica", 10),
+            bg=_C("surface-0"),
+            fg=_C("fg-secondary"),
+            font=_F(10),
             wrap="word",
             relief="flat",
             height=8,
@@ -2546,9 +2617,9 @@ class GuiShell:
             placeholder = tk.Label(
                 self._central_frame,
                 text="3D tab requires a loaded scene. Pass --scene at launch.",
-                bg="#2a2d34",
-                fg="#c8ccd6",
-                font=("Helvetica", 11),
+                bg=_C("surface-2"),
+                fg=_C("fg-secondary"),
+                font=_F(11),
                 pady=24,
             )
             placeholder.pack(fill="both", expand=True)
@@ -2563,9 +2634,9 @@ class GuiShell:
             placeholder = tk.Label(
                 self._central_frame,
                 text=f"3D unavailable: import failed ({exc})",
-                bg="#2a2d34",
-                fg="#c8ccd6",
-                font=("Helvetica", 11),
+                bg=_C("surface-2"),
+                fg=_C("fg-secondary"),
+                font=_F(11),
                 pady=24,
             )
             placeholder.pack(fill="both", expand=True)
@@ -2578,9 +2649,9 @@ class GuiShell:
             placeholder = tk.Label(
                 self._central_frame,
                 text=f"3D scene read failed: {exc}",
-                bg="#2a2d34",
-                fg="#c8ccd6",
-                font=("Helvetica", 11),
+                bg=_C("surface-2"),
+                fg=_C("fg-secondary"),
+                font=_F(11),
                 pady=24,
             )
             placeholder.pack(fill="both", expand=True)
@@ -2629,9 +2700,9 @@ class GuiShell:
                     "3D embedding unsupported by current backend. "
                     "Run `python -m tools.realtime` for the standalone 3D window."
                 ),
-                bg="#2a2d34",
-                fg="#c8ccd6",
-                font=("Helvetica", 11),
+                bg=_C("surface-2"),
+                fg=_C("fg-secondary"),
+                font=_F(11),
                 pady=24,
             )
             placeholder.pack(fill="both", expand=True)
@@ -2641,9 +2712,9 @@ class GuiShell:
             placeholder = tk.Label(
                 self._central_frame,
                 text=f"3D backend open failed: {exc}",
-                bg="#2a2d34",
-                fg="#c8ccd6",
-                font=("Helvetica", 11),
+                bg=_C("surface-2"),
+                fg=_C("fg-secondary"),
+                font=_F(11),
                 pady=24,
             )
             placeholder.pack(fill="both", expand=True)
@@ -2730,9 +2801,9 @@ class GuiShell:
                     "Install with: pip install \"tkinterweb>=4.25.2,<5\"\n"
                     f"({exc})"
                 ),
-                bg="#2a2d34",
-                fg="#c8ccd6",
-                font=("Helvetica", 11),
+                bg=_C("surface-2"),
+                fg=_C("fg-secondary"),
+                font=_F(11),
                 justify="left",
                 pady=24,
             )
@@ -2740,7 +2811,7 @@ class GuiShell:
             return
 
         # URL bar.
-        bar = tk.Frame(host, bg="#1c1f26")
+        bar = tk.Frame(host, bg=_C("surface-1"))
         bar.pack(fill="x")
 
         initial_url = spec.url or ""
@@ -2750,11 +2821,11 @@ class GuiShell:
         entry = tk.Entry(
             bar,
             textvariable=url_var,
-            bg="#2a2d34",
-            fg="#e8e8ec",
-            insertbackground="#e8e8ec",
+            bg=_C("surface-2"),
+            fg=_C("fg-primary"),
+            insertbackground=_C("fg-primary"),
             relief="flat",
-            font=("Helvetica", 10),
+            font=_F(10),
         )
         entry.pack(side="left", fill="x", expand=True, padx=(12, 4), pady=8)
 
@@ -2765,9 +2836,9 @@ class GuiShell:
             placeholder = tk.Label(
                 host,
                 text=f"HtmlFrame instantiation failed: {exc}",
-                bg="#2a2d34",
-                fg="#c8ccd6",
-                font=("Helvetica", 11),
+                bg=_C("surface-2"),
+                fg=_C("fg-secondary"),
+                font=_F(11),
                 pady=24,
             )
             placeholder.pack(fill="both", expand=True)
@@ -2804,10 +2875,10 @@ class GuiShell:
         go_kwargs = dict(
             master=bar,
             command=_on_submit,
-            bg="#3b4254",
-            fg="#e8e8ec",
+            bg=_C("accent"),
+            fg=_C("fg-primary"),
             relief="flat",
-            font=("Helvetica", 10, "bold"),
+            font=_F(10, bold=True),
             padx=10,
             pady=2,
         )
@@ -2828,10 +2899,10 @@ class GuiShell:
             bar,
             text="Refresh",
             command=_on_refresh,
-            bg="#3b4254",
-            fg="#e8e8ec",
+            bg=_C("accent"),
+            fg=_C("fg-primary"),
             relief="flat",
-            font=("Helvetica", 10),
+            font=_F(10),
             padx=10,
             pady=2,
         )

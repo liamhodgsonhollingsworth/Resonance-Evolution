@@ -44,6 +44,15 @@ from engine.actions import VIEW_STATE_CACHE_KEY
 from engine.node import Channels, EmitContext, Manifest, View
 
 
+# SPEC-069 phase 2: status maps derive from ``tools/visual_contract``
+# rather than carrying inline RGB-float literals. The visual contract
+# is the single source of truth — the 2D shell at
+# ``tools/workflow_gui/gui_shell.py`` consumes ``status_color(status,
+# "hex")``; this renderer (3D path) consumes ``status_color(status,
+# "rgb01")``. The map below is built once at import time. Soft-fails
+# to a degraded built-in table when ``visual_contract`` is unavailable
+# (e.g. partial checkout) so the renderer still functions.
+
 DEFAULT_STATUS_GLYPHS = {
     "pending": "[ ]",
     "done": "[x]",
@@ -61,21 +70,45 @@ DEFAULT_STATUS_GLYPHS = {
 }
 
 
-DEFAULT_STATUS_COLORS = {
-    "pending": [0.85, 0.85, 0.55],
-    "done": [0.55, 0.85, 0.55],
-    "in_progress": [0.55, 0.75, 0.95],
-    "cancelled": [0.55, 0.55, 0.55],
-    "granted": [0.45, 0.95, 0.65],
-    "planning": [0.95, 0.85, 0.45],
-    "granting": [0.95, 0.65, 0.45],
-    "superseded": [0.55, 0.55, 0.55],
-    "resolved": [0.45, 0.85, 0.95],
-    "alert": [0.95, 0.45, 0.45],
-    "warn": [0.95, 0.85, 0.45],
-    "ok": [0.65, 0.85, 0.65],
-    None: [0.85, 0.85, 0.85],
-}
+def _build_default_status_colors() -> Dict[Optional[str], List[float]]:
+    """Construct the legacy ``DEFAULT_STATUS_COLORS`` shape from the
+    visual contract. Returns a dict whose values are RGB-float lists
+    (length 3) matching the pre-migration palette's colors.
+
+    Soft-fails to the pre-migration literals if ``visual_contract``
+    import or any lookup raises — the renderer still works, just
+    without unified-palette guarantees.
+    """
+    legacy = {
+        "pending": [0.85, 0.85, 0.55],
+        "done": [0.55, 0.85, 0.55],
+        "in_progress": [0.55, 0.75, 0.95],
+        "cancelled": [0.55, 0.55, 0.55],
+        "granted": [0.45, 0.95, 0.65],
+        "planning": [0.95, 0.85, 0.45],
+        "granting": [0.95, 0.65, 0.45],
+        "superseded": [0.55, 0.55, 0.55],
+        "resolved": [0.45, 0.85, 0.95],
+        "alert": [0.95, 0.45, 0.45],
+        "warn": [0.95, 0.85, 0.45],
+        "ok": [0.65, 0.85, 0.65],
+        None: [0.85, 0.85, 0.85],
+    }
+    try:
+        from tools.visual_contract import status_color
+    except Exception:
+        return legacy
+    out: Dict[Optional[str], List[float]] = {}
+    for key in legacy:
+        try:
+            r, g, b = status_color(key, "rgb01")
+            out[key] = [r, g, b]
+        except Exception:
+            out[key] = legacy[key]
+    return out
+
+
+DEFAULT_STATUS_COLORS = _build_default_status_colors()
 
 
 def manifest() -> Manifest:
