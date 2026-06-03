@@ -1203,6 +1203,81 @@ def _check_visual_contract(verbose: bool) -> Tuple[bool, str]:
     )
 
 
+def _check_visual_contract_migration(verbose: bool) -> Tuple[bool, str]:
+    """SPEC-069 phase 2+3: the migration of gui_shell.py and
+    list_renderer.py onto the visual contract is complete and a
+    regression-free maintenance state holds.
+
+    Probes:
+
+    1. ``visual-contract-audit-colors`` reports zero inline hex
+       literals across the audited target files.
+    2. ``visual-contract-audit-fonts`` reports zero inline font
+       tuples across the audited target files.
+    3. ``list_renderer.DEFAULT_STATUS_COLORS`` has 13 entries (the
+       legacy shape preserved) and derives values consistent with
+       ``visual_contract.status_color(key, "rgb01")`` for at least
+       one known status (``pending``).
+    4. ``gui_shell``'s ``_C(...)`` helper resolves a known token
+       and the resolved value matches the contract's ``get_color``.
+
+    A failure in any of these signals a regression in the
+    migration's invariants — typically that a future edit
+    re-introduced an inline literal or that the contract's color
+    table drifted from the renderer's.
+    """
+    try:
+        from tools.text_test import (
+            _cmd_visual_contract_audit_colors,
+            _cmd_visual_contract_audit_fonts,
+        )
+        from tools.visual_contract import get_color, status_color
+        from node_types.list_renderer import DEFAULT_STATUS_COLORS
+        from tools.workflow_gui.gui_shell import _C
+    except Exception as exc:
+        return False, f"visual_contract_migration import failed: {exc}"
+
+    # Probe 1+2 — verb-shaped audits. We can call the command function
+    # directly with a None view since neither audit reads the view.
+    colors_msg, _ = _cmd_visual_contract_audit_colors(None, None)
+    if not colors_msg.startswith("OK"):
+        return False, f"audit-colors: {colors_msg.splitlines()[0]}"
+    fonts_msg, _ = _cmd_visual_contract_audit_fonts(None, None)
+    if not fonts_msg.startswith("OK"):
+        return False, f"audit-fonts: {fonts_msg.splitlines()[0]}"
+
+    # Probe 3 — list_renderer status map shape + content.
+    if len(DEFAULT_STATUS_COLORS) != 13:
+        return False, (
+            f"DEFAULT_STATUS_COLORS has {len(DEFAULT_STATUS_COLORS)} "
+            f"entries (expected 13)"
+        )
+    expected_pending = list(status_color("pending", "rgb01"))
+    actual_pending = list(DEFAULT_STATUS_COLORS["pending"])
+    if any(abs(a - b) > 1e-6 for a, b in zip(expected_pending, actual_pending)):
+        return False, (
+            f"DEFAULT_STATUS_COLORS['pending']={actual_pending} "
+            f"does not derive from contract ({expected_pending})"
+        )
+
+    # Probe 4 — gui_shell's _C helper agrees with the contract.
+    for token in ("surface-0", "accent", "fg-primary"):
+        helper_value = _C(token)
+        contract_value = get_color(token)
+        if helper_value != contract_value:
+            return False, (
+                f"_C({token!r}) -> {helper_value} != "
+                f"get_color({token!r}) -> {contract_value}"
+            )
+
+    return True, (
+        f"migration complete: 0 inline hex/font literals across audited "
+        f"files; list_renderer status map ({len(DEFAULT_STATUS_COLORS)} "
+        f"entries) derives from contract; gui_shell._C agrees with "
+        f"visual_contract.get_color"
+    )
+
+
 def _check_standard_icons(verbose: bool) -> Tuple[bool, str]:
     """SPEC-074: every button widget in the default scene has either an
     icon or a text fallback, every actionable widget has a tooltip, and
@@ -1741,6 +1816,7 @@ CHECKS: List[Tuple[str, Callable[[bool], Tuple[bool, str]]]] = [
     ("per_widget_lock", _check_per_widget_lock),
     ("paste_trust_gate", _check_paste_trust_gate),
     ("visual_contract", _check_visual_contract),
+    ("visual_contract_migration", _check_visual_contract_migration),
     ("standard_icons", _check_standard_icons),
     ("buttons_as_nodes", _check_buttons_as_nodes),
     ("browser", _check_browser),
