@@ -1,0 +1,15 @@
+{
+	"format": "resonance.arrangement/v1",
+	"name": "add-demo",
+	"nodes": [
+		{ "id": "a", "type": "Const", "params": { "value": 3 }, "pos": [40, 40] },
+		{ "id": "b", "type": "Const", "params": { "value": 4 }, "pos": [40, 200] },
+		{ "id": "m", "type": "Math", "params": { "op": "add" }, "pos": [320, 120] },
+		{ "id": "out", "type": "Log", "params": {}, "pos": [600, 120] }
+	],
+	"wires": [
+		{ "from": "a", "out": "value", "to": "m", "in": "a" },
+		{ "from": "b", "out": "value", "to": "m", "in": "b" },
+		{ "from": "m", "out": "result", "to": "out", "in": "in" }
+	]
+}

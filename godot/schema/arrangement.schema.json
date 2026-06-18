@@ -1,0 +1,57 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://resonance/arrangement.schema.json",
+	"title": "Resonance Arrangement",
+	"description": "An arrangement is a graph of already-loaded primitive nodes wired together as DATA. It is the single representation that (a) hotloads into the running engine, (b) is shown when you open an object's control panel, and (c) serializes to a portable string for sharing. It contains NO code — only references to shared primitive types, parameters, and typed wires. A cluster wrapped as one node (a 'Chip') is itself a primitive whose params hold a nested arrangement, which is how plugins-of-plugins compose recursively.",
+	"type": "object",
+	"required": ["format", "nodes", "wires"],
+	"properties": {
+		"format": {
+			"type": "string",
+			"description": "Format + version tag, e.g. 'resonance.arrangement/v1'. Versions coexist (append-only); a reader keeps old arrangements decodable.",
+			"pattern": "^resonance\\.arrangement/v[0-9]+$"
+		},
+		"id": {
+			"type": "string",
+			"description": "Optional content-address of this arrangement, algorithm-prefixed (e.g. 'sha256:...'). Opaque to readers."
+		},
+		"name": { "type": "string" },
+		"nodes": {
+			"type": "array",
+			"description": "Primitive-node instances.",
+			"items": {
+				"type": "object",
+				"required": ["id", "type"],
+				"properties": {
+					"id": { "type": "string", "description": "Unique within this arrangement; stable across hotloads so instances are preserved." },
+					"type": { "type": "string", "description": "A registered primitive type name (Const, Math, Model, Chip, ...)." },
+					"params": { "type": "object", "description": "Declarative parameters; for a Chip, params.arrangement holds the nested graph and params.ports its edge port-map." },
+					"pos": {
+						"type": "array",
+						"description": "Editor position [x, y] (secondary notation; carries no runtime meaning).",
+						"items": { "type": "number" },
+						"minItems": 2,
+						"maxItems": 2
+					}
+				},
+				"additionalProperties": true
+			}
+		},
+		"wires": {
+			"type": "array",
+			"description": "Typed connections output-port -> input-port. Only type-compatible ports may connect (see PortTypes).",
+			"items": {
+				"type": "object",
+				"required": ["from", "out", "to", "in"],
+				"properties": {
+					"from": { "type": "string", "description": "Source node id." },
+					"out": { "type": "string", "description": "Source output-port name." },
+					"to": { "type": "string", "description": "Sink node id." },
+					"in": { "type": "string", "description": "Sink input-port name." }
+				},
+				"additionalProperties": false
+			}
+		}
+	},
+	"additionalProperties": true
+}

@@ -1,0 +1,10 @@
+# Godot 4 editor/import cache — regenerated on open, never commit.
+.godot/
+# Exported builds
+/build/
+*.tmp
+# Verification screenshot (dev-only proof artifact)
+/shot.png
+# Live channel runtime artifacts (arrangement state, generated glb, screenshots)
+/live/*
+!/live/.gitkeep

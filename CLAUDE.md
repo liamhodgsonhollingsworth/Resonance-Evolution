@@ -1,67 +1,67 @@
-# Apeiron — orientation for Claude Code sessions
+# Resonance-Evolution — orientation for Claude Code sessions
 
-You are in the Apeiron project repository, part of the [Resonance meta-layer](https://github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront) network. Apeiron is a node-graph engine for building, rendering, and inhabiting worlds — every world-object, every renderer, every aggregation rule, every text-interaction surface is a node. Produces bundles for the painterly module engine downstream and exposes a text-renderer so Claude Code can use the world fully.
+You are in **Resonance-Evolution**, the general-purpose **in-game homoiconic node engine**.
+This repository was formerly named **Apeiron** (an explicit placeholder name); the engine
+built here supersedes it. Part of the [Resonance meta-layer](https://github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront) network.
 
-Working name **Apeiron** is a placeholder — better-name suggestions go in [name_suggestions.md](name_suggestions.md).
+## Read in order
+1. `PLAN.md` — the full plan (the user reads ONLY its first "✦ READ THIS" section; everything
+   below is reference).
+2. `godot/PROGRESS.md` — current status + exact run commands.
+3. `godot/README.md` — the engine architecture and the design law in detail.
 
-Read this file as the entry point. The README has the full framing.
+## The design law (hold these — they are the whole point)
+- **Functionality is NEVER new code; it is an arrangement of already-loaded primitive nodes
+  wired as DATA.** "Make a function" = emit a new *arrangement*. New primitive TYPES are rare
+  (register in `GraphRuntime`); new FUNCTIONS are new arrangements over existing primitives.
+- **Homoiconic in-game editor:** functionality is represented as physical objects you OPEN to
+  reveal & rewire their internal node graph (the Dreams "microchip" model). Everything
+  abstracts down to shared primitives with standard typed I/O.
+- **Engine-agnostic substrate + thin porting tools;** renderers are dumb delegates. Godot
+  first, never locked-in; GLB/glTF is the model interchange; web/three.js is a later delegate.
+- **Portable, recursively-composable plugins** (chips). Declarative-data sharing is safer than
+  code-sharing. Maximize portability now; build the sharing layer later.
+- **The evolver is supervised** — the user defines what changes / what's fixed / how, per model;
+  nothing is pre-wired (Phase 4).
+- **Do as little as possible;** build minimal threads between things that already exist.
+  **NOTHING is imported or wired without the user's explicit approval** (the approval gate).
 
-## Auto-load at session start
+## Repo layout
+- **`godot/`** — THE engine (current, active). A Godot 4 project. Start here.
+- **`PLAN.md`** — the approved plan.
+- **`legacy/`** — archived former-Apeiron docs/context (README, architecture, whats_built,
+  the old CLAUDE.md, etc.). Outdated understandings — historical reference only.
+- **Root Python dirs** (`engine/`, `node_types/`, `renderers/`, `scenes/`, `tools/`, `state/`,
+  `session_types/`, `tests/`, `examples/`, `scripts/`, `pyproject.toml`) — the **LEGACY Apeiron
+  Python engine.** Do NOT develop or rely on it. It is retained in place (not in `legacy/`) only
+  because the sibling **Resonance-Website** repo still imports some of it at runtime
+  (`tools/workflow/auth` via `issue_account.py`) and references `state/`. Treat it as frozen.
 
-At session start, after reading this CLAUDE.md, also read:
+## Status (2026-06-18)
+Phase 0 + Phase 1 **done & verified** (4 headless suites + a live windowed demo): the data
+arrangement substrate, the diff-based hotload runtime (re-wires loaded primitives from data,
+no script reload), primitives `Const/Math/Log/Model/Transform` (Model = runtime GLTFDocument
+GLB load), the content-hash live file watcher, a bootable 3D game, and the Claude↔game live
+bridge (`godot/bridge/scene_bridge.py`, `/api/scene/*`). **Next:** Phase 2 (in-game GraphEdit
+control panels), Phase 3 (photo→3D model — pending a Tripo3D-vs-Meshy + API-key decision),
+Phase 4 (portable chips + the supervised evolver).
 
-1. `README.md` — this project's framing and Atlas.
-2. `architecture.md` — the load-bearing design commitments. Read this before touching engine or node-type code.
-3. `whats_built.md` — current state of what is and is not implemented.
-4. `session_types/handoff.md` — chronological index of prior sessions; read the most recent handoff to pick up where the last session left off.
-5. `pending.md` — items deferred for future sessions or for the maintainer.
-6. The meta-layer's atlas at `https://github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront/blob/main/README.md` — the network's index of indexes.
-7. The meta-layer's operational discipline at `https://github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront/blob/main/conventions/discipline.md` — network-wide rules for response shape, communication, closing-block format, archive process, github URL links, and auto-push.
+## Toolchain
+- Godot **4.6.3** at `C:\Users\Liam\godot\Godot_v4.6.3-stable_win64_console.exe` (use the
+  `_console.exe` for stdout).
+- After adding/renaming any `class_name` script, FIRST run
+  `godot --headless --path godot --editor --quit-after 60` to build the class cache, THEN
+  `godot --headless --path godot -s res://<test>.gd`. See `godot/PROGRESS.md` for all commands.
 
-(Additional orientation pages are added as the project develops.)
+## Conventions
+- Append-only / write-only: every edit produces a new node/version rather than overwriting.
+- Set a local git identity (`git config user.name/email`) before committing.
+- **The Phase-4 evolver** (`window.Evolve`, `static/evolve/*`) lives in the **Resonance-Website**
+  repo (worktree `admiring-ptolemy-0d49ab`), to be reused — not rebuilt — for Phase 4.
+- **Website-specific work belongs in Resonance-Website, not here.** This repo is the engine only.
 
-## Append-only invariant
-
-This repository is write-only. Beyond the standard append-only rule, Apeiron carries the per-edit-creates-new-node extension where it applies to node-type and renderer definitions: a new version of a node-type is a new file alongside the old, not a destructive overwrite. The engine's manifest-versioning machinery resolves which version is active per scene. Old versions stay reachable, and reverting is automatic for any scene referencing an older version.
-
-## Identifying yourself
-
-Set git user.name and user.email locally in this repo:
-
-    git config user.name "your-session-name"
-    git config user.email "your-session-name@resonance.local"
-
-The session-naming convention is documented in [the meta-layer](https://github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront/blob/main/conventions/session_naming.md).
-
-## Edit permissions
-
-The README's Atlas links and `architecture.md` are maintainer-edited only. Non-Atlas pages — node-type implementations, renderer implementations, scene data, engine internals, tooling — are editable directly by subagents and independent sessions, per the standard branch-protection setup. See [the meta-layer's edit-permissions convention](https://github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront/blob/main/conventions/edit_permissions.md) for the full rule.
-
-## Parallel-implementation pattern
-
-Many sessions and subagents may work on Apeiron concurrently. The pattern:
-
-- **Per-session branches** — each session works on a feature branch named `claude/<topic>-<slug>`; merges to main on session close or claim release.
-- **Per-session attribution** — each session sets `git user.name`/`user.email` locally in this repo before its first commit.
-- **Auto-push** — sessions commit and push without waiting for explicit instruction, per the meta-layer's [auto-push convention](https://github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront/blob/main/conventions/discipline.md#pushing-to-github-happens-automatically).
-- **Node-grain claims** — concurrent sessions claim node-types or renderer-modules before substantive work via the [claim-node-scope skill](https://github.com/liamhodgsonhollingsworth/Alethea/blob/main/skills/claim-node-scope.md); inbox messages live at `Alethea-cc/nodes/inbox_msg_*.md` in the Alethea project (cross-repo inbox).
-- **Worktrees for same-machine concurrency** — sessions on one machine use `git worktree add` so they don't step on each other's branch state.
-- **CODEOWNERS gating** — Atlas-linked paths require maintainer review; non-Atlas paths can be merged by any session.
-
-The modules-as-nodes commitment makes this work: different sessions edit different files, so git's three-way merge only fires on cross-touching indexes. A broken node-type only breaks itself; the rest of the engine keeps running per the try/except isolation in the engine core.
-
-## Bundle contract with the painterly module engine
-
-Apeiron's software-raster renderer outputs a bundle directory matching the painterly module engine's input contract:
-
-- `color.png` — RGB or RGBA raster
-- `depth.png` — single-channel depth, normalized
-- `normal.png` — optional, three-channel normal in tangent space
-- `ids.png` — optional, single-channel segmentation IDs
-- `manifest.json` — channel index plus camera and scene metadata
-
-Additional channels can be added by name without breaking consumers; the painterly engine reads the channels it knows about and ignores the rest.
-
-## Master documents
-
-Every session and every subagent operating here owns at least one primary document tracking its work. The convention is at [the meta-layer's primary-documents page](https://github.com/liamhodgsonhollingsworth/The-Resonance-Wavefront/blob/main/conventions/primary_documents.md).
+## Gotchas
+- Godot **script** hot-reload is flaky (#72825) → hotload is DATA-driven (re-wire loaded
+  primitives), never script-source reload.
+- The local TLS proxy blocks big HTTPS downloads ~16MB (`SEC_E_DECRYPT_FAILURE`) → resume with
+  `curl -L -C -` in a loop until the file validates.

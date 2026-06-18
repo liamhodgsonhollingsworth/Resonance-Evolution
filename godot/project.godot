@@ -1,0 +1,21 @@
+; Resonance Node Editor — Godot project
+; The in-game homoiconic node editor: ALL functionality is an arrangement of
+; already-loaded primitive nodes, wired as data. Nothing here is colour/skin/model
+; specific — primitives are the shared vocabulary every "function" is built from.
+;
+; Engine: Godot 4.4+ (config_version 5 covers all 4.x).
+; Headless self-test of the runtime spine:
+;   godot --headless --path godot -s res://headless_demo.gd
+
+config_version=5
+
+[application]
+
+config/name="Resonance Node Editor"
+config/description="In-game homoiconic node editor: functionality is an arrangement of primitives, wired as data."
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.6")
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
