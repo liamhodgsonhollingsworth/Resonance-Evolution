@@ -74,6 +74,44 @@ func _initialize() -> void:
 	var applied2 := ConvoProtocol.apply(arr, [{ "op": "set_active_tip", "node": "n4" }])
 	ok = _check("set_active_tip sets current_node", String(applied2.get("current_node", "")) == "n4") and ok
 
+	# Hardened validation: the structural gate (parity with bridge/test_graph_logic.py).
+	var val_ok := ConvoProtocol.validate_actions(arr, [
+		{ "op": "add_node", "kind": "Message", "params": { "role": "user", "content": "hi" }, "parent": "n5" },
+		{ "op": "wire", "from": "n3", "to": "n4" },
+		{ "op": "set_active_tip", "node": "n4" },
+	])
+	ok = _check("validate_actions accepts a sound batch",
+		(val_ok.actions as Array).size() == 3 and (val_ok.errors as Array).is_empty()) and ok
+
+	var bad := ConvoProtocol.validate_actions(arr, [
+		{ "op": "add_node", "kind": "Message", "params": { "role": "user", "content": "x" }, "parent": "ghost" },
+		{ "op": "wire", "from": "n1", "to": "nope" },
+		{ "op": "wire", "from": "n2", "to": "n2" },
+		{ "op": "set_active_tip", "node": "missing" },
+		{ "op": "add_node", "kind": "Message", "params": { "content": "no role" } },
+		{ "op": "bogus" },
+	])
+	ok = _check("validate_actions rejects parent/endpoint/self/tip/role/op (6 errors, 0 valid)",
+		(bad.actions as Array).is_empty() and (bad.errors as Array).size() == 6) and ok
+
+	var batch := ConvoProtocol.validate_actions(arr, [
+		{ "op": "add_node", "id": "fresh", "kind": "Message", "params": { "role": "user", "content": "a" }, "parent": "n5" },
+		{ "op": "wire", "from": "fresh", "to": "n5" },
+	])
+	ok = _check("validate_actions resolves batch-local ids (added node referenceable later)",
+		(batch.actions as Array).size() == 2 and (batch.errors as Array).is_empty()) and ok
+
+	# validate_arrangement soundness.
+	ok = _check("validate_arrangement: clean convo is ok", bool(ConvoProtocol.validate_arrangement(arr).ok)) and ok
+	var broken := {
+		"format": "resonance.arrangement/v1", "current_node": "ghost",
+		"nodes": [ _msg("a", "user", "x", 1) ],
+		"wires": [ { "from": "a", "out": "reply", "to": "missing", "in": "parent" } ],
+	}
+	var bsound := ConvoProtocol.validate_arrangement(broken)
+	ok = _check("validate_arrangement flags dangling wire + missing tip",
+		not bool(bsound.ok) and (bsound.dangling_wires as Array).size() == 1 and not bool(bsound.active_tip_exists)) and ok
+
 	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
 	quit(0 if ok else 1)
 

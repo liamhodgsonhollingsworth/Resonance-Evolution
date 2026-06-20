@@ -84,12 +84,27 @@ def _snippet(n: dict, length: int = 60) -> str:
     return t[:length] + ("…" if len(t) > length else "")
 
 
-def _stage(kind: str, result: dict, summary: str) -> dict:
+def _live_hash() -> str:
+    """Content hash of the live arrangement file's raw bytes — the same change signal the engine's
+    LiveHost watches. A proposal records this as its base; commit compares it against the CURRENT
+    hash to detect a concurrent edit (the conflict-safe gate)."""
+    p = _arr_path()
+    if not os.path.exists(p):
+        return ""
+    with open(p, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def _stage(kind: str, payload: dict, summary: str) -> dict:
+    """Persist a proposal record. `payload` carries the conflict-safe fields — `base_hash` plus the
+    DELTA to re-apply (`actions` for an action batch, `args` for a structural op) — and a `result`
+    PREVIEW. Commit re-derives from the CURRENT live arrangement; the stored result is for display
+    only (graph_list_proposals)."""
     pid = "prop_" + hashlib.sha256(
-        (kind + json.dumps(result, sort_keys=True)).encode("utf-8")).hexdigest()[:8]
+        (kind + json.dumps(payload, sort_keys=True, default=str)).encode("utf-8")).hexdigest()[:8]
+    rec = {"id": pid, "kind": kind, "summary": summary, **payload}
     _atomic_write(os.path.join(_props_dir(), pid + ".json"),
-                  json.dumps({"id": pid, "kind": kind, "summary": summary, "result": result},
-                             indent="\t").encode("utf-8"))
+                  json.dumps(rec, indent="\t").encode("utf-8"))
     return {"proposal_id": pid, "kind": kind, "summary": summary}
 
 
@@ -158,16 +173,10 @@ def graph_find(query: str) -> list[dict]:
 
 @mcp.tool()
 def graph_validate() -> dict:
-    """Structural check: every wire endpoint exists; the active tip exists. Report dangling
-    wires + counts. Read-only."""
-    arr = _load()
-    ids = {str(n.get("id")) for n in arr.get("nodes", [])}
-    dangling = [w for w in arr.get("wires", [])
-                if str(w.get("from")) not in ids or str(w.get("to")) not in ids]
-    tip = arr.get("current_node")
-    tip_ok = tip is None or str(tip) in ids
-    return {"ok": not dangling and tip_ok, "counts": _counts(arr),
-            "dangling_wires": dangling, "active_tip_exists": tip_ok}
+    """Structural soundness of the live graph — delegates to the shared
+    convo_protocol.validate_arrangement (the ONE definition the engine + every transport use):
+    every wire endpoint exists; the active tip exists. Reports dangling wires + counts. Read-only."""
+    return cp.validate_arrangement(_load())
 
 
 # --- PROPOSE tools (stage only; never write arrangement.json) -------------------------------
@@ -189,7 +198,7 @@ def graph_propose(actions: list) -> dict:
       - set_active_tip {node}
     Returns proposal_id + summary; call graph_commit to apply or graph_discard to drop."""
     arr = _load()
-    v = cp.validate_actions(actions)
+    v = cp.validate_actions(arr, actions)
     if v["errors"]:
         return {"ok": False, "errors": v["errors"]}
     # Server convenience: stamp a monotonic created_at on add_node actions that omit one, so
@@ -206,7 +215,8 @@ def graph_propose(actions: list) -> dict:
     result = cp.apply(arr, v["actions"])
     before, after = _counts(arr), _counts(result)
     summary = f"+{after['nodes'] - before['nodes']} nodes, +{after['wires'] - before['wires']} wires"
-    return {"ok": True, **_stage("actions", result, summary)}
+    return {"ok": True, **_stage(
+        "actions", {"base_hash": _live_hash(), "actions": v["actions"], "result": result}, summary)}
 
 
 @mcp.tool()
@@ -215,7 +225,9 @@ def graph_propose_abstract(node_ids: list[str]) -> dict:
     sub-graph you can later open. Approval-gated; does NOT apply. Returns proposal_id."""
     arr = _load()
     result = chip_ops.group(arr, node_ids)
-    return {"ok": True, **_stage("abstract", result, f"abstract {len(node_ids)} nodes into 1 Chip")}
+    return {"ok": True, **_stage(
+        "abstract", {"base_hash": _live_hash(), "args": {"node_ids": node_ids}, "result": result},
+        f"abstract {len(node_ids)} nodes into 1 Chip")}
 
 
 @mcp.tool()
@@ -224,7 +236,9 @@ def graph_propose_decompose(chip_id: str) -> dict:
     Approval-gated; does NOT apply. Returns proposal_id."""
     arr = _load()
     result = chip_ops.ungroup(arr, chip_id)
-    return {"ok": True, **_stage("decompose", result, f"decompose Chip {chip_id}")}
+    return {"ok": True, **_stage(
+        "decompose", {"base_hash": _live_hash(), "args": {"chip_id": chip_id}, "result": result},
+        f"decompose Chip {chip_id}")}
 
 
 # --- COMMIT / manage proposals (the gate's second half) ------------------------------------
@@ -249,16 +263,48 @@ def graph_list_proposals() -> list[dict]:
 
 @mcp.tool()
 def graph_commit(proposal_id: str) -> dict:
-    """Apply a staged proposal to the live arrangement (atomic write; the running game
-    hotloads it). The commit half of the approval gate."""
+    """Apply a staged proposal to the live arrangement — the CONFLICT-SAFE commit half of the gate
+    (atomic write; the running game hotloads it). Instead of blindly writing a result computed at
+    propose time, it RE-DERIVES against the CURRENT live arrangement so a concurrent edit by another
+    system is never clobbered:
+      • action batches      — re-validate + re-apply (append-only) onto the current graph, then
+        soundness-check. Concurrent adds rebase cleanly; if a referenced node was concurrently
+        removed the commit is REJECTED rather than corrupting the graph. The only true conflict
+        (set_active_tip vs set_active_tip) is last-writer-wins.
+      • abstract/decompose  — structural, so they require an unchanged base: if the graph moved since
+        the proposal, the commit is REJECTED with a re-propose hint.
+    Returns {ok, committed, counts, rebased} or {ok:False, error[, errors]}."""
     fp = os.path.join(_props_dir(), proposal_id + ".json")
     if not os.path.exists(fp):
         return {"ok": False, "error": f"no such proposal '{proposal_id}'"}
     with open(fp, "r", encoding="utf-8") as f:
         prop = json.load(f)
-    _save(prop["result"])
+    kind = str(prop.get("kind"))
+    current = _load()
+    rebased = prop.get("base_hash") != _live_hash()
+
+    if kind == "actions":
+        v = cp.validate_actions(current, prop.get("actions", []))
+        if v["errors"]:
+            return {"ok": False, "error": "proposal no longer applies to the current graph",
+                    "errors": v["errors"]}
+        result = cp.apply(current, v["actions"])
+    elif kind in ("abstract", "decompose"):
+        if rebased:
+            return {"ok": False,
+                    "error": "graph changed since this structural proposal — re-propose"}
+        args = prop.get("args", {})
+        result = (chip_ops.group(current, args.get("node_ids", []))
+                  if kind == "abstract" else chip_ops.ungroup(current, args.get("chip_id", "")))
+    else:
+        return {"ok": False, "error": f"unknown proposal kind '{kind}'"}
+
+    sound = cp.validate_arrangement(result)
+    if not sound["ok"]:
+        return {"ok": False, "error": "refusing to commit: result is not sound", **sound}
+    _save(result)
     os.remove(fp)
-    return {"ok": True, "committed": proposal_id, "counts": _counts(prop["result"])}
+    return {"ok": True, "committed": proposal_id, "counts": _counts(result), "rebased": rebased}
 
 
 @mcp.tool()

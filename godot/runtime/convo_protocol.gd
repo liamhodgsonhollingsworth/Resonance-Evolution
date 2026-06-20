@@ -112,9 +112,10 @@ static func to_prompt(arr: Dictionary, selected: Array, question := "") -> Strin
 
 # --- BACKWARD: reply text -> graph actions -------------------------------------------------
 
-## Extract + validate the `resonance-actions` JSON block from a reply. Returns
-## { "actions": [validated ...], "errors": [strings] }. NOTHING is applied here — this only
-## produces PROPOSALS; apply() is the explicit, approval-gated commit.
+## Extract candidate actions from the `resonance-actions` JSON block in a reply: parse + the
+## op-allowlist shape check. Returns { "actions": [op-valid ...], "errors": [strings] }. NOTHING is
+## applied here — these are PROPOSALS; the STRUCTURAL gate (validate_actions, against the live
+## arrangement) is re-applied at propose AND commit, so every entry path validates identically.
 static func interpret_reply(text: String) -> Dictionary:
 	var block := _extract_fenced(text, ACTIONS_TAG)
 	if block == "":
@@ -134,6 +135,92 @@ static func interpret_reply(text: String) -> Dictionary:
 			continue
 		actions.append(a)
 	return { "actions": actions, "errors": errors }
+
+## The STRUCTURAL validation gate (parity with convo_protocol.py validate_actions) — the single
+## definition every transport funnels mutations through. Simulates the batch against `arr`, tracking
+## a running id-set (existing node ids + ids added earlier in the SAME batch), so it catches edits
+## that would corrupt the shared graph BEFORE they are staged or applied. Unknown KINDS are allowed
+## (engine-neutral + forward-compatible). Returns { "actions": [...passing...], "errors": [...] }.
+static func validate_actions(arr: Dictionary, actions: Array) -> Dictionary:
+	var known := {}
+	for n in arr.get("nodes", []):
+		known[String(n.get("id"))] = true
+	var out := []
+	var errors := []
+	for a in actions:
+		if typeof(a) != TYPE_DICTIONARY:
+			errors.append("action is not an object: %s" % str(a))
+			continue
+		var op := String((a as Dictionary).get("op", ""))
+		if not ALLOWED_OPS.has(op):
+			errors.append("unknown op '%s' (allowed: %s)" % [op, ", ".join(PackedStringArray(ALLOWED_OPS))])
+			continue
+		match op:
+			"add_node":
+				var kind := String(a.get("kind", "Message"))
+				if kind == "":
+					errors.append("add_node: empty kind")
+					continue
+				var params = a.get("params", {})
+				if typeof(params) != TYPE_DICTIONARY:
+					errors.append("add_node: params must be an object")
+					continue
+				if kind == "Message" and String((params as Dictionary).get("role", "")) == "":
+					errors.append("add_node: a Message needs a non-empty role")
+					continue
+				var parent = a.get("parent", null)
+				if parent != null and String(parent) != "" and not known.has(String(parent)):
+					errors.append("add_node: parent '%s' not found" % String(parent))
+					continue
+				known[String(a.get("id", _gen_id(a)))] = true
+				out.append(a)
+			"wire":
+				var f := String(a.get("from", ""))
+				var t := String(a.get("to", ""))
+				if f == "" or t == "":
+					errors.append("wire: from and to are required")
+					continue
+				if f == t:
+					errors.append("wire: self-wire not allowed ('%s')" % f)
+					continue
+				if not known.has(f):
+					errors.append("wire: from '%s' not found" % f)
+					continue
+				if not known.has(t):
+					errors.append("wire: to '%s' not found" % t)
+					continue
+				out.append(a)
+			"set_active_tip":
+				var nid := String(a.get("node", ""))
+				if nid == "":
+					errors.append("set_active_tip: node is required")
+					continue
+				if not known.has(nid):
+					errors.append("set_active_tip: node '%s' not found" % nid)
+					continue
+				out.append(a)
+	return { "actions": out, "errors": errors }
+
+## SOUNDNESS check on a whole arrangement (parity with convo_protocol.py validate_arrangement) —
+## the shared definition the engine + every transport use. Every wire endpoint must exist;
+## current_node (if set) must exist. Returns
+## { "ok", "counts": {nodes, wires}, "dangling_wires": [...], "active_tip_exists": bool }.
+static func validate_arrangement(arr: Dictionary) -> Dictionary:
+	var ids := {}
+	for n in arr.get("nodes", []):
+		ids[String(n.get("id"))] = true
+	var dangling := []
+	for w in arr.get("wires", []):
+		if not ids.has(String(w.get("from"))) or not ids.has(String(w.get("to"))):
+			dangling.append(w)
+	var tip = arr.get("current_node", null)
+	var tip_ok: bool = tip == null or ids.has(String(tip))
+	return {
+		"ok": dangling.is_empty() and tip_ok,
+		"counts": { "nodes": (arr.get("nodes", []) as Array).size(), "wires": (arr.get("wires", []) as Array).size() },
+		"dangling_wires": dangling,
+		"active_tip_exists": tip_ok,
+	}
 
 ## Apply validated actions to produce a NEW arrangement (append-only; input untouched).
 ##   add_node {kind, params, parent?}  -> a new node (+ a reply->parent wire if parent given)

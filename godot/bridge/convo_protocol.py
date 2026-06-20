@@ -137,8 +137,10 @@ def _extract_fenced(text: str, tag: str) -> str:
 
 
 def interpret_reply(text: str) -> dict:
-    """Extract + validate the resonance-actions JSON block from a reply. Returns
-    {"actions": [...valid...], "errors": [...]}. NOTHING is applied — these are PROPOSALS."""
+    """Extract candidate actions from the resonance-actions JSON block in a reply: parse + the
+    op-allowlist shape check. Returns {"actions": [...op-valid...], "errors": [...]}. NOTHING is
+    applied — these are PROPOSALS, and the STRUCTURAL gate (validate_actions, against the live
+    arrangement) is re-applied at propose AND commit, so every entry path validates identically."""
     block = _extract_fenced(text, ACTIONS_TAG)
     if not block:
         return {"actions": [], "errors": [f"no ```{ACTIONS_TAG} block found"]}
@@ -161,9 +163,23 @@ def interpret_reply(text: str) -> dict:
     return {"actions": actions, "errors": errors}
 
 
-def validate_actions(actions: list) -> dict:
-    """Validate already-structured actions (e.g. supplied directly to the MCP server, not via a
-    reply). Same allowlist as interpret_reply. Returns {"actions": [...], "errors": [...]}."""
+def validate_actions(arr: dict, actions: list) -> dict:
+    """The STRUCTURAL validation gate — the single definition every transport (MCP propose AND
+    commit, the canvas, the remote) funnels mutations through. Simulates the batch against `arr`,
+    tracking a running id-set (existing node ids + ids added earlier in the SAME batch), so it
+    catches edits that would corrupt the shared graph BEFORE they are staged or applied.
+
+    Rejects (with a clear message), per action:
+      add_node       — empty `kind`; `params` not an object; a Message with no `role`; a `parent`
+                       that is not a known id. (Unknown KINDS are allowed: the protocol is
+                       engine-neutral + forward-compatible; new TYPES register in GraphRuntime.)
+      wire           — missing `from`/`to`; self-wire (from == to); an endpoint that is not known.
+      set_active_tip — missing `node`; a `node` that is not known.
+
+    Returns {"actions": [...passing...], "errors": [...]}. A failed action does NOT enter the
+    known-id set, so later actions that depend on it are flagged too (propose/commit reject on any
+    error — partial application is never allowed)."""
+    known = {str(n.get("id")) for n in arr.get("nodes", [])}
     out, errors = [], []
     for a in actions:
         if not isinstance(a, dict):
@@ -173,8 +189,64 @@ def validate_actions(actions: list) -> dict:
         if op not in ALLOWED_OPS:
             errors.append(f"unknown op '{op}' (allowed: {', '.join(ALLOWED_OPS)})")
             continue
-        out.append(a)
+        if op == "add_node":
+            kind = str(a.get("kind", "Message"))
+            if kind == "":
+                errors.append("add_node: empty kind")
+                continue
+            params = a.get("params", {})
+            if not isinstance(params, dict):
+                errors.append("add_node: params must be an object")
+                continue
+            if kind == "Message" and str(params.get("role", "")) == "":
+                errors.append("add_node: a Message needs a non-empty role")
+                continue
+            parent = a.get("parent")
+            if parent is not None and str(parent) != "" and str(parent) not in known:
+                errors.append(f"add_node: parent '{parent}' not found")
+                continue
+            known.add(str(a.get("id", _gen_id(a))))
+            out.append(a)
+        elif op == "wire":
+            f, t = str(a.get("from", "")), str(a.get("to", ""))
+            if f == "" or t == "":
+                errors.append("wire: from and to are required")
+                continue
+            if f == t:
+                errors.append(f"wire: self-wire not allowed ('{f}')")
+                continue
+            if f not in known:
+                errors.append(f"wire: from '{f}' not found")
+                continue
+            if t not in known:
+                errors.append(f"wire: to '{t}' not found")
+                continue
+            out.append(a)
+        elif op == "set_active_tip":
+            n = str(a.get("node", ""))
+            if n == "":
+                errors.append("set_active_tip: node is required")
+                continue
+            if n not in known:
+                errors.append(f"set_active_tip: node '{n}' not found")
+                continue
+            out.append(a)
     return {"actions": out, "errors": errors}
+
+
+def validate_arrangement(arr: dict) -> dict:
+    """SOUNDNESS check on a whole arrangement — the shared definition the engine, the MCP server,
+    the canvas, and the remote all use (graph_mcp.graph_validate delegates here). Every wire
+    endpoint must exist; current_node (if set) must exist. Returns
+    {"ok", "counts": {nodes, wires}, "dangling_wires": [...], "active_tip_exists": bool}."""
+    ids = {str(n.get("id")) for n in arr.get("nodes", [])}
+    dangling = [w for w in arr.get("wires", [])
+                if str(w.get("from")) not in ids or str(w.get("to")) not in ids]
+    tip = arr.get("current_node")
+    tip_ok = tip is None or str(tip) in ids
+    return {"ok": not dangling and tip_ok,
+            "counts": {"nodes": len(arr.get("nodes", [])), "wires": len(arr.get("wires", []))},
+            "dangling_wires": dangling, "active_tip_exists": tip_ok}
 
 
 def _unique_id(arr: dict, base: str) -> str:

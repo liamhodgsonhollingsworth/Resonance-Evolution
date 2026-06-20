@@ -56,6 +56,16 @@ conflict = append-only + approval gate; later CRDT for true multi-writer).
 bidirectional sync daemon (file-watch ↔ MCP ↔ remote); define the connection contract every other
 track imports. **Done when:** two systems edit the same arrangement and see each other live, robustly.
 **Branch:** `claude/comms-connections`.
+**Slice 1 SHIPPED (2026-06-20):** the hardened, conflict-safe **connection contract** — read
+`godot/CONNECTION-CONTRACT.md` (Track 2 + Track 3 import it). Adds a structural validation gate
+(`convo_protocol.validate_actions(arr, actions)` + `validate_arrangement(arr)`, GD↔Py parity) and a
+**conflict-safe rebasing commit** in `bridge/graph_mcp.py` (proposals store delta+base_hash; commit
+re-derives against the current file — concurrent append-only edits rebase, structural ops require an
+unchanged base, corrupting commits are rejected, never clobbered). Verified: `test_graph_logic.py`
+19/19, `test_sync_logic.py` 14/14 (two-writer no-clobber proof), `headless_convo_test.gd` 17/17.
+*Still open for Track 1:* the bidirectional sync daemon + `rev` ordering (Slice 2), and routing the
+canvas's writes (`editor/graph_panel.gd::_commit()` still whole-file-overwrites) through the contract
+— **Track 2's adoption** (flagged in the contract doc §4).
 
 ### Track 2 — 2D INFINITE CANVAS  ⟵ the surface Liam works on, ASAP
 **Goal:** a single **2D infinite canvas** in Godot that renders the canonical arrangement (a dumb,

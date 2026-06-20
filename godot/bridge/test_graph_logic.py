@@ -63,6 +63,42 @@ check("apply append-only + new node + wire",
 applied2 = cp.apply(convo, [{"op": "set_active_tip", "node": "n4"}])
 check("set_active_tip", applied2.get("current_node") == "n4")
 
+# --- Hardened validation: the structural gate (mirrors headless_convo_test.gd) -------------
+# validate_actions simulates the batch against the arrangement; known ids = {n1..n5}.
+val_ok = cp.validate_actions(convo, [
+    {"op": "add_node", "kind": "Message", "params": {"role": "user", "content": "hi"}, "parent": "n5"},
+    {"op": "wire", "from": "n3", "to": "n4"},
+    {"op": "set_active_tip", "node": "n4"},
+])
+check("validate_actions accepts a sound batch", len(val_ok["actions"]) == 3 and not val_ok["errors"])
+
+bad = cp.validate_actions(convo, [
+    {"op": "add_node", "kind": "Message", "params": {"role": "user", "content": "x"}, "parent": "ghost"},
+    {"op": "wire", "from": "n1", "to": "nope"},
+    {"op": "wire", "from": "n2", "to": "n2"},
+    {"op": "set_active_tip", "node": "missing"},
+    {"op": "add_node", "kind": "Message", "params": {"content": "no role"}},
+    {"op": "bogus"},
+])
+check("validate_actions rejects parent/endpoint/self/tip/role/op (6 errors, 0 valid)",
+      len(bad["actions"]) == 0 and len(bad["errors"]) == 6)
+
+batch = cp.validate_actions(convo, [
+    {"op": "add_node", "id": "fresh", "kind": "Message", "params": {"role": "user", "content": "a"}, "parent": "n5"},
+    {"op": "wire", "from": "fresh", "to": "n5"},
+])
+check("validate_actions resolves batch-local ids (added node referenceable later)",
+      len(batch["actions"]) == 2 and not batch["errors"])
+
+# validate_arrangement soundness.
+check("validate_arrangement: clean convo is ok", cp.validate_arrangement(convo)["ok"])
+broken = {"format": "resonance.arrangement/v1", "current_node": "ghost",
+          "nodes": [msg("a", "user", "x", 1)],
+          "wires": [{"from": "a", "out": "reply", "to": "missing", "in": "parent"}]}
+bsound = cp.validate_arrangement(broken)
+check("validate_arrangement flags dangling wire + missing tip",
+      not bsound["ok"] and len(bsound["dangling_wires"]) == 1 and not bsound["active_tip_exists"])
+
 # --- ChipOps parity (mirrors headless_chip_test.gd) ---------------------------------------
 base = {
     "format": "resonance.arrangement/v1",
