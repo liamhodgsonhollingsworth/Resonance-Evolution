@@ -63,9 +63,19 @@ track imports. **Done when:** two systems edit the same arrangement and see each
 re-derives against the current file — concurrent append-only edits rebase, structural ops require an
 unchanged base, corrupting commits are rejected, never clobbered). Verified: `test_graph_logic.py`
 19/19, `test_sync_logic.py` 14/14 (two-writer no-clobber proof), `headless_convo_test.gd` 17/17.
-*Still open for Track 1:* the bidirectional sync daemon + `rev` ordering (Slice 2), and routing the
-canvas's writes (`editor/graph_panel.gd::_commit()` still whole-file-overwrites) through the contract
-— **Track 2's adoption** (flagged in the contract doc §4).
+*Still open for Track 1:* the bidirectional sync daemon + `rev` ordering, and routing every writer
+through the contract — **Track 2's adoption** (flagged in the contract doc §4).
+**Slice 2 SHIPPED (2026-06-20):** the contract is now **importable** — `bridge/graph_store.py`
+(stdlib) exposes `commit_actions(live_dir, actions)` (reload→validate→append-only apply→soundness→
+atomic write); `graph_mcp.py` refactored onto it (one implementation, no duplication). Validation
+gained **cycle rejection** (the parent graph must stay a DAG) in both ports. Verified:
+`test_graph_logic.py` 22/22, `test_sync_logic.py` 17/17 (now incl. a direct-seam no-clobber test),
+`headless_convo_test.gd` 19/19.
+**⟹ Track 2 (`canvas_bridge.py`, worktree `vigorous-pike-edcf46`): adopt the seam** — call
+`graph_store.commit_actions` for `/api/reply` (Claude's append-only contribution) instead of raw
+`_load`/`_save`; that gives cross-process conflict-safety for free. Liam's direct authoring stays
+self-approved but should validate against the shared gate. (Track 2 also independently added a cycle
+check — now unified into `convo_protocol`, so it can drop its local one on adoption.)
 
 ### Track 2 — 2D INFINITE CANVAS  ⟵ the surface Liam works on, ASAP
 **Goal:** a single **2D infinite canvas** in Godot that renders the canonical arrangement (a dumb,

@@ -46,12 +46,16 @@ Exactly three ops — one DSL, no bespoke `add_*` sprawl:
   batch against `arr` with a running id-set (existing ids ∪ ids added earlier in the *same* batch)
   and rejects, with a clear message: an `add_node` with empty `kind`, non-object `params`, a Message
   with no `role`, or an unknown `parent`; a `wire` missing an endpoint, self-wired, or referencing an
-  unknown id; a `set_active_tip` to an unknown node. Unknown *kinds* are **allowed** (engine-neutral,
+  unknown id; a `set_active_tip` to an unknown node; **a batch that would close a cycle** in the
+  parent graph (a conversation/idea graph is a DAG). Unknown *kinds* are **allowed** (engine-neutral,
   forward-compatible; new TYPES register in `GraphRuntime`). A failed action does not enter the
   id-set, so dependents are flagged too.
-- **`validate_arrangement(arr) → {ok, counts, dangling_wires, active_tip_exists}`** — whole-graph
-  **soundness**: every wire endpoint exists; `current_node` (if set) exists. (`graph_validate`
-  delegates here.)
+- **`validate_arrangement(arr) → {ok, counts, dangling_wires, active_tip_exists, acyclic}`** —
+  whole-graph **soundness**: every wire endpoint exists; `current_node` (if set) exists; the parent
+  graph is acyclic. (`graph_validate` delegates here.)
+
+Both are GD↔Py parity functions in `convo_protocol`. **Do not re-implement validation in a transport
+— import these.**
 - `interpret_reply(text) → {actions, errors}` — extracts candidate actions from a fenced
   ```` ```resonance-actions ```` block (parse + op-allowlist only); the structural gate above is
   applied at propose/commit, so every entry path validates identically.
@@ -73,13 +77,26 @@ applies it. The MCP server (`bridge/graph_mcp.py`) is the reference implementati
    - The result is written **atomically** (`tmp`+`os.replace`). Commit returns `{rebased}` so a caller
      can tell whether it rebased over a concurrent edit.
 
-**Any writer (engine canvas, MCP, remote) MUST go through this same propose→validate→conflict-safe-
-apply→atomic-write path.** Blindly writing the whole file is a clobber bug.
-> ⚠️ Known gap: `editor/graph_panel.gd::_commit()` still does a whole-file overwrite. Track 2 must
-> route the in-game canvas's writes through this contract (the seam this doc defines).
+**The conflict-safe write is importable** — `bridge/graph_store.py` (stdlib, no `mcp` dependency) is
+the contract as code. Any transport lands agent/Claude contributions with one call:
+```python
+import graph_store as gs
+res = gs.commit_actions(live_dir, actions)   # reload current → validate → append-only apply → soundness → atomic write
+# res = {"ok": True, "result", "counts"}  |  {"ok": False, "error", "errors"|"sound"}
+```
+**Any writer (engine canvas, MCP, the 2D-canvas bridge, the remote connector) MUST land
+agent/append-only edits through `graph_store.commit_actions` (the MCP server already does).** An
+in-process lock guards one server's threads, not two processes editing the same file — blindly
+writing the whole arrangement is a cross-process clobber bug.
+> ⚠️ Known adoption gaps (each track routes its writes through the seam):
+> - `bridge/canvas_bridge.py` (Track 2) writes via its own `_load`/`_save` under a thread lock — its
+>   `/api/reply` (Claude's contribution) should call `graph_store.commit_actions`; Liam's own direct
+>   authoring (create/move/edit) is self-approved but should still validate against the shared gate.
+> - `editor/graph_panel.gd::_commit()` (Godot editor) still whole-file-overwrites — route through the
+>   contract too (a thin GD `graph_store` equivalent, or commit deltas).
 
 ## 5. Change observation (how a system sees others' edits)
-The signal is the **content hash** of `arrangement.json`'s raw bytes (`graph_mcp._live_hash()` ↔
+The signal is the **content hash** of `arrangement.json`'s raw bytes (`graph_store.live_hash()` ↔
 `runtime/live_host.gd`'s `sha256_text` poll). On change, a reader reloads and re-evaluates/re-renders.
 Hash-based (not mtime) → sub-second edits and idempotent re-saves are handled correctly. A monotonic
 `rev` field is reserved for ordering once a remote multi-writer (Track 3) lands; **CRDT** true

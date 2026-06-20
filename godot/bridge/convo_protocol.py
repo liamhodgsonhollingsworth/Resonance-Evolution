@@ -163,6 +163,38 @@ def interpret_reply(text: str) -> dict:
     return {"actions": actions, "errors": errors}
 
 
+def _has_cycle(arr: dict) -> bool:
+    """True if the parent graph (wires with in==parent) contains a cycle. A conversation/idea graph
+    is a DAG — a cycle is corruption (and would make ancestor walks ill-defined). Iterative DFS with
+    a three-colour marking (0 unvisited, 1 on-stack, 2 done) so deep graphs never overflow."""
+    adj: dict[str, list[str]] = {}
+    for w in arr.get("wires", []):
+        if str(w.get("in")) == PARENT_PORT:
+            adj.setdefault(str(w.get("from")), []).append(str(w.get("to")))
+    color: dict[str, int] = {}
+    for start in list(adj.keys()):
+        if color.get(start, 0) != 0:
+            continue
+        stack = [(start, 0)]
+        color[start] = 1
+        while stack:
+            u, i = stack[-1]
+            nbrs = adj.get(u, [])
+            if i < len(nbrs):
+                stack[-1] = (u, i + 1)
+                v = nbrs[i]
+                cv = color.get(v, 0)
+                if cv == 1:
+                    return True
+                if cv == 0:
+                    color[v] = 1
+                    stack.append((v, 0))
+            else:
+                color[u] = 2
+                stack.pop()
+    return False
+
+
 def validate_actions(arr: dict, actions: list) -> dict:
     """The STRUCTURAL validation gate — the single definition every transport (MCP propose AND
     commit, the canvas, the remote) funnels mutations through. Simulates the batch against `arr`,
@@ -231,6 +263,10 @@ def validate_actions(arr: dict, actions: list) -> dict:
                 errors.append(f"set_active_tip: node '{n}' not found")
                 continue
             out.append(a)
+    # Whole-batch invariant: the parent graph must stay acyclic. (Skip if the batch is already
+    # rejected — errors non-empty means nothing applies anyway.)
+    if out and not errors and _has_cycle(apply(arr, out)):
+        errors.append("batch would create a cycle in the parent graph")
     return {"actions": out, "errors": errors}
 
 
@@ -244,9 +280,10 @@ def validate_arrangement(arr: dict) -> dict:
                 if str(w.get("from")) not in ids or str(w.get("to")) not in ids]
     tip = arr.get("current_node")
     tip_ok = tip is None or str(tip) in ids
-    return {"ok": not dangling and tip_ok,
+    acyclic = not _has_cycle(arr)
+    return {"ok": not dangling and tip_ok and acyclic,
             "counts": {"nodes": len(arr.get("nodes", [])), "wires": len(arr.get("wires", []))},
-            "dangling_wires": dangling, "active_tip_exists": tip_ok}
+            "dangling_wires": dangling, "active_tip_exists": tip_ok, "acyclic": acyclic}
 
 
 def _unique_id(arr: dict, base: str) -> str:

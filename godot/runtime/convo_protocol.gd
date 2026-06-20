@@ -136,6 +136,42 @@ static func interpret_reply(text: String) -> Dictionary:
 		actions.append(a)
 	return { "actions": actions, "errors": errors }
 
+## True if the parent graph (wires with in==parent) contains a cycle (parity with
+## convo_protocol.py _has_cycle). A conversation/idea graph is a DAG — a cycle is corruption.
+## Iterative DFS with three-colour marking (0 unvisited, 1 on-stack, 2 done).
+static func _has_cycle(arr: Dictionary) -> bool:
+	var adj := {}
+	for w in arr.get("wires", []):
+		if String(w.get("in")) == PARENT_PORT:
+			var f := String(w.get("from"))
+			if not adj.has(f):
+				adj[f] = []
+			(adj[f] as Array).append(String(w.get("to")))
+	var color := {}
+	for start in adj.keys():
+		if int(color.get(start, 0)) != 0:
+			continue
+		var stack := [[start, 0]]
+		color[start] = 1
+		while not stack.is_empty():
+			var top: Array = stack[stack.size() - 1]
+			var u: String = top[0]
+			var i: int = top[1]
+			var nbrs: Array = adj.get(u, [])
+			if i < nbrs.size():
+				top[1] = i + 1
+				var v: String = nbrs[i]
+				var cv := int(color.get(v, 0))
+				if cv == 1:
+					return true
+				if cv == 0:
+					color[v] = 1
+					stack.append([v, 0])
+			else:
+				color[u] = 2
+				stack.pop_back()
+	return false
+
 ## The STRUCTURAL validation gate (parity with convo_protocol.py validate_actions) — the single
 ## definition every transport funnels mutations through. Simulates the batch against `arr`, tracking
 ## a running id-set (existing node ids + ids added earlier in the SAME batch), so it catches edits
@@ -199,6 +235,9 @@ static func validate_actions(arr: Dictionary, actions: Array) -> Dictionary:
 					errors.append("set_active_tip: node '%s' not found" % nid)
 					continue
 				out.append(a)
+	# Whole-batch invariant: the parent graph must stay acyclic. (Skip if already rejected.)
+	if not out.is_empty() and errors.is_empty() and _has_cycle(apply(arr, out)):
+		errors.append("batch would create a cycle in the parent graph")
 	return { "actions": out, "errors": errors }
 
 ## SOUNDNESS check on a whole arrangement (parity with convo_protocol.py validate_arrangement) —
@@ -215,11 +254,13 @@ static func validate_arrangement(arr: Dictionary) -> Dictionary:
 			dangling.append(w)
 	var tip = arr.get("current_node", null)
 	var tip_ok: bool = tip == null or ids.has(String(tip))
+	var acyclic := not _has_cycle(arr)
 	return {
-		"ok": dangling.is_empty() and tip_ok,
+		"ok": dangling.is_empty() and tip_ok and acyclic,
 		"counts": { "nodes": (arr.get("nodes", []) as Array).size(), "wires": (arr.get("wires", []) as Array).size() },
 		"dangling_wires": dangling,
 		"active_tip_exists": tip_ok,
+		"acyclic": acyclic,
 	}
 
 ## Apply validated actions to produce a NEW arrangement (append-only; input untouched).

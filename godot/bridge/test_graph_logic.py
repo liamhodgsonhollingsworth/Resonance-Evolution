@@ -85,10 +85,14 @@ check("validate_actions rejects parent/endpoint/self/tip/role/op (6 errors, 0 va
 
 batch = cp.validate_actions(convo, [
     {"op": "add_node", "id": "fresh", "kind": "Message", "params": {"role": "user", "content": "a"}, "parent": "n5"},
-    {"op": "wire", "from": "fresh", "to": "n5"},
+    {"op": "add_node", "id": "fresh2", "kind": "Message", "params": {"role": "assistant", "content": "b"}, "parent": "fresh"},
 ])
 check("validate_actions resolves batch-local ids (added node referenceable later)",
       len(batch["actions"]) == 2 and not batch["errors"])
+
+# cycle rejection: a wire that would close a loop in the parent graph (n5 -> ... -> n1 -> n5).
+cyc = cp.validate_actions(convo, [{"op": "wire", "from": "n5", "to": "n1"}])
+check("validate_actions rejects a cycle-closing wire", any("cycle" in e for e in cyc["errors"]))
 
 # validate_arrangement soundness.
 check("validate_arrangement: clean convo is ok", cp.validate_arrangement(convo)["ok"])
@@ -98,6 +102,12 @@ broken = {"format": "resonance.arrangement/v1", "current_node": "ghost",
 bsound = cp.validate_arrangement(broken)
 check("validate_arrangement flags dangling wire + missing tip",
       not bsound["ok"] and len(bsound["dangling_wires"]) == 1 and not bsound["active_tip_exists"])
+ring = {"format": "resonance.arrangement/v1",
+        "nodes": [msg("x", "user", "x", 1), msg("y", "user", "y", 2)],
+        "wires": [{"from": "x", "out": "reply", "to": "y", "in": "parent"},
+                  {"from": "y", "out": "reply", "to": "x", "in": "parent"}]}
+rsound = cp.validate_arrangement(ring)
+check("validate_arrangement flags a cyclic parent graph", not rsound["ok"] and not rsound["acyclic"])
 
 # --- ChipOps parity (mirrors headless_chip_test.gd) ---------------------------------------
 base = {

@@ -16,6 +16,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import graph_mcp as g  # noqa: E402
+import graph_store as gs  # noqa: E402
 
 ok = True
 
@@ -108,6 +109,20 @@ try:
     ca2 = g.graph_commit(pa2["proposal_id"])
     check("abstract commit ok with unchanged base", bool(ca2.get("ok")))
     check("abstract produced a Chip", any(n.get("type") == "Chip" for n in g._load().get("nodes", [])))
+
+    # 7) THE IMPORTABLE SEAM: any transport (canvas_bridge, the remote connector) gets the SAME
+    #    conflict-safety just by calling graph_store.commit_actions — no need to reimplement it.
+    reset(base)
+    other = g._load()  # a concurrent writer lands a node first
+    other["nodes"].append(msg("ext", "user", "ext", 5))
+    g._save(other)
+    r = gs.commit_actions(tmp, [{"op": "add_node", "id": "viaseam", "kind": "Message",
+                                 "params": {"role": "assistant", "content": "S"}, "parent": "root"}])
+    check("graph_store.commit_actions applies onto concurrent state", bool(r.get("ok")))
+    check("seam no-clobber: root + ext + viaseam all present", {"root", "ext", "viaseam"} <= ids())
+    bad = gs.commit_actions(tmp, [{"op": "wire", "from": "root", "to": "ghost"}])
+    check("graph_store.commit_actions rejects an invalid edit (writes nothing)",
+          not bad.get("ok") and "errors" in bad)
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

@@ -96,10 +96,18 @@ func _initialize() -> void:
 
 	var batch := ConvoProtocol.validate_actions(arr, [
 		{ "op": "add_node", "id": "fresh", "kind": "Message", "params": { "role": "user", "content": "a" }, "parent": "n5" },
-		{ "op": "wire", "from": "fresh", "to": "n5" },
+		{ "op": "add_node", "id": "fresh2", "kind": "Message", "params": { "role": "assistant", "content": "b" }, "parent": "fresh" },
 	])
 	ok = _check("validate_actions resolves batch-local ids (added node referenceable later)",
 		(batch.actions as Array).size() == 2 and (batch.errors as Array).is_empty()) and ok
+
+	# cycle rejection: a wire that would close a loop in the parent graph (n5 -> ... -> n1 -> n5).
+	var cyc := ConvoProtocol.validate_actions(arr, [{ "op": "wire", "from": "n5", "to": "n1" }])
+	var cyc_flagged := false
+	for e in (cyc.errors as Array):
+		if String(e).contains("cycle"):
+			cyc_flagged = true
+	ok = _check("validate_actions rejects a cycle-closing wire", cyc_flagged) and ok
 
 	# validate_arrangement soundness.
 	ok = _check("validate_arrangement: clean convo is ok", bool(ConvoProtocol.validate_arrangement(arr).ok)) and ok
@@ -111,6 +119,14 @@ func _initialize() -> void:
 	var bsound := ConvoProtocol.validate_arrangement(broken)
 	ok = _check("validate_arrangement flags dangling wire + missing tip",
 		not bool(bsound.ok) and (bsound.dangling_wires as Array).size() == 1 and not bool(bsound.active_tip_exists)) and ok
+	var ring := {
+		"format": "resonance.arrangement/v1",
+		"nodes": [ _msg("x", "user", "x", 1), _msg("y", "user", "y", 2) ],
+		"wires": [ { "from": "x", "out": "reply", "to": "y", "in": "parent" },
+			{ "from": "y", "out": "reply", "to": "x", "in": "parent" } ],
+	}
+	var rsound := ConvoProtocol.validate_arrangement(ring)
+	ok = _check("validate_arrangement flags a cyclic parent graph", not bool(rsound.ok) and not bool(rsound.acyclic)) and ok
 
 	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
 	quit(0 if ok else 1)

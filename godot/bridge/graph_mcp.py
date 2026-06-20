@@ -29,48 +29,36 @@ from mcp.server.fastmcp import FastMCP
 
 import convo_protocol as cp
 import chip_ops
+import graph_store as gs
 
 LIVE_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "live"))
 
 mcp = FastMCP("resonance-graph")
 
 
-# --- arrangement + proposal storage (mirrors scene_bridge.py's atomic-write discipline) ----
+# --- arrangement + proposal storage --------------------------------------------------------
+# The canonical store ops — read, hash, and the CONFLICT-SAFE write — live in graph_store, the
+# importable CONNECTION-CONTRACT seam every transport shares (the engine canvas + remote import
+# the SAME module so no two writers clobber). These thin wrappers just bind this server's LIVE_DIR.
 
 def _arr_path() -> str:
-    return os.path.join(LIVE_DIR, "arrangement.json")
+    return gs.arr_path(LIVE_DIR)
 
 
 def _props_dir() -> str:
     return os.path.join(LIVE_DIR, "proposals")
 
 
-def _atomic_write(path: str, data: bytes) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "wb") as f:
-        f.write(data)
-    os.replace(tmp, path)
-
-
-def _empty() -> dict:
-    return {"format": "resonance.arrangement/v1", "nodes": [], "wires": []}
-
-
 def _load() -> dict:
-    p = _arr_path()
-    if not os.path.exists(p):
-        return _empty()
-    try:
-        with open(p, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else _empty()
-    except (json.JSONDecodeError, OSError):
-        return _empty()
+    return gs.load(LIVE_DIR)
 
 
 def _save(arr: dict) -> None:
-    _atomic_write(_arr_path(), json.dumps(arr, indent="\t").encode("utf-8"))
+    gs.save(LIVE_DIR, arr)
+
+
+def _live_hash() -> str:
+    return gs.live_hash(LIVE_DIR)
 
 
 def _counts(arr: dict) -> dict:
@@ -84,17 +72,6 @@ def _snippet(n: dict, length: int = 60) -> str:
     return t[:length] + ("…" if len(t) > length else "")
 
 
-def _live_hash() -> str:
-    """Content hash of the live arrangement file's raw bytes — the same change signal the engine's
-    LiveHost watches. A proposal records this as its base; commit compares it against the CURRENT
-    hash to detect a concurrent edit (the conflict-safe gate)."""
-    p = _arr_path()
-    if not os.path.exists(p):
-        return ""
-    with open(p, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()
-
-
 def _stage(kind: str, payload: dict, summary: str) -> dict:
     """Persist a proposal record. `payload` carries the conflict-safe fields — `base_hash` plus the
     DELTA to re-apply (`actions` for an action batch, `args` for a structural op) — and a `result`
@@ -103,8 +80,8 @@ def _stage(kind: str, payload: dict, summary: str) -> dict:
     pid = "prop_" + hashlib.sha256(
         (kind + json.dumps(payload, sort_keys=True, default=str)).encode("utf-8")).hexdigest()[:8]
     rec = {"id": pid, "kind": kind, "summary": summary, **payload}
-    _atomic_write(os.path.join(_props_dir(), pid + ".json"),
-                  json.dumps(rec, indent="\t").encode("utf-8"))
+    gs.atomic_write(os.path.join(_props_dir(), pid + ".json"),
+                    json.dumps(rec, indent="\t").encode("utf-8"))
     return {"proposal_id": pid, "kind": kind, "summary": summary}
 
 
@@ -280,31 +257,38 @@ def graph_commit(proposal_id: str) -> dict:
     with open(fp, "r", encoding="utf-8") as f:
         prop = json.load(f)
     kind = str(prop.get("kind"))
-    current = _load()
     rebased = prop.get("base_hash") != _live_hash()
 
     if kind == "actions":
-        v = cp.validate_actions(current, prop.get("actions", []))
-        if v["errors"]:
-            return {"ok": False, "error": "proposal no longer applies to the current graph",
-                    "errors": v["errors"]}
-        result = cp.apply(current, v["actions"])
-    elif kind in ("abstract", "decompose"):
+        # The conflict-safe append-only write lives in the shared seam (graph_store): reload the
+        # CURRENT graph, re-validate, re-apply, soundness-check, atomic-write — the SAME path every
+        # transport uses, so concurrent edits rebase rather than clobber.
+        res = gs.commit_actions(LIVE_DIR, prop.get("actions", []))
+        if not res["ok"]:
+            out = {"ok": False, "error": res.get("error", "could not commit to the current graph")}
+            if "errors" in res:
+                out["errors"] = res["errors"]
+            if "sound" in res:
+                out["sound"] = res["sound"]
+            return out
+        os.remove(fp)
+        return {"ok": True, "committed": proposal_id, "counts": _counts(res["result"]), "rebased": rebased}
+
+    if kind in ("abstract", "decompose"):
         if rebased:
-            return {"ok": False,
-                    "error": "graph changed since this structural proposal — re-propose"}
+            return {"ok": False, "error": "graph changed since this structural proposal — re-propose"}
+        current = _load()
         args = prop.get("args", {})
         result = (chip_ops.group(current, args.get("node_ids", []))
                   if kind == "abstract" else chip_ops.ungroup(current, args.get("chip_id", "")))
-    else:
-        return {"ok": False, "error": f"unknown proposal kind '{kind}'"}
+        sound = cp.validate_arrangement(result)
+        if not sound["ok"]:
+            return {"ok": False, "error": "refusing to commit: result is not sound", **sound}
+        _save(result)
+        os.remove(fp)
+        return {"ok": True, "committed": proposal_id, "counts": _counts(result), "rebased": rebased}
 
-    sound = cp.validate_arrangement(result)
-    if not sound["ok"]:
-        return {"ok": False, "error": "refusing to commit: result is not sound", **sound}
-    _save(result)
-    os.remove(fp)
-    return {"ok": True, "committed": proposal_id, "counts": _counts(result), "rebased": rebased}
+    return {"ok": False, "error": f"unknown proposal kind '{kind}'"}
 
 
 @mcp.tool()
