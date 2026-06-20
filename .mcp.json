@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "resonance-graph": {
+      "command": "python",
+      "args": ["godot/bridge/graph_mcp.py"]
+    }
+  }
+}

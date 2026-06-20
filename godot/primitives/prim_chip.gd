@@ -16,6 +16,11 @@ extends Primitive
 ##     }
 ##   }
 
+## Maximum Chip nesting depth before a branch is halted. Real homoiconic nesting is far
+## shallower than this; the cap exists only to stop runaway recursion — accidental very-deep
+## nesting, or (once chips become shared/named definitions) a definition referencing itself.
+const MAX_DEPTH := 64
+
 var _sub: GraphRuntime = null
 
 func _init() -> void:
@@ -36,9 +41,22 @@ func _ports(which: String) -> Array:
 
 func evaluate(inputs: Dictionary) -> Dictionary:
 	var arr: Dictionary = params.get("arrangement", {})
+	# Depth guard: my owning runtime carries this chip's nesting depth. Halt this branch
+	# gracefully (every output null) rather than overflowing the stack on runaway recursion.
+	var parent_depth := 0
+	var pr := get_parent()
+	if pr is GraphRuntime:
+		parent_depth = (pr as GraphRuntime).depth
+	if parent_depth >= MAX_DEPTH:
+		push_error("PrimChip: max nesting depth (%d) exceeded — halting this branch" % MAX_DEPTH)
+		var halted := {}
+		for p in (params.get("ports", {}) as Dictionary).get("outputs", []):
+			halted[String(p.get("name"))] = null
+		return halted
 	if _sub == null:
 		_sub = GraphRuntime.new()
 		add_child(_sub)
+	_sub.depth = parent_depth + 1
 	# Diff-hotload the inner graph: unchanged inner instances / live models are kept.
 	_sub.load_arrangement(arr)
 	# Feed the chip's incoming port values into their mapped inner sites.

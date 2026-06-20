@@ -47,6 +47,46 @@ func _initialize() -> void:
 	ok = _check("ungroup => 7", _eval_log(u) == 7.0) and ok
 	ok = _check("ungroup restores 4 nodes, 0 chips", (u["nodes"] as Array).size() == 4 and _count_type(u, "Chip") == 0) and ok
 
+	# --- Phase A completion --------------------------------------------------------------
+	# (1) Hotload into a CHANGED CHILD on the SAME runtime instance: prove the diff-reload
+	# reaches inside a chip and that the chip instance is KEPT (not rebuilt).
+	var rt := GraphRuntime.new()
+	get_root().add_child(rt)
+	rt.load_arrangement(g1)
+	rt.evaluate()
+	# Capture identity via instance id NOW — comparing the object refs after rt.free() would
+	# be a use-after-free (dangling references compare unreliably).
+	var chip_a = rt.nodes.get(chip_id)
+	var chip_a_id: int = chip_a.get_instance_id() if chip_a != null else 0
+	var v_add = rt.nodes.get("out").last_value
+	var g1mul: Dictionary = g1.duplicate(true)
+	_set_inner_math_op(g1mul, "mul")
+	rt.load_arrangement(g1mul)
+	rt.evaluate()
+	var chip_b = rt.nodes.get(chip_id)
+	var chip_b_id: int = chip_b.get_instance_id() if chip_b != null else 0
+	var v_mul = rt.nodes.get("out").last_value
+	get_root().remove_child(rt)
+	rt.free()
+	ok = _check("same-instance hotload into changed child => 7 then 12",
+		Primitive.as_num(v_add) == 7.0 and Primitive.as_num(v_mul) == 12.0) and ok
+	ok = _check("hotload kept the SAME Chip instance (diff, not rebuild)",
+		chip_a_id != 0 and chip_a_id == chip_b_id) and ok
+
+	# (2) group -> ungroup evaluates IDENTICALLY across EVERY node (lossless round-trip),
+	# stronger than just the Log value: the full per-node output signature must match.
+	ok = _check("group->ungroup evaluates identically (lossless round-trip)",
+		_eval_signature(base) == _eval_signature(u)) and ok
+
+	# (3) Deep nesting beyond PrimChip.MAX_DEPTH halts gracefully (the guard fires; no
+	# stack overflow / crash). Wrap the single top-level chip repeatedly past the cap.
+	var deep: Dictionary = g1
+	for _i in (PrimChip.MAX_DEPTH + 6):
+		deep = ChipOps.group(deep, [_first_type_id(deep, "Chip")], resolver)
+	var deep_val = _eval_log(deep)
+	ok = _check("deep nesting > MAX_DEPTH halts gracefully (no crash, branch cut)",
+		deep_val == null or deep_val == 0.0) and ok
+
 	resolver_rt.free()
 	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
 	quit(0 if ok else 1)
@@ -95,6 +135,23 @@ func _set_inner_math_op(arr: Dictionary, op: String) -> void:
 			for inner_n in inner["nodes"]:
 				if String(inner_n.get("type")) == "Math":
 					inner_n["params"]["op"] = op
+
+# Canonical signature of a full evaluation: every node id (sorted) -> its output dict.
+# Two arrangements that compute identically produce the same signature regardless of the
+# node insertion / topo order, so it is a robust "evaluates identically" check.
+func _eval_signature(arr: Dictionary) -> String:
+	var rt := GraphRuntime.new()
+	get_root().add_child(rt)
+	rt.load_arrangement(arr)
+	var outs := rt.evaluate()
+	var ids: Array = outs.keys()
+	ids.sort()
+	var parts := []
+	for id in ids:
+		parts.append(String(id) + "=" + JSON.stringify(outs[id]))
+	get_root().remove_child(rt)
+	rt.free()
+	return "|".join(PackedStringArray(parts))
 
 func _check(label: String, cond: bool) -> bool:
 	print(("PASS " if cond else "FAIL ") + label)

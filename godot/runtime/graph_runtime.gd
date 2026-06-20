@@ -20,6 +20,12 @@ var _registry: Dictionary = {}
 # nodes. Empty for a top-level runtime, so it changes nothing in the normal case.
 var _external: Dictionary = {}
 
+# Recursion depth in the Chip-nesting tree (0 = top level). A Chip sets its sub-runtime's
+# depth to its own + 1; PrimChip caps it (PrimChip.MAX_DEPTH) so a deeply-nested or (once
+# shared chip definitions exist) self-referencing chip halts gracefully instead of
+# overflowing the GDScript call stack. Unused for a flat top-level graph.
+var depth: int = 0
+
 func _init() -> void:
 	register("Const", PrimConst)
 	register("Math", PrimMath)
@@ -31,6 +37,10 @@ func _init() -> void:
 	# in every runtime (including a Chip's own sub-runtime) makes nesting recursive for
 	# free — "procedural all the way down" with no special-casing.
 	register("Chip", PrimChip)
+	# Conversation/idea node: one chat turn or one idea, as DATA. A nonlinear conversation
+	# is an arrangement of these wired reply -> parent; context is assembled by walking the
+	# wires (see ConvoProtocol), not by dataflow.
+	register("Message", PrimMessage)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
