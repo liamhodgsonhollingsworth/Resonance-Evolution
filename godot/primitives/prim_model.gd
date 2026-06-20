@@ -1,51 +1,33 @@
 class_name PrimModel
 extends Primitive
-## Loads a glTF/GLB at RUNTIME (no editor import step) and holds it as a live Node3D,
-## exposed on its "node" output port. This is the "add any 3D model into the live game
-## as a node" capability — including a model freshly made from a photo (Phase 3).
+## Emits a renderer-NEUTRAL scene_node descriptor that REFERENCES a glTF/GLB model by path —
+## as DATA, never a live Godot node. The actual GLB load + Node3D build happens in the
+## renderer delegate (GodotSceneRenderer), so the arrangement value is portable to any
+## renderer and the same descriptor can be exported straight back out to glTF/GLB.
 ##
-## params.path = a res:// , user:// , or absolute path to a .glb / .gltf.
+## This is the substrate-independence law for the 3D path: a "model" on a wire is DATA
+## (a glTF-aligned node descriptor), not a Godot object — so a 3D arrangement ports across
+## engines exactly like the Const/Math/Log arrangements already do.
 ##
-## Because GraphRuntime keeps this primitive across hotloads (and only updates params),
-## the loaded model is reloaded ONLY when params.path changes — a live model survives
-## re-wiring of everything around it.
-
-var model_root: Node3D = null
-var _loaded_path: String = ""
+## params.path = a res:// , user:// , or absolute path to a .glb / .gltf. (This is a pointer in
+##   Godot's namespace; a non-Godot delegate must resolve it itself — the portability boundary.)
+## params.name = optional node name (keeping it valid + unique helps glTF round-trips).
 
 func _init() -> void:
 	prim_type = "Model"
 
 func output_ports() -> Array:
-	return [{ "name": "node", "type": "model" }]
-
-func _ensure_loaded() -> void:
-	var path := String(params.get("path", ""))
-	if path == _loaded_path and model_root != null:
-		return
-	if model_root != null:
-		model_root.queue_free()
-		model_root = null
-	_loaded_path = path
-	if path == "":
-		return
-	var doc := GLTFDocument.new()
-	var state := GLTFState.new()
-	var err := doc.append_from_file(path, state)
-	if err != OK:
-		push_warning("PrimModel: failed to load '%s' (err %d)" % [path, err])
-		return
-	var scene := doc.generate_scene(state)
-	if scene == null:
-		push_warning("PrimModel: generate_scene returned null for '%s'" % path)
-		return
-	if scene is Node3D:
-		model_root = scene
-	else:
-		model_root = Node3D.new()
-		model_root.add_child(scene)
-	add_child(model_root)
+	return [{ "name": "node", "type": "scene_node" }]
 
 func evaluate(_inputs: Dictionary) -> Dictionary:
-	_ensure_loaded()
-	return { "node": model_root }
+	var path := String(params.get("path", ""))
+	if path == "":
+		return { "node": null }
+	return { "node": {
+		"name": String(params.get("name", "model")),
+		"translation": [0.0, 0.0, 0.0],
+		"rotation": [0.0, 0.0, 0.0, 1.0],
+		"scale": [1.0, 1.0, 1.0],
+		"mesh": { "source": "glb", "path": path },
+		"children": []
+	} }

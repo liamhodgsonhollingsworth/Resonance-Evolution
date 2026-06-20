@@ -1,0 +1,16 @@
+{
+  "name": "resonance-oracle",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Headless cross-renderer glTF conformance oracle for Resonance-Evolution: proves a Godot-exported GLB is spec-valid, so the same 3D arrangement data is portable to any glTF renderer.",
+  "scripts": {
+    "validate": "node validate_glb.mjs",
+    "parity": "node three_parity.mjs"
+  },
+  "dependencies": {
+    "gltf-validator": "2.0.0-dev.3.10",
+    "node-three-gltf": "^2.1.0",
+    "three": "^0.184.0"
+  }
+}

@@ -16,6 +16,7 @@ const SHOT_REQUEST := "res://live/shot_request.txt"
 const SHOT_OUT := "res://live/shot.png"
 
 var runtime: GraphRuntime
+var renderer: GodotSceneRenderer
 var host: LiveHost
 var _shot_frames := 0
 var _shot_poll := 0.0
@@ -26,14 +27,24 @@ func _ready() -> void:
 	_ensure_default_arrangement()
 	runtime = GraphRuntime.new()
 	add_child(runtime)
+	renderer = GodotSceneRenderer.new()
+	add_child(renderer)
 	host = LiveHost.new()
 	host.runtime = runtime
 	host.path = ARRANGEMENT_PATH
+	host.reloaded.connect(_on_reloaded)
 	add_child(host)
 	host.poll_once()
 	if FileAccess.file_exists(SHOT_REQUEST):
 		_last_shot_req = FileAccess.get_file_as_string(SHOT_REQUEST).sha256_text()
 	print("[main] ready; watching ", ARRANGEMENT_PATH, " (%d node(s) live)" % runtime.nodes.size())
+
+func _on_reloaded() -> void:
+	# The arrangement changed on disk: re-evaluate it to renderer-neutral data and let the
+	# Godot delegate (re)build the live scene from that data. The runtime + the data stay
+	# engine-agnostic; only the delegate knows about Node3D.
+	renderer.render(runtime.evaluate(), runtime.arrangement)
+
 
 func _process(delta: float) -> void:
 	# CI one-shot: launched with `-- --shot`, render a few frames -> res://shot.png, quit.

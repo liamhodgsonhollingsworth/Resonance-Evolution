@@ -1,12 +1,13 @@
 extends SceneTree
-## Headless verification of runtime GLB loading (the "add any 3D model live as a node"
-## capability) — fully self-contained, no external asset and no display needed:
+## Headless verification that Model emits a renderer-NEUTRAL scene_node descriptor (DATA),
+## and that the Godot renderer delegate builds a live mesh node from it. Model no longer
+## holds a live node itself — portability lives in the data, rendering in the delegate.
 ##
 ##   godot --headless --path godot -s res://headless_model_test.gd
 ##
-## It (1) builds a box mesh and exports it to a .glb via GLTFDocument, then (2) loads
-## that .glb back through a Model primitive in an arrangement and asserts the mesh
-## arrived as a live node. This exercises the exact runtime path Phase 1 relies on.
+## (1) builds a box .glb via GLTFDocument, then (2) runs it through a Model primitive and
+## asserts the output is a JSON-serializable descriptor referencing the GLB, then (3) feeds
+## the eval output to GodotSceneRenderer and asserts a live mesh node was built.
 
 func _initialize() -> void:
 	var ok := true
@@ -18,14 +19,23 @@ func _initialize() -> void:
 	get_root().add_child(rt)
 	rt.load_arrangement({
 		"format": "resonance.arrangement/v1",
-		"nodes": [ { "id": "m", "type": "Model", "params": { "path": glb } } ],
+		"nodes": [ { "id": "m", "type": "Model", "params": { "path": glb, "name": "box_model" } } ],
 		"wires": []
 	})
-	rt.evaluate()
-	var model: PrimModel = rt.nodes.get("m")
-	ok = _check("Model primitive present", model != null) and ok
-	ok = _check("model loaded as a live node", model != null and model.model_root != null) and ok
-	ok = _check("loaded model contains a mesh", model != null and _has_mesh(model.model_root)) and ok
+	var outputs := rt.evaluate()
+	var desc = outputs.get("m", {}).get("node")
+
+	ok = _check("Model emits a Dictionary descriptor (not a live node)", typeof(desc) == TYPE_DICTIONARY) and ok
+	ok = _check("descriptor references the GLB by path",
+		typeof(desc) == TYPE_DICTIONARY and String((desc.get("mesh", {}) as Dictionary).get("path", "")) == glb) and ok
+	ok = _check("descriptor is JSON-serializable (no live objects)",
+		typeof(desc) == TYPE_DICTIONARY and typeof(JSON.parse_string(JSON.stringify(desc))) == TYPE_DICTIONARY) and ok
+
+	var renderer := GodotSceneRenderer.new()
+	get_root().add_child(renderer)
+	renderer.render(outputs, { "wires": [] })
+	ok = _check("delegate built one node from the descriptor", renderer.get_child_count() == 1) and ok
+	ok = _check("built node contains a mesh", renderer.get_child_count() == 1 and _has_mesh(renderer.get_child(0))) and ok
 
 	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
 	quit(0 if ok else 1)
@@ -42,10 +52,10 @@ func _make_box_glb(path: String) -> int:
 	var state := GLTFState.new()
 	var err := doc.append_from_scene(root, state)
 	if err != OK:
-		root.queue_free()
+		root.free()
 		return err
 	err = doc.write_to_filesystem(state, path)
-	root.queue_free()
+	root.free()
 	return err
 
 func _has_mesh(n: Node) -> bool:

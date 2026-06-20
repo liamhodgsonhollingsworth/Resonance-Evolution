@@ -5,6 +5,7 @@
 *.tmp
 # Verification screenshot (dev-only proof artifact)
 /shot.png
+/shot.png.import
 # Live channel runtime artifacts (arrangement state, generated glb, screenshots)
 /live/*
 !/live/.gitkeep

@@ -10,6 +10,11 @@ extends Node
 ## us free idempotence (re-saving identical data does nothing). This mirrors the project's
 ## content-addressing throughout.
 
+## Emitted after a successful reload + evaluate, so a consumer (e.g. the renderer delegate)
+## can rebuild from the fresh evaluate() output without LiveHost knowing anything about
+## rendering. No-op for headless tests that don't connect it.
+signal reloaded
+
 var runtime: GraphRuntime = null
 var path: String = ""
 var poll_interval := 0.25
@@ -42,4 +47,5 @@ func poll_once() -> bool:
 		return false
 	runtime.load_arrangement(data)
 	runtime.evaluate()
+	reloaded.emit()
 	return true
