@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 
 import convo_protocol as cp
 
@@ -52,8 +53,18 @@ def atomic_write(path: str, data: bytes) -> None:
     os.replace(tmp, path)
 
 
-def save(live_dir: str, arr: dict) -> None:
-    atomic_write(arr_path(live_dir), json.dumps(arr, indent="\t").encode("utf-8"))
+def save(live_dir: str, arr: dict) -> dict:
+    """Atomic write of the arrangement, stamping a MONOTONIC `rev` (+ `updated_at` ms) — the single
+    write chokepoint, so every writer that goes through the seam advances one shared version counter.
+    rev = max(current on-disk rev, the arr's rev) + 1, so it never goes backwards even across
+    concurrent writers. Returns the stamped arrangement (a copy; the caller's dict is untouched), so
+    callers can read the new rev without re-reading the file."""
+    prev_rev = int(load(live_dir).get("rev", 0) or 0)
+    stamped = dict(arr)
+    stamped["rev"] = max(prev_rev, int(arr.get("rev", 0) or 0)) + 1
+    stamped["updated_at"] = int(time.time() * 1000)
+    atomic_write(arr_path(live_dir), json.dumps(stamped, indent="\t").encode("utf-8"))
+    return stamped
 
 
 def live_hash(live_dir: str) -> str:
@@ -81,6 +92,6 @@ def commit_actions(live_dir: str, actions: list) -> dict:
     sound = cp.validate_arrangement(result)
     if not sound["ok"]:
         return {"ok": False, "error": "result is not sound", "sound": sound}
-    save(live_dir, result)
-    return {"ok": True, "result": result,
+    result = save(live_dir, result)  # stamps + returns the new rev/updated_at
+    return {"ok": True, "result": result, "rev": result.get("rev"),
             "counts": {"nodes": len(result.get("nodes", [])), "wires": len(result.get("wires", []))}}

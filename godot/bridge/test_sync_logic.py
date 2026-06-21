@@ -123,6 +123,24 @@ try:
     bad = gs.commit_actions(tmp, [{"op": "wire", "from": "root", "to": "ghost"}])
     check("graph_store.commit_actions rejects an invalid edit (writes nothing)",
           not bad.get("ok") and "errors" in bad)
+
+    # 8) MONOTONIC rev: every write through the seam advances ONE shared version counter, so any
+    #    observer (engine LiveHost, canvas, remote) can order changes / tell it is behind.
+    reset(base)
+    g.graph_commit(g.graph_propose([{"op": "add_node", "id": "v1", "kind": "Message",
+                                     "params": {"role": "user", "content": "1"}, "parent": "root"}])["proposal_id"])
+    rev_a = g._load().get("rev")
+    other3 = g._load()  # an external writer also bumps the shared rev
+    other3["nodes"].append(msg("v2", "user", "2", 9))
+    g._save(other3)
+    rev_b = g._load().get("rev")
+    cb = g.graph_commit(g.graph_propose([{"op": "add_node", "id": "v3", "kind": "Message",
+                                          "params": {"role": "user", "content": "3"}, "parent": "root"}])["proposal_id"])
+    rev_c = g._load().get("rev")
+    check("rev advances on each write (commit < external < commit)",
+          isinstance(rev_a, int) and rev_a < rev_b < rev_c)
+    check("commit reports the new rev", cb.get("rev") == rev_c)
+    check("arrangement carries updated_at", isinstance(g._load().get("updated_at"), int))
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

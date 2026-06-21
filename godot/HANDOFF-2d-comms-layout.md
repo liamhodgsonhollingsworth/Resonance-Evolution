@@ -76,6 +76,15 @@ gained **cycle rejection** (the parent graph must stay a DAG) in both ports. Ver
 `_load`/`_save`; that gives cross-process conflict-safety for free. Liam's direct authoring stays
 self-approved but should validate against the shared gate. (Track 2 also independently added a cycle
 check — now unified into `convo_protocol`, so it can drop its local one on adoption.)
+**Slice 3 SHIPPED (2026-06-20) — the minimal sync core (no new process):** `graph_store.save` stamps a
+monotonic **`rev`** (+ `updated_at` ms) on every write — ONE shared version counter that never goes
+backwards across writers; `runtime/live_host.gd` surfaces it as `LiveHost.rev`;
+`commit_actions`/`graph_commit` return it. CONNECTION-CONTRACT.md §5 now specifies the observation +
+**remote plug-point**: Track 3 joins by writing via `graph_store.commit_actions` and observing the
+`rev`/hash — **no engine/Track-1 changes needed**. Verified: `test_sync_logic.py` 20/20 (rev monotonic
+across commit↔external↔commit) + `headless_live_test.gd` (LiveHost.rev). **Track 1's local
+connection-fabric core is COMPLETE.** Remaining: **Track 3** (the network skin over those two ops) +
+Track 2's seam adoption. Deferred: an optional base-`rev` OCC token; CRDT multi-writer.
 
 ### Track 2 — 2D INFINITE CANVAS  ⟵ the surface Liam works on, ASAP
 **Goal:** a single **2D infinite canvas** in Godot that renders the canonical arrangement (a dumb,

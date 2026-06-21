@@ -95,12 +95,26 @@ writing the whole arrangement is a cross-process clobber bug.
 > - `editor/graph_panel.gd::_commit()` (Godot editor) still whole-file-overwrites — route through the
 >   contract too (a thin GD `graph_store` equivalent, or commit deltas).
 
-## 5. Change observation (how a system sees others' edits)
-The signal is the **content hash** of `arrangement.json`'s raw bytes (`graph_store.live_hash()` ↔
-`runtime/live_host.gd`'s `sha256_text` poll). On change, a reader reloads and re-evaluates/re-renders.
-Hash-based (not mtime) → sub-second edits and idempotent re-saves are handled correctly. A monotonic
-`rev` field is reserved for ordering once a remote multi-writer (Track 3) lands; **CRDT** true
-multi-writer is deferred (the `{id, parent, author, created_at}` schema needs no migration to add it).
+## 5. Change observation + the remote plug-point (how systems see + join each other's edits)
+Two top-level fields, **stamped by `graph_store.save` on every write** (so every writer through the
+seam advances ONE shared counter), let any observer order changes and detect it is behind:
+- **`rev`** — a monotonic integer; `rev = max(on-disk rev, incoming rev) + 1`, so it never goes
+  backwards even across concurrent writers. The authority for ordering.
+- **`updated_at`** — ms wall-clock of the write (display / coarse recency only).
+
+The change *signal* is the **content hash** of the raw bytes (`graph_store.live_hash()` ↔
+`runtime/live_host.gd`'s `sha256_text` poll — hash, not mtime, so sub-second edits and idempotent
+re-saves are correct). On change a reader reloads, re-evaluates/re-renders, and reads the new `rev`
+(the engine exposes it as `LiveHost.rev`; `commit_actions` and `graph_commit` return it).
+
+**Remote plug-point (Track 3 — no engine/Track-1 changes needed):** a remote/Cowork transport joins
+the SAME fabric by (a) **writing** through `graph_store.commit_actions` (conflict-safe, append-only)
+and (b) **observing** the `rev`/hash of `arrangement.json` — exactly what the local transports do.
+Track 3 only adds the network skin (Streamable-HTTP + OAuth) over those two operations.
+
+**Deferred:** an optional base-`rev` optimistic-concurrency token in the propose/commit API (a client
+sends the rev it based on) for stricter staleness detection; and **CRDT** true multi-writer — the
+`{id, parent, author, created_at}` + `rev` schema needs no migration to add either later.
 
 ## 6. The laws every connecting track holds
 Functionality is DATA (arrangements over primitives), never new code · renderers/transports are dumb

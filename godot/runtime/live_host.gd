@@ -19,6 +19,11 @@ var runtime: GraphRuntime = null
 var path: String = ""
 var poll_interval := 0.25
 
+## The monotonic revision of the arrangement last loaded (top-level `rev`, stamped by the shared
+## graph_store write seam — see CONNECTION-CONTRACT.md §5). A consumer reads this after `reloaded`
+## to order changes / detect that it is behind. 0 if the arrangement carries no rev yet.
+var rev := 0
+
 var _last_hash := ""
 var _accum := 0.0
 
@@ -47,5 +52,6 @@ func poll_once() -> bool:
 		return false
 	runtime.load_arrangement(data)
 	runtime.evaluate()
+	rev = int(data.get("rev", 0))
 	reloaded.emit()
 	return true

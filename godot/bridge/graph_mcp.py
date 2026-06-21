@@ -53,8 +53,8 @@ def _load() -> dict:
     return gs.load(LIVE_DIR)
 
 
-def _save(arr: dict) -> None:
-    gs.save(LIVE_DIR, arr)
+def _save(arr: dict) -> dict:
+    return gs.save(LIVE_DIR, arr)
 
 
 def _live_hash() -> str:
@@ -272,7 +272,8 @@ def graph_commit(proposal_id: str) -> dict:
                 out["sound"] = res["sound"]
             return out
         os.remove(fp)
-        return {"ok": True, "committed": proposal_id, "counts": _counts(res["result"]), "rebased": rebased}
+        return {"ok": True, "committed": proposal_id, "counts": _counts(res["result"]),
+                "rev": res.get("rev"), "rebased": rebased}
 
     if kind in ("abstract", "decompose"):
         if rebased:
@@ -284,9 +285,10 @@ def graph_commit(proposal_id: str) -> dict:
         sound = cp.validate_arrangement(result)
         if not sound["ok"]:
             return {"ok": False, "error": "refusing to commit: result is not sound", **sound}
-        _save(result)
+        saved = _save(result)
         os.remove(fp)
-        return {"ok": True, "committed": proposal_id, "counts": _counts(result), "rebased": rebased}
+        return {"ok": True, "committed": proposal_id, "counts": _counts(saved),
+                "rev": saved.get("rev"), "rebased": rebased}
 
     return {"ok": False, "error": f"unknown proposal kind '{kind}'"}
 

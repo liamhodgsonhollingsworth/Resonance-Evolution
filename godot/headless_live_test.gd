@@ -24,18 +24,21 @@ func _initialize() -> void:
 	ok = _check("initial load happened", host.poll_once()) and ok
 	var log_node: PrimLog = rt.nodes.get("out")
 	ok = _check("initial value = 7", log_node != null and Primitive.as_num(log_node.last_value) == 7.0) and ok
+	ok = _check("initial rev surfaced (0, no rev in file)", host.rev == 0) and ok
 	ok = _check("no change -> no reload", not host.poll_once()) and ok
 
-	_write(p, _arr("mul"))
+	_write(p, _arr("mul", 7))
 	ok = _check("content change detected -> reload", host.poll_once()) and ok
 	ok = _check("after edit value = 12", Primitive.as_num(log_node.last_value) == 12.0) and ok
+	ok = _check("rev surfaced after reload (7)", host.rev == 7) and ok
 
 	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
 	quit(0 if ok else 1)
 
-func _arr(op: String) -> Dictionary:
+func _arr(op: String, rev := 0) -> Dictionary:
 	return {
 		"format": "resonance.arrangement/v1",
+		"rev": rev,
 		"nodes": [
 			{ "id": "a", "type": "Const", "params": { "value": 3 } },
 			{ "id": "b", "type": "Const", "params": { "value": 4 } },
