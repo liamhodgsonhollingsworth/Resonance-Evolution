@@ -41,6 +41,11 @@ func _init() -> void:
 	# is an arrangement of these wired reply -> parent; context is assembled by walking the
 	# wires (see ConvoProtocol), not by dataflow.
 	register("Message", PrimMessage)
+	# Context: a Chip that also supplies the HANDLER for how its scoped modules communicate
+	# (dataflow / gate / modulate / ...). The realization of "communication is a module" — see
+	# COMMUNICATION-ARCHITECTURE.md. Default handler == a plain Chip, so this changes nothing for
+	# existing graphs; new disciplines are new handlers (data), never foundation edits.
+	register("Context", PrimContext)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class

@@ -1,0 +1,100 @@
+extends SceneTree
+## Headless proof that COMMUNICATION IS A MODULE (see COMMUNICATION-ARCHITECTURE.md). A Context
+## scopes a sub-arrangement (like a Chip) AND supplies the handler for HOW its modules communicate.
+##
+##   godot --headless --path godot -s res://headless_context_test.gd
+##
+## Proves, over ONE shared inner arrangement (Const3 + Const4 -> Math add, feeding Log "out"):
+##   - a Context with the default `dataflow` handler == a plain Chip (=> 7);
+##   - a `gate` Context makes the SAME scope live when enabled (=> 7) and dormant when disabled
+##     (=> null) — "behave differently depending on what is going on";
+##   - a `modulate` Context makes the SAME inner modules compute different values per context
+##     (add => 7 vs op=mul => 12) WITHOUT changing the modules, and without mutating the source.
+## Mirrors headless_chip_test.gd style (PASS/FAIL, RESULT, non-zero exit on failure).
+
+func _initialize() -> void:
+	var ok := true
+	var base: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://schema/arrangement.example.json"))
+	var resolver_rt := GraphRuntime.new()
+	var resolver := Callable(resolver_rt, "port_type")
+
+	# One scope, reused under every handler: Chip [a,b,m] (Const3 + Const4 -> Math add) -> Log "out".
+	var g := ChipOps.group(base, ["a", "b", "m"], resolver)
+	ok = _check("baseline Chip scope => 7", _eval_log(g) == 7.0) and ok
+
+	# (1) Default handler is exactly a Chip — existing behaviour is unchanged.
+	ok = _check("Context[dataflow] == Chip => 7", _eval_log(_as_context(g, "dataflow", {})) == 7.0) and ok
+
+	# (2) gate — the powered scope. Same modules; the context decides whether they propagate.
+	ok = _check("Context[gate] enabled => 7", _eval_log(_as_context_gated(g, 1)) == 7.0) and ok
+	ok = _check("Context[gate] disabled => dormant (null)", _eval_log(_as_context_gated(g, 0)) == null) and ok
+
+	# (3) modulate — same inner modules, different computed value per context, no module change.
+	var math_id := _inner_math_id(g)
+	ok = _check("found inner Math id", math_id != "") and ok
+	var ctx_add := _as_context(g, "modulate", {})
+	var ctx_mul := _as_context(g, "modulate", { math_id: { "op": "mul" } })
+	ok = _check("Context[modulate] none => 7", _eval_log(ctx_add) == 7.0) and ok
+	ok = _check("Context[modulate] op=mul => 12 (same modules, diff context)", _eval_log(ctx_mul) == 12.0) and ok
+
+	# (4) modulate never mutates the source arrangement: re-eval both, values still hold, and the
+	#     original Chip is untouched.
+	ok = _check("modulate is non-destructive (mul=>12, add=>7, base Chip=>7 still)",
+		_eval_log(ctx_mul) == 12.0 and _eval_log(ctx_add) == 7.0 and _eval_log(g) == 7.0) and ok
+
+	resolver_rt.free()
+	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
+	quit(0 if ok else 1)
+
+# --- helpers ---------------------------------------------------------------
+
+## Copy `g`, retype its Chip node to a Context with the given handler (+ optional modulation).
+func _as_context(g: Dictionary, handler: String, modulation: Dictionary) -> Dictionary:
+	var out: Dictionary = g.duplicate(true)
+	for n in out.get("nodes", []):
+		if String(n.get("type")) == "Chip":
+			n["type"] = "Context"
+			var p: Dictionary = n.get("params", {})
+			p["handler"] = handler
+			if not modulation.is_empty():
+				p["modulation"] = modulation
+			n["params"] = p
+			break
+	return out
+
+## A gate Context plus a Const wired into its implicit "enabled" input.
+func _as_context_gated(g: Dictionary, enabled_val) -> Dictionary:
+	var ctx_id := _first_type_id(g, "Chip")
+	var out := _as_context(g, "gate", {})
+	(out["nodes"] as Array).append({ "id": "en", "type": "Const", "params": { "value": enabled_val } })
+	(out["wires"] as Array).append({ "from": "en", "out": "value", "to": ctx_id, "in": "enabled" })
+	return out
+
+func _inner_math_id(g: Dictionary) -> String:
+	for n in g.get("nodes", []):
+		if String(n.get("type")) == "Chip":
+			for inner_n in (n["params"]["arrangement"] as Dictionary).get("nodes", []):
+				if String(inner_n.get("type")) == "Math":
+					return String(inner_n.get("id"))
+	return ""
+
+func _first_type_id(arr: Dictionary, type_name: String) -> String:
+	for n in arr.get("nodes", []):
+		if String(n.get("type")) == type_name:
+			return String(n.get("id"))
+	return ""
+
+func _eval_log(arr: Dictionary, log_id := "out"):
+	var rt := GraphRuntime.new()
+	get_root().add_child(rt)
+	rt.load_arrangement(arr)
+	rt.evaluate()
+	var log_node = rt.nodes.get(log_id)
+	var v = log_node.last_value if log_node != null else null
+	get_root().remove_child(rt)
+	rt.free()
+	return Primitive.as_num(v) if v != null else null
+
+func _check(label: String, cond: bool) -> bool:
+	print(("PASS " if cond else "FAIL ") + label)
+	return cond
