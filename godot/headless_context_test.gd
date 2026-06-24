@@ -108,6 +108,17 @@ func _initialize() -> void:
 		_eval_log(_as_context_proximity(g, 2.0, [0, 0, 0], [0, 0, 0], false)) == null) and ok
 	# proximity is non-destructive: gating by distance never touches the source arrangement.
 	ok = _check("Context[proximity] is non-destructive (base Chip still => 7)", _eval_log(g) == 7.0) and ok
+	# Defensive paths the implementation handles beyond the bare spec (lock them in so they can't
+	# silently regress): radius clamps to >= 0 (a negative range degrades to coincident-only), and a
+	# native Godot Vector3/Vector2 input is accepted and flattened identically to the array form.
+	ok = _check("Context[proximity] negative radius clamps to 0: coincident => 7",
+		_eval_log(_as_context_proximity(g, -5.0, [0, 0, 0], [0, 0, 0])) == 7.0) and ok
+	ok = _check("Context[proximity] negative radius clamps to 0: non-coincident => dormant (null)",
+		_eval_log(_as_context_proximity(g, -5.0, [0, 0, 0], [0, 1, 0])) == null) and ok
+	ok = _check("Context[proximity] native Vector3 input within radius => 7",
+		_eval_log(_as_context_proximity(g, 2.0, Vector3(1, 2, 3), Vector3(1, 2, 4))) == 7.0) and ok
+	ok = _check("Context[proximity] native Vector2 input within radius => 7",
+		_eval_log(_as_context_proximity(g, 2.0, Vector2(0, 0), Vector2(1, 0))) == 7.0) and ok
 
 	resolver_rt.free()
 	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
@@ -141,7 +152,7 @@ func _as_context_gated(g: Dictionary, enabled_val) -> Dictionary:
 ## its static "radius" param. With `wire_b == false` the second endpoint is left unconnected (null) to
 ## exercise the fail-safe (missing position => dormant). Positions are plain number arrays (the
 ## renderer-neutral form a Const passes straight through).
-func _as_context_proximity(g: Dictionary, radius: float, pos_a: Array, pos_b: Array, wire_b := true) -> Dictionary:
+func _as_context_proximity(g: Dictionary, radius: float, pos_a, pos_b, wire_b := true) -> Dictionary:
 	var ctx_id := _first_type_id(g, "Chip")
 	var out := _as_context(g, "proximity", {})
 	for n in out.get("nodes", []):

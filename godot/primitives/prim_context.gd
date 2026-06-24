@@ -54,6 +54,10 @@ func _handler() -> String:
 
 ## "gate" adds an implicit boolean "enabled" input beyond the Chip's mapped ports; "proximity" adds
 ## the two implicit "vector" inputs "pos_a"/"pos_b"; other handlers expose exactly the Chip's ports.
+## These handler-implicit names ("enabled", "pos_a", "pos_b") are RESERVED: if a scope also maps an
+## inner port of the same name, both appear here (the handler reads its own; the mapped one still
+## feeds its inner site). Whether handler-implicit ports should live in a separate namespace from
+## mapped ports is a cross-cutting decision deferred across the whole handler family, not settled here.
 func input_ports() -> Array:
 	var ports: Array = super.input_ports()
 	match _handler():
@@ -120,7 +124,10 @@ func _within_proximity(inputs: Dictionary) -> bool:
 	var b := _as_vec(inputs.get("pos_b"))
 	if a.is_empty() or b.is_empty():
 		return false
-	var r := maxf(0.0, float(params.get("radius", 1.0)))
+	# Treat an explicit null radius the same as a missing one (→ the 1.0 default), matching gate's
+	# explicit-null handling — float(null) would otherwise silently become 0.0 (coincident-only).
+	var rv = params.get("radius")
+	var r: float = 1.0 if rv == null else maxf(0.0, Primitive.as_num(rv))
 	return _vec_sq_distance(a, b) <= r * r
 
 ## Coerce a wire value to an Array of floats (the renderer-neutral position form — Phase 2.5 says
@@ -243,7 +250,10 @@ func _scope_is_cacheable() -> bool:
 ## String.sha256_text() idiom as live_host.gd / chip_ops.gd. NOTE: this handler ignores
 ## params.modulation — `abstract` and `modulate` are separate match arms and must not be composed
 ## until the key folds in the overlay; the worst case of the JSON-stringify key (insertion-order
-## sensitivity) is a missed hit, never a wrong hit.
+## sensitivity) is a missed hit, never a wrong hit. PRECONDITION (handler exclusivity): the key omits
+## the handler name and handler-specific params (proximity's "radius", modulate's "modulation") — sound
+## ONLY because a Context picks exactly ONE handler via _handler(), so this cache is reached solely from
+## the abstract arm. If handler composition is ever added, fold handler identity + its params in here.
 func _cache_key(inputs: Dictionary) -> String:
 	var arr_hash := JSON.stringify(params.get("arrangement", {})).sha256_text()
 	var ports_hash := JSON.stringify(params.get("ports", {})).sha256_text()
