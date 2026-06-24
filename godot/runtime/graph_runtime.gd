@@ -15,12 +15,32 @@ var nodes: Dictionary = {}  # node_id (String) -> Primitive
 # FUNCTIONS are just new arrangements over the already-registered types.
 var _registry: Dictionary = {}
 
+# External input injection: node_id -> { in_port -> value }. Set when this runtime is a
+# Chip's nested sub-graph, so the Chip can feed its incoming wire values into the inner
+# nodes. Empty for a top-level runtime, so it changes nothing in the normal case.
+var _external: Dictionary = {}
+
+# Recursion depth in the Chip-nesting tree (0 = top level). A Chip sets its sub-runtime's
+# depth to its own + 1; PrimChip caps it (PrimChip.MAX_DEPTH) so a deeply-nested or (once
+# shared chip definitions exist) self-referencing chip halts gracefully instead of
+# overflowing the GDScript call stack. Unused for a flat top-level graph.
+var depth: int = 0
+
 func _init() -> void:
 	register("Const", PrimConst)
 	register("Math", PrimMath)
 	register("Log", PrimLog)
 	register("Model", PrimModel)
 	register("Transform", PrimTransform)
+	register("Group", PrimGroup)
+	# A Chip is itself a primitive whose params hold a nested arrangement. Registering it
+	# in every runtime (including a Chip's own sub-runtime) makes nesting recursive for
+	# free — "procedural all the way down" with no special-casing.
+	register("Chip", PrimChip)
+	# Conversation/idea node: one chat turn or one idea, as DATA. A nonlinear conversation
+	# is an arrangement of these wired reply -> parent; context is assembled by walking the
+	# wires (see ConvoProtocol), not by dataflow.
+	register("Message", PrimMessage)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
@@ -61,6 +81,34 @@ func _instance(type_name: String) -> Primitive:
 		return null
 	return c.new()
 
+## Inject external input values for the next evaluate() (node_id -> { in_port -> value }).
+## Used by a Chip to feed its incoming port values into its nested sub-graph.
+func set_external_inputs(ext: Dictionary) -> void:
+	_external = ext
+
+## Resolve the declared semantic type of a primitive type's port (e.g. ("Math","a",true)
+## -> "number"). Drives Chip boundary-port typing and GraphEdit slot colours. Returns
+## "any" for unknown types/ports (and for Chip, whose ports live in instance params).
+func port_type(type_name: String, port_name: String, is_input: bool) -> String:
+	var prim := _instance(type_name)
+	if prim == null:
+		return "any"
+	var ports: Array = prim.input_ports() if is_input else prim.output_ports()
+	for p in ports:
+		if String(p.get("name")) == port_name:
+			return String(p.get("type", "any"))
+	return "any"
+
+## Editor support: the input & output ports of a node SPEC, as { "inputs": [{name,type}],
+## "outputs": [{name,type}] }. Params are applied first so a Chip reports its instance ports
+## (which live in params.ports); for fixed-port primitives params are simply ignored.
+func ports_of(node: Dictionary) -> Dictionary:
+	var prim := _instance(String(node.get("type")))
+	if prim == null:
+		return { "inputs": [], "outputs": [] }
+	prim.params = node.get("params", {})
+	return { "inputs": prim.input_ports(), "outputs": prim.output_ports() }
+
 ## Evaluate the whole dataflow once. Returns node_id -> { output_port -> value }.
 func evaluate() -> Dictionary:
 	var outputs := {}
@@ -68,6 +116,10 @@ func evaluate() -> Dictionary:
 	for node_id in _topo_order():
 		var prim: Primitive = nodes[node_id]
 		var inputs := {}
+		# Seed any externally-injected inputs first (Chip ports); real wires override.
+		var ext: Dictionary = _external.get(node_id, {})
+		for k in ext:
+			inputs[k] = ext[k]
 		for w in wires:
 			if String(w.get("to")) == node_id:
 				var src: Dictionary = outputs.get(String(w.get("from")), {})

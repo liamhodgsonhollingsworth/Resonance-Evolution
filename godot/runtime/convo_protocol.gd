@@ -1,0 +1,350 @@
+class_name ConvoProtocol
+extends RefCounted
+## The graph<->text PROTOCOL — the substrate-independent integration core. Pure DATA in ->
+## DATA / text out (imports no Godot UI / render type), so the local MCP server, the
+## copy-paste bridge, the linear view, and any future web delegate all reuse it verbatim.
+## Every transport (Claude Code stdio, remote connector, paste-the-link, copy-paste) is a
+## dumb delegate over THIS. Two directions:
+##
+##   FORWARD  (graph -> text): assemble context from a selected path/subgraph for an LLM, as
+##            an alternating role/content array (linear) or an <idea_graph> block (structure).
+##   BACKWARD (text -> graph): interpret a fenced `resonance-actions` JSON block from a reply
+##            into typed, validated, APPROVAL-GATED action proposals; apply() COMMITS them as
+##            a NEW arrangement (append-only). Nothing is auto-applied — apply() is the gate.
+##
+## A conversation edge is a wire A.reply -> B.parent. A node with several incoming parent
+## wires is a MERGE. Context = the de-duplicated union of the selected nodes' ancestors (plus
+## the nodes themselves), ordered by created_at. This is ericmjl Canvas Chat's getAncestors /
+## resolveContext, reimplemented over the arrangement substrate (algorithm reused, not code).
+
+const PARENT_PORT := "parent"
+const REPLY_PORT := "reply"
+const ACTIONS_TAG := "resonance-actions"
+const ALLOWED_OPS := ["add_node", "wire", "set_active_tip"]
+
+# --- FORWARD: graph -> context -------------------------------------------------------------
+
+## Direct parents of a node: the `from` of every wire (to==id, in==parent).
+static func parents_of(arr: Dictionary, id: String) -> Array:
+	var out := []
+	for w in arr.get("wires", []):
+		if String(w.get("to")) == id and String(w.get("in")) == PARENT_PORT:
+			out.append(String(w.get("from")))
+	return out
+
+## All ancestors of id (excluding id), DFS over parent wires, visited-set dedup + cycle-safe.
+static func ancestors(arr: Dictionary, id: String) -> Array:
+	var seen := {}
+	var stack: Array = parents_of(arr, id).duplicate()
+	var result := []
+	while not stack.is_empty():
+		var p: String = stack.pop_back()
+		if seen.has(p):
+			continue
+		seen[p] = true
+		result.append(p)
+		for gp in parents_of(arr, p):
+			if not seen.has(gp):
+				stack.append(gp)
+	return result
+
+## The context node SPECS for the selected ids: union of their ancestors + the ids
+## themselves, de-duplicated, ordered by created_at then id. Returns Array of node dicts.
+static func context_nodes(arr: Dictionary, selected: Array) -> Array:
+	var want := {}
+	for id in selected:
+		want[String(id)] = true
+		for a in ancestors(arr, String(id)):
+			want[a] = true
+	var by_id := _index(arr)
+	var picked := []
+	for id in want.keys():
+		if by_id.has(id):
+			picked.append(by_id[id])
+	picked.sort_custom(func(x, y): return ConvoProtocol._before(x, y))
+	return picked
+
+## Alternating-ish role/content array (the LINEAR projection / message-array context). Roles
+## come straight from node params; the API TRANSPORT (Phase D/F) enforces "first is user /
+## roles alternate" and folds `system` into the system param — for the copy-paste/text
+## methods strict alternation is irrelevant.
+static func to_messages(arr: Dictionary, selected: Array) -> Array:
+	var out := []
+	for n in context_nodes(arr, selected):
+		var p: Dictionary = n.get("params", {})
+		out.append({ "role": String(p.get("role", "user")), "content": String(p.get("content", "")) })
+	return out
+
+## Structure mode: an <idea_graph> block (context-at-top), optional question appended after
+## (query-at-bottom — Anthropic's hierarchical-context guidance). Each node carries its id,
+## role, in-context parents, and content. DAG-safe: every node is emitted once.
+static func to_xml(arr: Dictionary, selected: Array, question := "") -> String:
+	var ctx := context_nodes(arr, selected)
+	var ctx_ids := {}
+	for n in ctx:
+		ctx_ids[String(n.get("id"))] = true
+	var lines := ["<idea_graph>"]
+	for n in ctx:
+		var id := String(n.get("id"))
+		var p: Dictionary = n.get("params", {})
+		var role := String(p.get("role", "user"))
+		var ps: Array = parents_of(arr, id).filter(func(x): return ctx_ids.has(x))
+		var parent_attr := (" parents=\"%s\"" % ",".join(PackedStringArray(ps))) if not ps.is_empty() else ""
+		lines.append("  <node id=\"%s\" role=\"%s\"%s>" % [_esc(id), _esc(role), parent_attr])
+		lines.append("    <content>%s</content>" % _esc(String(p.get("content", ""))))
+		lines.append("  </node>")
+	lines.append("</idea_graph>")
+	if question != "":
+		lines.append("")
+		lines.append(question)
+	return "\n".join(PackedStringArray(lines))
+
+## The copy-paste bridge (zero infrastructure, any Claude surface): the text a user pastes
+## into claude.ai — the assembled structure + question + a short instruction telling Claude
+## how to propose graph edits back as a fenced block that interpret_reply() can parse.
+static func to_prompt(arr: Dictionary, selected: Array, question := "") -> String:
+	var instr := "\n\nIf you want to add to this idea graph, end your reply with a fenced "
+	instr += "```%s block containing a JSON array of actions. " % ACTIONS_TAG
+	instr += "Allowed ops: add_node {kind:\"Message\", params:{role, content, author, created_at}, parent:\"<node id>\"}; "
+	instr += "wire {from, out:\"reply\", to, in:\"parent\"}; set_active_tip {node}. "
+	instr += "Reference existing nodes by their id; do not invent ids for existing nodes."
+	return to_xml(arr, selected, question) + instr
+
+# --- BACKWARD: reply text -> graph actions -------------------------------------------------
+
+## Extract candidate actions from the `resonance-actions` JSON block in a reply: parse + the
+## op-allowlist shape check. Returns { "actions": [op-valid ...], "errors": [strings] }. NOTHING is
+## applied here — these are PROPOSALS; the STRUCTURAL gate (validate_actions, against the live
+## arrangement) is re-applied at propose AND commit, so every entry path validates identically.
+static func interpret_reply(text: String) -> Dictionary:
+	var block := _extract_fenced(text, ACTIONS_TAG)
+	if block == "":
+		return { "actions": [], "errors": ["no ```%s block found" % ACTIONS_TAG] }
+	var parsed = JSON.parse_string(block)
+	if typeof(parsed) != TYPE_ARRAY:
+		return { "actions": [], "errors": ["%s block is not a JSON array" % ACTIONS_TAG] }
+	var actions := []
+	var errors := []
+	for a in parsed:
+		if typeof(a) != TYPE_DICTIONARY:
+			errors.append("action is not an object: %s" % str(a))
+			continue
+		var op := String((a as Dictionary).get("op", ""))
+		if not ALLOWED_OPS.has(op):
+			errors.append("unknown op '%s' (allowed: %s)" % [op, ", ".join(PackedStringArray(ALLOWED_OPS))])
+			continue
+		actions.append(a)
+	return { "actions": actions, "errors": errors }
+
+## True if the parent graph (wires with in==parent) contains a cycle (parity with
+## convo_protocol.py _has_cycle). A conversation/idea graph is a DAG — a cycle is corruption.
+## Iterative DFS with three-colour marking (0 unvisited, 1 on-stack, 2 done).
+static func _has_cycle(arr: Dictionary) -> bool:
+	var adj := {}
+	for w in arr.get("wires", []):
+		if String(w.get("in")) == PARENT_PORT:
+			var f := String(w.get("from"))
+			if not adj.has(f):
+				adj[f] = []
+			(adj[f] as Array).append(String(w.get("to")))
+	var color := {}
+	for start in adj.keys():
+		if int(color.get(start, 0)) != 0:
+			continue
+		var stack := [[start, 0]]
+		color[start] = 1
+		while not stack.is_empty():
+			var top: Array = stack[stack.size() - 1]
+			var u: String = top[0]
+			var i: int = top[1]
+			var nbrs: Array = adj.get(u, [])
+			if i < nbrs.size():
+				top[1] = i + 1
+				var v: String = nbrs[i]
+				var cv := int(color.get(v, 0))
+				if cv == 1:
+					return true
+				if cv == 0:
+					color[v] = 1
+					stack.append([v, 0])
+			else:
+				color[u] = 2
+				stack.pop_back()
+	return false
+
+## The STRUCTURAL validation gate (parity with convo_protocol.py validate_actions) — the single
+## definition every transport funnels mutations through. Simulates the batch against `arr`, tracking
+## a running id-set (existing node ids + ids added earlier in the SAME batch), so it catches edits
+## that would corrupt the shared graph BEFORE they are staged or applied. Unknown KINDS are allowed
+## (engine-neutral + forward-compatible). Returns { "actions": [...passing...], "errors": [...] }.
+static func validate_actions(arr: Dictionary, actions: Array) -> Dictionary:
+	var known := {}
+	for n in arr.get("nodes", []):
+		known[String(n.get("id"))] = true
+	var out := []
+	var errors := []
+	for a in actions:
+		if typeof(a) != TYPE_DICTIONARY:
+			errors.append("action is not an object: %s" % str(a))
+			continue
+		var op := String((a as Dictionary).get("op", ""))
+		if not ALLOWED_OPS.has(op):
+			errors.append("unknown op '%s' (allowed: %s)" % [op, ", ".join(PackedStringArray(ALLOWED_OPS))])
+			continue
+		match op:
+			"add_node":
+				var kind := String(a.get("kind", "Message"))
+				if kind == "":
+					errors.append("add_node: empty kind")
+					continue
+				var params = a.get("params", {})
+				if typeof(params) != TYPE_DICTIONARY:
+					errors.append("add_node: params must be an object")
+					continue
+				if kind == "Message" and String((params as Dictionary).get("role", "")) == "":
+					errors.append("add_node: a Message needs a non-empty role")
+					continue
+				var parent = a.get("parent", null)
+				if parent != null and String(parent) != "" and not known.has(String(parent)):
+					errors.append("add_node: parent '%s' not found" % String(parent))
+					continue
+				known[String(a.get("id", _gen_id(a)))] = true
+				out.append(a)
+			"wire":
+				var f := String(a.get("from", ""))
+				var t := String(a.get("to", ""))
+				if f == "" or t == "":
+					errors.append("wire: from and to are required")
+					continue
+				if f == t:
+					errors.append("wire: self-wire not allowed ('%s')" % f)
+					continue
+				if not known.has(f):
+					errors.append("wire: from '%s' not found" % f)
+					continue
+				if not known.has(t):
+					errors.append("wire: to '%s' not found" % t)
+					continue
+				out.append(a)
+			"set_active_tip":
+				var nid := String(a.get("node", ""))
+				if nid == "":
+					errors.append("set_active_tip: node is required")
+					continue
+				if not known.has(nid):
+					errors.append("set_active_tip: node '%s' not found" % nid)
+					continue
+				out.append(a)
+	# Whole-batch invariant: the parent graph must stay acyclic. (Skip if already rejected.)
+	if not out.is_empty() and errors.is_empty() and _has_cycle(apply(arr, out)):
+		errors.append("batch would create a cycle in the parent graph")
+	return { "actions": out, "errors": errors }
+
+## SOUNDNESS check on a whole arrangement (parity with convo_protocol.py validate_arrangement) —
+## the shared definition the engine + every transport use. Every wire endpoint must exist;
+## current_node (if set) must exist. Returns
+## { "ok", "counts": {nodes, wires}, "dangling_wires": [...], "active_tip_exists": bool }.
+static func validate_arrangement(arr: Dictionary) -> Dictionary:
+	var ids := {}
+	for n in arr.get("nodes", []):
+		ids[String(n.get("id"))] = true
+	var dangling := []
+	for w in arr.get("wires", []):
+		if not ids.has(String(w.get("from"))) or not ids.has(String(w.get("to"))):
+			dangling.append(w)
+	var tip = arr.get("current_node", null)
+	var tip_ok: bool = tip == null or ids.has(String(tip))
+	var acyclic := not _has_cycle(arr)
+	return {
+		"ok": dangling.is_empty() and tip_ok and acyclic,
+		"counts": { "nodes": (arr.get("nodes", []) as Array).size(), "wires": (arr.get("wires", []) as Array).size() },
+		"dangling_wires": dangling,
+		"active_tip_exists": tip_ok,
+		"acyclic": acyclic,
+	}
+
+## Apply validated actions to produce a NEW arrangement (append-only; input untouched).
+##   add_node {kind, params, parent?}  -> a new node (+ a reply->parent wire if parent given)
+##   wire     {from, out?, to, in?}    -> a new wire (defaults reply -> parent)
+##   set_active_tip {node}             -> sets the top-level current_node pointer
+static func apply(arr: Dictionary, actions: Array) -> Dictionary:
+	var out := arr.duplicate(true)
+	if not out.has("nodes"):
+		out["nodes"] = []
+	if not out.has("wires"):
+		out["wires"] = []
+	var nodes: Array = out["nodes"]
+	var wires: Array = out["wires"]
+	for a in actions:
+		match String(a.get("op", "")):
+			"add_node":
+				var id := _unique_id(out, String(a.get("id", _gen_id(a))))
+				nodes.append({ "id": id, "type": String(a.get("kind", "Message")), "params": a.get("params", {}) })
+				var parent = a.get("parent", null)
+				if parent != null and String(parent) != "":
+					wires.append({ "from": String(parent), "out": REPLY_PORT, "to": id, "in": PARENT_PORT })
+			"wire":
+				wires.append({
+					"from": String(a.get("from")), "out": String(a.get("out", REPLY_PORT)),
+					"to": String(a.get("to")), "in": String(a.get("in", PARENT_PORT)),
+				})
+			"set_active_tip":
+				out["current_node"] = String(a.get("node"))
+	return out
+
+# --- internals -----------------------------------------------------------------------------
+
+static func _before(x: Dictionary, y: Dictionary) -> bool:
+	var cx = (x.get("params", {}) as Dictionary).get("created_at", 0)
+	var cy = (y.get("params", {}) as Dictionary).get("created_at", 0)
+	var nx := typeof(cx) == TYPE_INT or typeof(cx) == TYPE_FLOAT
+	var ny := typeof(cy) == TYPE_INT or typeof(cy) == TYPE_FLOAT
+	if nx and ny:
+		if float(cx) != float(cy):
+			return float(cx) < float(cy)
+	else:
+		var sx := str(cx)
+		var sy := str(cy)
+		if sx != sy:
+			return sx < sy
+	return String(x.get("id")) < String(y.get("id"))
+
+static func _index(arr: Dictionary) -> Dictionary:
+	var by_id := {}
+	for n in arr.get("nodes", []):
+		by_id[String(n.get("id"))] = n
+	return by_id
+
+static func _extract_fenced(text: String, tag: String) -> String:
+	var fence := "```" + tag
+	var start := text.find(fence)
+	if start == -1:
+		return ""
+	var nl := text.find("\n", start + fence.length())
+	if nl == -1:
+		return ""
+	var body_start := nl + 1
+	var end := text.find("```", body_start)
+	if end == -1:
+		return ""
+	return text.substr(body_start, end - body_start).strip_edges()
+
+static func _esc(s: String) -> String:
+	return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+
+static func _unique_id(arr: Dictionary, base: String) -> String:
+	var existing := {}
+	for n in arr.get("nodes", []):
+		existing[String(n.get("id"))] = true
+	if base != "" and not existing.has(base):
+		return base
+	var stem := base if base != "" else "msg"
+	var i := 1
+	while existing.has("%s_%d" % [stem, i]):
+		i += 1
+	return "%s_%d" % [stem, i]
+
+static func _gen_id(a: Dictionary) -> String:
+	var p: Dictionary = a.get("params", {})
+	var seed := String(p.get("role", "msg")) + ":" + String(p.get("content", ""))
+	return "msg_" + seed.sha256_text().substr(0, 8)

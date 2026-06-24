@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""Sync / conflict-safety tests for the connection fabric (Track 1).
+
+Drives the REAL graph_mcp tools (graph_propose / graph_commit / graph_validate / ...) against a
+throwaway live dir, simulating TWO systems editing the same arrangement.json concurrently. Proves
+the conflict-safe (rebasing) commit: a proposal computed against one state still applies cleanly
+after another writer has changed the file, and neither writer's edit is lost. This is the
+data-layer proof of the handoff's "two systems edit the same arrangement, robustly".
+
+Run:  python godot/bridge/test_sync_logic.py     (needs the `mcp` package, same as the server)
+"""
+import os
+import shutil
+import sys
+import tempfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import graph_mcp as g  # noqa: E402
+import graph_store as gs  # noqa: E402
+
+ok = True
+
+
+def check(label: str, cond: bool) -> None:
+    global ok
+    print(("PASS " if cond else "FAIL ") + label)
+    ok = ok and bool(cond)
+
+
+def reset(arr: dict) -> None:
+    """Clear staged proposals and seed the live arrangement (a fresh shared graph)."""
+    pd = g._props_dir()
+    if os.path.isdir(pd):
+        shutil.rmtree(pd)
+    g._save(arr)
+
+
+def ids() -> set:
+    return {str(n.get("id")) for n in g._load().get("nodes", [])}
+
+
+def msg(i, role="user", content="", ca=1):
+    return {"id": i, "type": "Message", "params": {"role": role, "content": content, "created_at": ca}}
+
+
+tmp = tempfile.mkdtemp(prefix="resonance_sync_")
+g.LIVE_DIR = tmp  # redirect every file op in graph_mcp to the throwaway dir
+
+try:
+    base = {"format": "resonance.arrangement/v1", "nodes": [msg("root", "user", "root")], "wires": []}
+
+    # 1) CONFLICT-SAFE REBASE: propose against {root}; a second system commits child_b in between;
+    #    committing the proposal must NOT clobber child_b — both children + root survive.
+    reset(base)
+    p = g.graph_propose([{"op": "add_node", "id": "child_a", "kind": "Message",
+                          "params": {"role": "assistant", "content": "A"}, "parent": "root"}])
+    check("propose A staged", bool(p.get("ok")) and "proposal_id" in p)
+    ext = g._load()  # the "other system" appends child_b directly to the live file
+    ext["nodes"].append(msg("child_b", "assistant", "B", 2))
+    ext["wires"].append({"from": "root", "out": "reply", "to": "child_b", "in": "parent"})
+    g._save(ext)
+    c = g.graph_commit(p["proposal_id"])
+    check("commit A succeeds and reports rebased", bool(c.get("ok")) and c.get("rebased") is True)
+    check("no clobber: root + child_a + child_b all present", {"root", "child_a", "child_b"} <= ids())
+    check("graph still sound after rebase", g.graph_validate()["ok"])
+
+    # 2) REJECT-ON-CORRUPTION: if the referenced parent was concurrently removed, commit must fail
+    #    (not corrupt the graph) and leave the proposal staged for re-proposal.
+    reset(base)
+    p2 = g.graph_propose([{"op": "add_node", "id": "c", "kind": "Message",
+                           "params": {"role": "user", "content": "x"}, "parent": "root"}])
+    g._save({"format": "resonance.arrangement/v1", "nodes": [], "wires": []})  # other system deletes root
+    c2 = g.graph_commit(p2["proposal_id"])
+    check("commit rejected when parent concurrently removed", not c2.get("ok") and "errors" in c2)
+    staged = [pp["proposal_id"] for pp in g.graph_list_proposals()]
+    check("rejected proposal stays staged (not consumed)", p2["proposal_id"] in staged)
+
+    # 3) PROPOSE-TIME VALIDATION: a structurally invalid edit never even stages.
+    reset(base)
+    p3 = g.graph_propose([{"op": "wire", "from": "root", "to": "ghost"}])
+    check("propose rejects a dangling wire up front", not p3.get("ok") and bool(p3.get("errors")))
+    check("nothing staged from a rejected propose", not g.graph_list_proposals())
+
+    # 4) CLEAN COMMIT: no concurrent change -> applies, rebased == False.
+    reset(base)
+    p4 = g.graph_propose([{"op": "add_node", "id": "d", "kind": "Message",
+                           "params": {"role": "user", "content": "d"}, "parent": "root"}])
+    c4 = g.graph_commit(p4["proposal_id"])
+    check("clean commit succeeds, not rebased", bool(c4.get("ok")) and c4.get("rebased") is False)
+    check("clean commit applied the node", "d" in ids())
+
+    # 5) STRUCTURAL OP BASE-CHECK: an abstract proposal requires an unchanged base.
+    base2 = {"format": "resonance.arrangement/v1",
+             "nodes": [{"id": "a", "type": "Const", "params": {"value": 3}},
+                       {"id": "b", "type": "Const", "params": {"value": 4}}],
+             "wires": []}
+    reset(base2)
+    pa = g.graph_propose_abstract(["a", "b"])
+    check("propose_abstract staged", bool(pa.get("ok")))
+    ext2 = g._load()  # other system changes the file after the structural proposal
+    ext2["nodes"].append({"id": "z", "type": "Const", "params": {"value": 9}})
+    g._save(ext2)
+    ca = g.graph_commit(pa["proposal_id"])
+    check("abstract commit rejected after concurrent change", not ca.get("ok") and "re-propose" in str(ca.get("error", "")))
+
+    # 6) STRUCTURAL OP, UNCHANGED BASE: abstract commits and yields a Chip.
+    reset(base2)
+    pa2 = g.graph_propose_abstract(["a", "b"])
+    ca2 = g.graph_commit(pa2["proposal_id"])
+    check("abstract commit ok with unchanged base", bool(ca2.get("ok")))
+    check("abstract produced a Chip", any(n.get("type") == "Chip" for n in g._load().get("nodes", [])))
+
+    # 7) THE IMPORTABLE SEAM: any transport (canvas_bridge, the remote connector) gets the SAME
+    #    conflict-safety just by calling graph_store.commit_actions — no need to reimplement it.
+    reset(base)
+    other = g._load()  # a concurrent writer lands a node first
+    other["nodes"].append(msg("ext", "user", "ext", 5))
+    g._save(other)
+    r = gs.commit_actions(tmp, [{"op": "add_node", "id": "viaseam", "kind": "Message",
+                                 "params": {"role": "assistant", "content": "S"}, "parent": "root"}])
+    check("graph_store.commit_actions applies onto concurrent state", bool(r.get("ok")))
+    check("seam no-clobber: root + ext + viaseam all present", {"root", "ext", "viaseam"} <= ids())
+    bad = gs.commit_actions(tmp, [{"op": "wire", "from": "root", "to": "ghost"}])
+    check("graph_store.commit_actions rejects an invalid edit (writes nothing)",
+          not bad.get("ok") and "errors" in bad)
+
+    # 8) MONOTONIC rev: every write through the seam advances ONE shared version counter, so any
+    #    observer (engine LiveHost, canvas, remote) can order changes / tell it is behind.
+    reset(base)
+    g.graph_commit(g.graph_propose([{"op": "add_node", "id": "v1", "kind": "Message",
+                                     "params": {"role": "user", "content": "1"}, "parent": "root"}])["proposal_id"])
+    rev_a = g._load().get("rev")
+    other3 = g._load()  # an external writer also bumps the shared rev
+    other3["nodes"].append(msg("v2", "user", "2", 9))
+    g._save(other3)
+    rev_b = g._load().get("rev")
+    cb = g.graph_commit(g.graph_propose([{"op": "add_node", "id": "v3", "kind": "Message",
+                                          "params": {"role": "user", "content": "3"}, "parent": "root"}])["proposal_id"])
+    rev_c = g._load().get("rev")
+    check("rev advances on each write (commit < external < commit)",
+          isinstance(rev_a, int) and rev_a < rev_b < rev_c)
+    check("commit reports the new rev", cb.get("rev") == rev_c)
+    check("arrangement carries updated_at", isinstance(g._load().get("updated_at"), int))
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
+print("RESULT:", "ALL PASS" if ok else "FAILURES PRESENT")
+sys.exit(0 if ok else 1)

@@ -1,0 +1,158 @@
+extends SceneTree
+## Headless verification of the Chip primitive + ChipOps (engine-neutral grouping):
+##
+##   godot --headless --path godot -s res://headless_chip_test.gd
+##
+## Proves: grouping a selection into a Chip preserves behaviour; the inner graph hotloads
+## through the Chip; chips serialize round-trip via JSON; chips accept external inputs;
+## chips nest (Chip-in-Chip); and ungroup is a behaviour-preserving inverse. Mirrors the
+## style of headless_demo.gd (PASS/FAIL lines, RESULT, non-zero exit on failure).
+
+func _initialize() -> void:
+	var ok := true
+	var base: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://schema/arrangement.example.json"))
+	var resolver_rt := GraphRuntime.new()
+	var resolver := Callable(resolver_rt, "port_type")
+
+	# Baseline: Const 3 + Const 4 -> Math add -> Log == 7.
+	ok = _check("baseline add => 7", _eval_log(base) == 7.0) and ok
+
+	# Group [a, b, m] into a chip; behaviour preserved (Log still 7), 2 top-level nodes.
+	var g1 := ChipOps.group(base, ["a", "b", "m"], resolver)
+	ok = _check("group [a,b,m] keeps => 7", _eval_log(g1) == 7.0) and ok
+	ok = _check("group => one Chip + Log", _count_type(g1, "Chip") == 1 and (g1["nodes"] as Array).size() == 2) and ok
+
+	# Inner hotload: flip the inner Math.op to mul inside the chip => 12.
+	var g1b: Dictionary = g1.duplicate(true)
+	_set_inner_math_op(g1b, "mul")
+	ok = _check("inner Math.op mul => 12", _eval_log(g1b) == 12.0) and ok
+
+	# Serialize round-trip through JSON.
+	var rt_json: Dictionary = JSON.parse_string(JSON.stringify(g1))
+	ok = _check("chip round-trips via JSON => 7", _eval_log(rt_json) == 7.0) and ok
+
+	# Chip with INPUTS: group just [m] so the chip takes a, b as inputs and emits result.
+	var g2 := ChipOps.group(base, ["m"], resolver)
+	ok = _check("group [m] (chip with inputs) => 7", _eval_log(g2) == 7.0) and ok
+	var chip2 = _first_node_of_type(g2, "Chip")
+	ok = _check("chip [m] has 2 inputs, 1 output", _port_count(chip2, "inputs") == 2 and _port_count(chip2, "outputs") == 1) and ok
+
+	# Nesting: wrap the [a,b,m] chip again -> Chip-in-Chip, still 7.
+	var chip_id := _first_type_id(g1, "Chip")
+	var g3 := ChipOps.group(g1, [chip_id], resolver)
+	ok = _check("nested Chip-in-Chip => 7", _eval_log(g3) == 7.0) and ok
+
+	# Ungroup is a behaviour-preserving inverse, back to 4 plain nodes.
+	var u := ChipOps.ungroup(g1, chip_id)
+	ok = _check("ungroup => 7", _eval_log(u) == 7.0) and ok
+	ok = _check("ungroup restores 4 nodes, 0 chips", (u["nodes"] as Array).size() == 4 and _count_type(u, "Chip") == 0) and ok
+
+	# --- Phase A completion --------------------------------------------------------------
+	# (1) Hotload into a CHANGED CHILD on the SAME runtime instance: prove the diff-reload
+	# reaches inside a chip and that the chip instance is KEPT (not rebuilt).
+	var rt := GraphRuntime.new()
+	get_root().add_child(rt)
+	rt.load_arrangement(g1)
+	rt.evaluate()
+	# Capture identity via instance id NOW — comparing the object refs after rt.free() would
+	# be a use-after-free (dangling references compare unreliably).
+	var chip_a = rt.nodes.get(chip_id)
+	var chip_a_id: int = chip_a.get_instance_id() if chip_a != null else 0
+	var v_add = rt.nodes.get("out").last_value
+	var g1mul: Dictionary = g1.duplicate(true)
+	_set_inner_math_op(g1mul, "mul")
+	rt.load_arrangement(g1mul)
+	rt.evaluate()
+	var chip_b = rt.nodes.get(chip_id)
+	var chip_b_id: int = chip_b.get_instance_id() if chip_b != null else 0
+	var v_mul = rt.nodes.get("out").last_value
+	get_root().remove_child(rt)
+	rt.free()
+	ok = _check("same-instance hotload into changed child => 7 then 12",
+		Primitive.as_num(v_add) == 7.0 and Primitive.as_num(v_mul) == 12.0) and ok
+	ok = _check("hotload kept the SAME Chip instance (diff, not rebuild)",
+		chip_a_id != 0 and chip_a_id == chip_b_id) and ok
+
+	# (2) group -> ungroup evaluates IDENTICALLY across EVERY node (lossless round-trip),
+	# stronger than just the Log value: the full per-node output signature must match.
+	ok = _check("group->ungroup evaluates identically (lossless round-trip)",
+		_eval_signature(base) == _eval_signature(u)) and ok
+
+	# (3) Deep nesting beyond PrimChip.MAX_DEPTH halts gracefully (the guard fires; no
+	# stack overflow / crash). Wrap the single top-level chip repeatedly past the cap.
+	var deep: Dictionary = g1
+	for _i in (PrimChip.MAX_DEPTH + 6):
+		deep = ChipOps.group(deep, [_first_type_id(deep, "Chip")], resolver)
+	var deep_val = _eval_log(deep)
+	ok = _check("deep nesting > MAX_DEPTH halts gracefully (no crash, branch cut)",
+		deep_val == null or deep_val == 0.0) and ok
+
+	resolver_rt.free()
+	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
+	quit(0 if ok else 1)
+
+# --- helpers ---------------------------------------------------------------
+
+func _eval_log(arr: Dictionary, log_id := "out"):
+	var rt := GraphRuntime.new()
+	get_root().add_child(rt)
+	rt.load_arrangement(arr)
+	rt.evaluate()
+	var log_node = rt.nodes.get(log_id)
+	var v = log_node.last_value if log_node != null else null
+	get_root().remove_child(rt)
+	rt.free()
+	return Primitive.as_num(v) if v != null else null
+
+func _count_type(arr: Dictionary, type_name: String) -> int:
+	var c := 0
+	for n in arr.get("nodes", []):
+		if String(n.get("type")) == type_name:
+			c += 1
+	return c
+
+func _first_type_id(arr: Dictionary, type_name: String) -> String:
+	for n in arr.get("nodes", []):
+		if String(n.get("type")) == type_name:
+			return String(n.get("id"))
+	return ""
+
+func _first_node_of_type(arr: Dictionary, type_name: String):
+	for n in arr.get("nodes", []):
+		if String(n.get("type")) == type_name:
+			return n
+	return null
+
+func _port_count(chip, which: String) -> int:
+	if chip == null:
+		return -1
+	return (((chip.get("params", {}) as Dictionary).get("ports", {}) as Dictionary).get(which, []) as Array).size()
+
+func _set_inner_math_op(arr: Dictionary, op: String) -> void:
+	for n in arr.get("nodes", []):
+		if String(n.get("type")) == "Chip":
+			var inner: Dictionary = n["params"]["arrangement"]
+			for inner_n in inner["nodes"]:
+				if String(inner_n.get("type")) == "Math":
+					inner_n["params"]["op"] = op
+
+# Canonical signature of a full evaluation: every node id (sorted) -> its output dict.
+# Two arrangements that compute identically produce the same signature regardless of the
+# node insertion / topo order, so it is a robust "evaluates identically" check.
+func _eval_signature(arr: Dictionary) -> String:
+	var rt := GraphRuntime.new()
+	get_root().add_child(rt)
+	rt.load_arrangement(arr)
+	var outs := rt.evaluate()
+	var ids: Array = outs.keys()
+	ids.sort()
+	var parts := []
+	for id in ids:
+		parts.append(String(id) + "=" + JSON.stringify(outs[id]))
+	get_root().remove_child(rt)
+	rt.free()
+	return "|".join(PackedStringArray(parts))
+
+func _check(label: String, cond: bool) -> bool:
+	print(("PASS " if cond else "FAIL ") + label)
+	return cond
