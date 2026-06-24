@@ -11,8 +11,9 @@ extends PrimChip
 ## unaffected, and new disciplines are new handlers (new data), never foundation edits.
 ##
 ## params shape (extends Chip's { arrangement, ports }):
-##   "handler":    "dataflow" | "gate" | "modulate"   (default "dataflow" == an ordinary Chip)
+##   "handler":    "dataflow" | "gate" | "modulate" | "abstract" | "proximity"   (default "dataflow")
 ##   "modulation": { "<inner node id>": { "<param>": <value>, ... }, ... }   (handler "modulate")
+##   "radius":     <float>   (handler "proximity": the static interaction range; default 1.0)
 ##
 ## Handlers:
 ##   dataflow  — synchronous pull, topo-ordered. Identical to a Chip. (The identity case.)
@@ -22,6 +23,16 @@ extends PrimChip
 ##   modulate  — overlays per-inner-node param overrides before evaluating, so the same inner
 ##               modules COMPUTE DIFFERENT VALUES under different Contexts. "different properties
 ##               depending on what is going on." Never mutates the source arrangement.
+##   abstract  — "a primitive is a node you chose not to open": compute the (pure) scope ONCE and
+##               shortcut to a content-addressed cache forever after. (See the section below.)
+##   proximity — the SPATIAL gate: two modules communicate only when near. The scope propagates only
+##               while the two implicit "vector" input ports "pos_a" and "pos_b" are within "radius"
+##               of each other; otherwise the scope is dormant (every output null), exactly like a
+##               disabled gate. This is the per-pair "use X on Y" 3D interaction — the SAME scope is
+##               live or dormant purely as a function of where its endpoints are. It is the first
+##               handler to realize the locked direction "the observer/spatial state is just an INPUT
+##               a handler reads" (the later observer-driven abstract/LOD handler reads camera
+##               distance the SAME way): position is dynamic → an input port; range is static → a param.
 
 # Process-wide memoization store for the `abstract` handler, keyed by a hermetic content-hash of
 # (effective arrangement + handler + canonical inputs). Process-wide (not per-instance) so two
@@ -41,19 +52,28 @@ func _init() -> void:
 func _handler() -> String:
 	return String(params.get("handler", "dataflow"))
 
-## "gate" adds an implicit boolean "enabled" input beyond the Chip's mapped ports; other handlers
-## expose exactly the Chip's ports.
+## "gate" adds an implicit boolean "enabled" input beyond the Chip's mapped ports; "proximity" adds
+## the two implicit "vector" inputs "pos_a"/"pos_b"; other handlers expose exactly the Chip's ports.
 func input_ports() -> Array:
 	var ports: Array = super.input_ports()
-	if _handler() == "gate":
-		ports = ports.duplicate()
-		ports.append({ "name": "enabled", "type": "bool" })
+	match _handler():
+		"gate":
+			ports = ports.duplicate()
+			ports.append({ "name": "enabled", "type": "bool" })
+		"proximity":
+			ports = ports.duplicate()
+			ports.append({ "name": "pos_a", "type": "vector" })
+			ports.append({ "name": "pos_b", "type": "vector" })
 	return ports
 
 func evaluate(inputs: Dictionary) -> Dictionary:
 	match _handler():
 		"gate":
 			if not _truthy(inputs.get("enabled")):
+				return _outputs_null()
+			return super.evaluate(inputs)
+		"proximity":
+			if not _within_proximity(inputs):
 				return _outputs_null()
 			return super.evaluate(inputs)
 		"modulate":
@@ -85,6 +105,55 @@ func _truthy(v) -> bool:
 		TYPE_STRING:
 			return v != "" and v != "false" and v != "0"
 	return true
+
+# --- proximity (the spatial gate: "use X on Y" only when near) -------------------------------
+
+## True iff the two implicit position inputs are within `radius` of each other. The condition is
+## computed entirely from INPUTS (the dynamic spatial state) and one static param (the range), so the
+## SAME scope is live or dormant purely as a function of where its endpoints are — the per-pair 3D
+## interaction. Fail-safe: a missing / unconnected position (null) means "not near" → dormant, so an
+## unwired endpoint never spuriously fires an interaction. Distance is compared SQUARED against the
+## squared radius (no sqrt — exact for the <= test and avoids a needless float op). Radius is clamped
+## to >= 0 so a stray negative range degrades to "coincident only", never to its absolute value.
+func _within_proximity(inputs: Dictionary) -> bool:
+	var a := _as_vec(inputs.get("pos_a"))
+	var b := _as_vec(inputs.get("pos_b"))
+	if a.is_empty() or b.is_empty():
+		return false
+	var r := maxf(0.0, float(params.get("radius", 1.0)))
+	return _vec_sq_distance(a, b) <= r * r
+
+## Coerce a wire value to an Array of floats (the renderer-neutral position form — Phase 2.5 says
+## everything over a port is serializable data, so positions are plain number arrays). A native Godot
+## Vector2/3/4 (should a 3D-scene node emit one) is also accepted and flattened. null / anything else
+## → [] (treated by the caller as "no position" → not near).
+func _as_vec(v) -> Array:
+	match typeof(v):
+		TYPE_ARRAY:
+			var out: Array = []
+			for e in (v as Array):
+				out.append(Primitive.as_num(e))
+			return out
+		TYPE_VECTOR2:
+			return [v.x, v.y]
+		TYPE_VECTOR3:
+			return [v.x, v.y, v.z]
+		TYPE_VECTOR4:
+			return [v.x, v.y, v.z, v.w]
+	return []
+
+## Squared Euclidean distance over the MAX of the two dimensions — a lower-dim point is embedded in
+## the higher-dim space with the missing components at 0 (a 2D point is a 3D point at z=0), the
+## least-surprising rule, rather than silently dropping a dimension.
+func _vec_sq_distance(a: Array, b: Array) -> float:
+	var n: int = maxi(a.size(), b.size())
+	var sum := 0.0
+	for i in n:
+		var ai: float = a[i] if i < a.size() else 0.0
+		var bi: float = b[i] if i < b.size() else 0.0
+		var d := ai - bi
+		sum += d * d
+	return sum
 
 # --- modulate --------------------------------------------------------------------------------
 

@@ -90,6 +90,25 @@ func _initialize() -> void:
 	ok = _check("Context[abstract] over a nested-wrapper scope is NOT cached (precondition canary)",
 		nv1 == 7.0 and PrimContext._summaries.size() == 0) and ok
 
+	# (8) proximity — the SPATIAL gate: the SAME scope is live or dormant purely as a function of
+	#     where its two endpoints are ("use X on Y" only when near). Positions arrive as ordinary
+	#     input ports (the locked-direction "observer/spatial state is just an INPUT a handler reads");
+	#     the static range is a param. Distance is inclusive (<=); a missing position fails safe.
+	ok = _check("Context[proximity] within radius => 7 (interaction fires)",
+		_eval_log(_as_context_proximity(g, 2.0, [0, 0, 0], [1, 0, 0])) == 7.0) and ok
+	ok = _check("Context[proximity] outside radius => dormant (null)",
+		_eval_log(_as_context_proximity(g, 2.0, [0, 0, 0], [5, 0, 0])) == null) and ok
+	ok = _check("Context[proximity] exactly at radius (inclusive <=) => 7",
+		_eval_log(_as_context_proximity(g, 3.0, [0, 0, 0], [0, 3, 0])) == 7.0) and ok
+	ok = _check("Context[proximity] 3D positions within radius => 7",
+		_eval_log(_as_context_proximity(g, 2.0, [1, 2, 3], [1, 2, 4])) == 7.0) and ok
+	ok = _check("Context[proximity] mixed-dim (2D vs 3D, missing z=0) within radius => 7",
+		_eval_log(_as_context_proximity(g, 1.5, [1, 2], [1, 2, 1])) == 7.0) and ok
+	ok = _check("Context[proximity] missing endpoint => dormant (null, fail-safe)",
+		_eval_log(_as_context_proximity(g, 2.0, [0, 0, 0], [0, 0, 0], false)) == null) and ok
+	# proximity is non-destructive: gating by distance never touches the source arrangement.
+	ok = _check("Context[proximity] is non-destructive (base Chip still => 7)", _eval_log(g) == 7.0) and ok
+
 	resolver_rt.free()
 	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
 	quit(0 if ok else 1)
@@ -116,6 +135,24 @@ func _as_context_gated(g: Dictionary, enabled_val) -> Dictionary:
 	var out := _as_context(g, "gate", {})
 	(out["nodes"] as Array).append({ "id": "en", "type": "Const", "params": { "value": enabled_val } })
 	(out["wires"] as Array).append({ "from": "en", "out": "value", "to": ctx_id, "in": "enabled" })
+	return out
+
+## A proximity Context plus two Const nodes feeding its implicit "pos_a"/"pos_b" position inputs and
+## its static "radius" param. With `wire_b == false` the second endpoint is left unconnected (null) to
+## exercise the fail-safe (missing position => dormant). Positions are plain number arrays (the
+## renderer-neutral form a Const passes straight through).
+func _as_context_proximity(g: Dictionary, radius: float, pos_a: Array, pos_b: Array, wire_b := true) -> Dictionary:
+	var ctx_id := _first_type_id(g, "Chip")
+	var out := _as_context(g, "proximity", {})
+	for n in out.get("nodes", []):
+		if String(n.get("id")) == ctx_id:
+			n["params"]["radius"] = radius
+			break
+	(out["nodes"] as Array).append({ "id": "pa", "type": "Const", "params": { "value": pos_a } })
+	(out["wires"] as Array).append({ "from": "pa", "out": "value", "to": ctx_id, "in": "pos_a" })
+	if wire_b:
+		(out["nodes"] as Array).append({ "id": "pb", "type": "Const", "params": { "value": pos_b } })
+		(out["wires"] as Array).append({ "from": "pb", "out": "value", "to": ctx_id, "in": "pos_b" })
 	return out
 
 func _inner_math_id(g: Dictionary) -> String:

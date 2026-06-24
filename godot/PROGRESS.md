@@ -11,12 +11,16 @@ The runtime no longer bakes in a single communication discipline. `primitives/pr
 **Context** = a Chip that ALSO supplies the *handler* for how its scoped modules communicate:
 `dataflow` (default, == a plain Chip), `gate` (the powered scope — the whole scope is dormant
 unless its `enabled` input is truthy), `modulate` (per-inner-node param overrides, so the SAME
-modules compute different values per context). The realization of "scenes/contexts/menus/sims are
-methods of communication; the same nodes behave differently depending on what is going on" — and
-it lives entirely in a MODULE (the foundation gained only a registry entry). `event`/`tick`/
-`proximity`/`connector` handlers + the edge-level `Channel` (capacity/backpressure) are the
-sequenced follow-ons (each a new module, never a foundation edit). Test: `headless_context_test.gd`
-(8/8) — one shared scope proven to behave differently under each handler, modulate non-destructive.
+modules compute different values per context), `abstract` (treat the pure scope as a primitive:
+compute once, content-address, shortcut forever after — §2.5), and `proximity` (the **spatial gate**:
+the scope is live only while its two `pos_a`/`pos_b` vector inputs are within a static `radius` —
+the per-pair 3D "use X on Y" interaction, and the first handler to realize "observer/spatial state
+is just an INPUT a handler reads"). The realization of "scenes/contexts/menus/sims are methods of
+communication; the same nodes behave differently depending on what is going on" — and it lives
+entirely in a MODULE (the foundation gained only a registry entry). `event`/`tick`/`sim`/`connector`
+handlers + the edge-level `Channel` (capacity/backpressure) are the sequenced follow-ons (each a new
+module, never a foundation edit). Test: `headless_context_test.gd` (20/20) — one shared scope proven
+to behave differently under each handler, modulate/proximity non-destructive, abstract compute-once.
 
 **Phase 0 + 1:** arrangement data substrate (`schema/`), diff-based hotload runtime
 (`runtime/graph_runtime.gd`), content-hash watcher (`runtime/live_host.gd`), primitives
