@@ -31,6 +31,18 @@ func output_ports() -> Array:
 func evaluate(_inputs: Dictionary) -> Dictionary:
 	return {}
 
+## Whether a scope ending at this primitive may be MEMOIZED / COLLAPSED by an `abstract` Context
+## (compute-once-then-shortcut; see COMMUNICATION-ARCHITECTURE.md). Default FALSE — the conservative
+## floor: a primitive opts IN only if evaluate() is a pure function of its inputs AND has no
+## downstream live-instance / side effect. An `abstract` scope collapses only when EVERY node in it
+## is cacheable; otherwise it degrades to a plain Chip (runs live every time), so abstraction can
+## never silently freeze a side effect. (MVP: only Const + Math opt in. Transform/Group/Model emit
+## renderer-bound scene_node data whose live-instance re-expansion lifecycle is not yet designed, so
+## they stay false for now even though their evaluate() is pure; Log is impure; tick/sim/event are
+## time-varying.)
+func is_cacheable() -> bool:
+	return false
+
 ## Coerce a possibly-null wire value (unconnected inputs arrive as null) to a float.
 static func as_num(v) -> float:
 	if v == null:
