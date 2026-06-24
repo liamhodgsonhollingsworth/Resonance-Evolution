@@ -95,7 +95,7 @@ a different handler changes the propagation discipline of its whole scope. The h
 | `abstract` | treat the scope as a **primitive**: run its dataflow ONCE, content-address the result, and shortcut to the cache forever after — "a primitive is a node you chose not to open" (§2.5) | **shipped** |
 | `event` | push, not pull: a module fires; only its downstream re-propagates (menus, input, triggers) | planned |
 | `tick` / `sim` | continuous time-stepped propagation (simulations, physics, walking around) | planned |
-| `proximity` | two modules communicate only when spatially near (per-pair 3D interaction: "use X on Y") | planned |
+| `proximity` | the **spatial gate**: the scope propagates only while its two implicit `pos_a`/`pos_b` vector inputs are within a static `radius` (per-pair 3D interaction: "use X on Y"); otherwise dormant, like a disabled `gate`. First handler to realize "the observer/spatial state is just an INPUT a handler reads" — position is dynamic (an input port), range is static (a param); the observer-driven `abstract`/LOD handler will read camera distance the same way | **shipped** |
 | `connector` | the scope's far endpoint is an **external** system (§2.4) | planned |
 
 New handlers are **new modules / new data**, never foundation edits — that is the whole point.
