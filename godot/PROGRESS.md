@@ -1,11 +1,23 @@
 # Progress / handoff — Resonance-Evolution (Godot)
 
-Status 2026-06-20. Read `README.md` for the architecture + design law (functionality =
+Status 2026-06-24. Read `README.md` for the architecture + design law (functionality =
 arrangements of already-loaded primitives, wired as data; never new code). Full design plan:
 `~/.claude/plans/review-handoff-and-next-whimsical-raven.md` (the ✦ READ THIS section is the
 user-facing summary; the rest is implementation detail). This file is self-contained for dev.
 
 ## Done + verified
+**Communication is a module (NEW 2026-06-24, verified) — `COMMUNICATION-ARCHITECTURE.md`.**
+The runtime no longer bakes in a single communication discipline. `primitives/prim_context.gd` —
+**Context** = a Chip that ALSO supplies the *handler* for how its scoped modules communicate:
+`dataflow` (default, == a plain Chip), `gate` (the powered scope — the whole scope is dormant
+unless its `enabled` input is truthy), `modulate` (per-inner-node param overrides, so the SAME
+modules compute different values per context). The realization of "scenes/contexts/menus/sims are
+methods of communication; the same nodes behave differently depending on what is going on" — and
+it lives entirely in a MODULE (the foundation gained only a registry entry). `event`/`tick`/
+`proximity`/`connector` handlers + the edge-level `Channel` (capacity/backpressure) are the
+sequenced follow-ons (each a new module, never a foundation edit). Test: `headless_context_test.gd`
+(8/8) — one shared scope proven to behave differently under each handler, modulate non-destructive.
+
 **Phase 0 + 1:** arrangement data substrate (`schema/`), diff-based hotload runtime
 (`runtime/graph_runtime.gd`), content-hash watcher (`runtime/live_host.gd`), primitives
 `Const/Math/Log/Model/Transform`, bootable game (`main.*`), Claude↔game bridge
