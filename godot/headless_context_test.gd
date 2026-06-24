@@ -120,6 +120,33 @@ func _initialize() -> void:
 	ok = _check("Context[proximity] native Vector2 input within radius => 7",
 		_eval_log(_as_context_proximity(g, 2.0, Vector2(0, 0), Vector2(1, 0))) == 7.0) and ok
 
+	# (9) tick / sim — time-stepped propagation over a State counter (State -> +1 -> State.next).
+	#     State is the cross-tick memory (a module, not the floor). The SAME scope is static under
+	#     dataflow, advances N under one evaluation of `sim`, and the two semantics differ across
+	#     repeated evaluations: `sim` (reproducible) re-inits each time; `tick` (continuous) accumulates.
+	ok = _check("counter under dataflow is STATIC (no stepping) => 0",
+		_eval_log(_counter_context("dataflow", 5)) == 0.0) and ok
+	ok = _check("counter under sim, steps=5, single eval => 5",
+		_eval_log(_counter_context("sim", 5)) == 5.0) and ok
+	ok = _check("counter under sim, steps=0 => 0 (init, no advance)",
+		_eval_log(_counter_context("sim", 0)) == 0.0) and ok
+	ok = _check("counter under sim, steps=3 => 3",
+		_eval_log(_counter_context("sim", 3)) == 3.0) and ok
+	# A DERIVED (non-State) output is read from the final tick's outputs (no observational re-evaluate).
+	ok = _check("counter under sim with derived output (Math.result), steps=4 => 4",
+		_eval_log(_counter_context("sim", 4, "m", "result")) == 4.0) and ok
+	# sim is REPRODUCIBLE: three evaluations of the same runtime each restart from init => [5,5,5].
+	ok = _check("sim is reproducible across evaluations => [5, 5, 5]",
+		_eval_times(_counter_context("sim", 5), 3) == [5.0, 5.0, 5.0]) and ok
+	# tick is CONTINUOUS: state persists across evaluations, so steps=5 accumulates => [5,10,15].
+	ok = _check("tick is continuous/living across evaluations => [5, 10, 15]",
+		_eval_times(_counter_context("tick", 5), 3) == [5.0, 10.0, 15.0]) and ok
+	# A State scope is never memoized: the abstract handler must degrade it to a live scope.
+	PrimContext._summaries.clear()
+	var _av = _eval_log(_counter_context("abstract", 5))
+	ok = _check("abstract over a State scope is NOT cached (State is_cacheable=false)",
+		PrimContext._summaries.size() == 0) and ok
+
 	resolver_rt.free()
 	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
 	quit(0 if ok else 1)
@@ -165,6 +192,50 @@ func _as_context_proximity(g: Dictionary, radius: float, pos_a, pos_b, wire_b :=
 		(out["nodes"] as Array).append({ "id": "pb", "type": "Const", "params": { "value": pos_b } })
 		(out["wires"] as Array).append({ "from": "pb", "out": "value", "to": ctx_id, "in": "pos_b" })
 	return out
+
+## A top-level arrangement: a Context (the given handler) wrapping a State counter
+## (State -> Math(+1) -> State.next), its "count" output (= State's held value) wired to a Log "out".
+## Under dataflow this is static; under sim/tick it advances `steps` ticks per evaluation.
+func _counter_context(handler: String, steps: int, out_node := "s", out_port := "value") -> Dictionary:
+	var inner := {
+		"format": "resonance.arrangement/v1",
+		"nodes": [
+			{ "id": "s", "type": "State", "params": { "init": 0 } },
+			{ "id": "one", "type": "Const", "params": { "value": 1 } },
+			{ "id": "m", "type": "Math", "params": { "op": "add" } },
+		],
+		"wires": [
+			{ "from": "s", "out": "value", "to": "m", "in": "a" },
+			{ "from": "one", "out": "value", "to": "m", "in": "b" },
+			{ "from": "m", "out": "result", "to": "s", "in": "next" },
+		],
+	}
+	return {
+		"format": "resonance.arrangement/v1",
+		"nodes": [
+			{ "id": "ctx", "type": "Context", "params": {
+				"handler": handler, "steps": steps, "arrangement": inner,
+				"ports": { "inputs": [], "outputs": [{ "name": "count", "node": out_node, "port": out_port }] } } },
+			{ "id": "out", "type": "Log", "params": {} },
+		],
+		"wires": [{ "from": "ctx", "out": "count", "to": "out", "in": "in" }],
+	}
+
+## Evaluate ONE runtime `n` times (so a continuous sim's State persists across evaluations) and return
+## the sequence of the Log node's values. (_eval_log builds a fresh runtime each call, which resets state.)
+func _eval_times(arr: Dictionary, n: int, log_id := "out") -> Array:
+	var rt := GraphRuntime.new()
+	get_root().add_child(rt)
+	rt.load_arrangement(arr)
+	var seq := []
+	for _i in n:
+		rt.evaluate()
+		var log_node = rt.nodes.get(log_id)
+		var v = log_node.last_value if log_node != null else null
+		seq.append(Primitive.as_num(v) if v != null else null)
+	get_root().remove_child(rt)
+	rt.free()
+	return seq
 
 func _inner_math_id(g: Dictionary) -> String:
 	for n in g.get("nodes", []):

@@ -11,9 +11,10 @@ extends PrimChip
 ## unaffected, and new disciplines are new handlers (new data), never foundation edits.
 ##
 ## params shape (extends Chip's { arrangement, ports }):
-##   "handler":    "dataflow" | "gate" | "modulate" | "abstract" | "proximity"   (default "dataflow")
+##   "handler":    "dataflow"|"gate"|"modulate"|"abstract"|"proximity"|"tick"|"sim"  (default "dataflow")
 ##   "modulation": { "<inner node id>": { "<param>": <value>, ... }, ... }   (handler "modulate")
 ##   "radius":     <float>   (handler "proximity": the static interaction range; default 1.0)
+##   "steps":      <int>     (handlers "tick"/"sim": ticks to advance per evaluation; default 1)
 ##
 ## Handlers:
 ##   dataflow  — synchronous pull, topo-ordered. Identical to a Chip. (The identity case.)
@@ -33,6 +34,15 @@ extends PrimChip
 ##               handler to realize the locked direction "the observer/spatial state is just an INPUT
 ##               a handler reads" (the later observer-driven abstract/LOD handler reads camera
 ##               distance the SAME way): position is dynamic → an input port; range is static → a param.
+##   tick / sim — time-stepped propagation: advance the scope "steps" ticks, where each tick evaluates
+##               the scope (State nodes supply their held values — the cycle-breaking sources) and then
+##               commits each State's "next" input as its new held value. The two are the SAME stepping
+##               core under two SEMANTICS, selectable per context (both ship — you pick by handler):
+##                 tick — CONTINUOUS / living: State persists across outer evaluations, so the sim keeps
+##                        evolving frame to frame (walk away and it kept running). Real-time worlds.
+##                 sim  — REPRODUCIBLE / fresh: State is re-init to params.init before each outer
+##                        evaluation, so the run is a PURE function (init, inputs, steps) → output, hence
+##                        content-addressable — the substrate for precompute/bake + the abstract handler.
 
 # Process-wide memoization store for the `abstract` handler, keyed by a hermetic content-hash of
 # (effective arrangement + handler + canonical inputs). Process-wide (not per-instance) so two
@@ -80,6 +90,10 @@ func evaluate(inputs: Dictionary) -> Dictionary:
 			if not _within_proximity(inputs):
 				return _outputs_null()
 			return super.evaluate(inputs)
+		"tick":
+			return _evaluate_sim(inputs, true)
+		"sim":
+			return _evaluate_sim(inputs, false)
 		"modulate":
 			return _evaluate_modulated(inputs)
 		"abstract":
@@ -161,6 +175,107 @@ func _vec_sq_distance(a: Array, b: Array) -> float:
 		var d := ai - bi
 		sum += d * d
 	return sum
+
+# --- tick / sim (time-stepped propagation; State is the cross-tick memory) --------------------
+
+## Advance the scope `steps` ticks and return its mapped outputs. Reuses the inherited PERSISTENT
+## inner runtime (PrimChip._sub), so State nodes keep their held values across ticks — and, for
+## `tick` (persist == true), across outer evaluations too (a living sim). `sim` (persist == false)
+## re-inits every State to params.init first, making each run a pure, content-addressable function.
+## Each tick: evaluate the scope (State outputs are the cycle-breaking sources) → commit each State's
+## "next". Outputs are then read WITHOUT a re-evaluate (State ports via current(), derived ports from
+## the final tick's outputs), so an inner side-effecting node fires exactly `steps` times, never +1.
+func _evaluate_sim(inputs: Dictionary, persist: bool) -> Dictionary:
+	var arr: Dictionary = params.get("arrangement", {})
+	# Load a DAG with the State feedback wires REMOVED so every State node is an unambiguous SOURCE
+	# (indegree 0) — the inner topo-sort then always evaluates a State before its consumers, regardless
+	# of node declaration order. The original feedback wires drive the separate commit step. This keeps
+	# the floor's generic topo-sort untouched (no special-casing of State in GraphRuntime).
+	var dag := _strip_state_feedback(arr)
+	if _sub == null:
+		_sub = GraphRuntime.new()
+		add_child(_sub)
+	var pr := get_parent()
+	_sub.depth = ((pr as GraphRuntime).depth if pr is GraphRuntime else 0) + 1
+	# Diff-hotload keeps existing State instances (and their held values) across calls — load never
+	# resets _held — so continuity survives a reload; reproducibility is an explicit reset, not a rebuild.
+	_sub.load_arrangement(dag)
+	if not persist:
+		_reset_states()
+	# Map the scope's incoming ports to their inner sites; held constant for the whole step run.
+	var ports: Dictionary = params.get("ports", {})
+	var ext := {}
+	for p in ports.get("inputs", []):
+		var nid := String(p.get("node"))
+		if not ext.has(nid):
+			ext[nid] = {}
+		ext[nid][String(p.get("port"))] = inputs.get(String(p.get("name")))
+	_sub.set_external_inputs(ext)
+	var steps: int = maxi(0, int(Primitive.as_num(params.get("steps", 1))))
+	# Advance `steps` ticks. There is deliberately NO post-loop observational evaluate — that would
+	# re-run the whole DAG and re-fire any inner side-effecting node, so an inner Log would log steps+1
+	# times. Instead, post-step state is read directly below. (steps == 0 → no tick runs: State outputs
+	# resolve to their init via current(); a derived output stays null until at least one tick runs.)
+	var outs := {}
+	for _i in steps:
+		outs = _sub.evaluate()
+		_commit_states(arr, outs)
+	# Read outputs WITHOUT re-running the DAG: a State output port reports its COMMITTED held value
+	# (current(), side-effect-free); any other (derived) port reflects the final tick's computed value.
+	var result := {}
+	for p in ports.get("outputs", []):
+		var node_id := String(p.get("node"))
+		var prim = _sub.nodes.get(node_id)
+		if prim != null and prim.has_method("current"):
+			result[String(p.get("name"))] = prim.current()
+		else:
+			var src: Dictionary = outs.get(node_id, {})
+			result[String(p.get("name"))] = src.get(String(p.get("port")))
+	return result
+
+## A deep copy of `arr` with every wire feeding a State node's "next" port dropped, so State nodes are
+## pure sources in the inner DAG. Pure data → data; never mutates the source arrangement.
+func _strip_state_feedback(arr: Dictionary) -> Dictionary:
+	var state_ids := {}
+	for n in arr.get("nodes", []):
+		if String(n.get("type")) == "State":
+			state_ids[String(n.get("id"))] = true
+	var out: Dictionary = arr.duplicate(true)
+	var kept := []
+	for w in out.get("wires", []):
+		if state_ids.has(String(w.get("to"))) and String(w.get("in")) == "next":
+			continue
+		kept.append(w)
+	out["wires"] = kept
+	return out
+
+## At a tick boundary, hand each State node the value arriving at its "next" input THIS tick (read
+## from the just-computed outputs via the scope's ORIGINAL wires, feedback included). A State with no
+## "next" wire holds constant. Only nodes exposing commit() (State) are touched — others are pure.
+func _commit_states(arr: Dictionary, outs: Dictionary) -> void:
+	var wires: Array = arr.get("wires", [])
+	for node_id in _sub.nodes:
+		var prim = _sub.nodes[node_id]
+		if not prim.has_method("commit"):
+			continue
+		for w in wires:
+			if String(w.get("to")) == node_id and String(w.get("in")) == "next":
+				var from_id := String(w.get("from"))
+				if not outs.has(from_id):
+					# Broken feedback wire (the "next" source node is absent from the scope). Don't
+					# silently corrupt the held value with null — warn and preserve it. A source that
+					# IS present but legitimately yields null still commits below.
+					push_warning("PrimContext[sim]: State '%s' next-source '%s' missing — commit skipped" % [node_id, from_id])
+					break
+				prim.commit((outs.get(from_id, {}) as Dictionary).get(String(w.get("out"))))
+				break
+
+## Restore every State node to params.init (the reproducible `sim` handler calls this before stepping).
+func _reset_states() -> void:
+	for node_id in _sub.nodes:
+		var prim = _sub.nodes[node_id]
+		if prim.has_method("reset_state"):
+			prim.reset_state()
 
 # --- modulate --------------------------------------------------------------------------------
 

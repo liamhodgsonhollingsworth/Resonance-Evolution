@@ -46,6 +46,10 @@ func _init() -> void:
 	# COMMUNICATION-ARCHITECTURE.md. Default handler == a plain Chip, so this changes nothing for
 	# existing graphs; new disciplines are new handlers (data), never foundation edits.
 	register("Context", PrimContext)
+	# State: the one stateful module — a unit-delay holding a value across ticks. The substrate for
+	# the tick/sim Context handlers (continuous + reproducible time-stepping). Like every other type
+	# this is just a registry entry; the time-stepping discipline lives entirely in the Context module.
+	register("State", PrimState)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
