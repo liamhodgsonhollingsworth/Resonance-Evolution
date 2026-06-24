@@ -21,3 +21,7 @@ func evaluate(inputs: Dictionary) -> Dictionary:
 		"mul": return { "result": a * b }
 		"div": return { "result": (a / b) if b != 0.0 else 0.0 }
 	return { "result": 0.0 }
+
+## Pure: result is a deterministic function of (a, b, op), no side effect. Safe to memoize.
+func is_cacheable() -> bool:
+	return true

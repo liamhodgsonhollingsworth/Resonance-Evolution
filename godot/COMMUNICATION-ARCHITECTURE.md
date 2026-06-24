@@ -92,6 +92,7 @@ a different handler changes the propagation discipline of its whole scope. The h
 | `dataflow` (default) | synchronous pull, topo-ordered — today's `evaluate()` | **shipped** |
 | `gate` | the scope only propagates while an `enabled` input is truthy (Dreams powered-scope; a scene/menu being active vs dormant) | **shipped** |
 | `modulate` | the Context injects per-node param overrides, so the **same modules compute different values** under different Contexts ("different properties depending on what's going on") | **shipped** |
+| `abstract` | treat the scope as a **primitive**: run its dataflow ONCE, content-address the result, and shortcut to the cache forever after — "a primitive is a node you chose not to open" (§2.5) | **shipped** |
 | `event` | push, not pull: a module fires; only its downstream re-propagates (menus, input, triggers) | planned |
 | `tick` / `sim` | continuous time-stepped propagation (simulations, physics, walking around) | planned |
 | `proximity` | two modules communicate only when spatially near (per-pair 3D interaction: "use X on Y") | planned |
@@ -129,6 +130,49 @@ was named. The remote/Cowork plug-point in `CONNECTION-CONTRACT.md` §5 is a thi
 
 ---
 
+### 2.5 Abstraction & precompute — "a primitive is a node you chose not to open"
+The maintainer's three further directives — (1) *no fundamental primitives: different things are a
+primitive in different contexts*; (2) *scale-independent simulation: a system of interacting nodes,
+used at a larger scale, has its emergent behavior **abstracted** into one coherent primitive with
+defined properties rather than simulated live* (cell → plant → garden); (3) *precompute/memoize:
+the first time any behavior runs it is computed, and every repeat **shortcuts** to the stored
+result* — are **one principle at three zoom levels**, and they fall out of the Context handler with
+no foundation change:
+
+> A node is an **opaque primitive** inside a context that treats it as atomic, and an **open,
+> re-simulatable arrangement** outside that context. Which one you get is a per-evaluation Context
+> decision (the `abstract` handler), and the opaque result is keyed by the **content-address** of
+> everything that affects it, so the decision is computed once and shortcut forever after.
+
+- **#1 context-relative primitives** = the handler decides whether to *descend into*
+  `params.arrangement` or *return a stored summary*. "Primitive" is the answer to "did this context
+  open me?", not a node attribute. (This is the live, grounded form of the `vibrant-elion`
+  *no-fundamental-primitives* proposal; the full `type → definition` resolver is its sequenced
+  generalization, deferred.)
+- **#2 scale-independent abstraction** = the stored result IS a **behavior summary** (the legacy
+  Apeiron `Aggregator`/`SimulationProbe` `BehaviorSummary`), so a plant built from interacting cells
+  is consumed at garden scale as one primitive with defined properties — recursively. This
+  **re-realizes SPEC-300 / SPEC-301**, which were *implemented in the legacy Python engine but
+  regressed to PLANNED in the Godot engine*.
+- **#3 precompute/memoize** = the cache behind the handler. This is partial evaluation / the
+  Futamura projections (specialize once, run the residual many times) and Build-Systems-à-la-Carte
+  (an arrangement is a task description; the content-address is the store key).
+
+**Soundness floor (MVP, shipped):** memoization is sound only for a **pure** scope, so a scope
+collapses only when **every** inner node opts in via `Primitive.is_cacheable()` (default false; only
+`Const`/`Math` opt in for now). Any impure node (`Log`) or renderer-bound / time-varying node
+(`Model`, future `tick`/`sim`) makes the scope **degrade to a plain Chip** — it runs live every
+time, so abstraction never silently freezes a side effect. The key is **hermetic** (effective
+arrangement + handler + canonical inputs), the cache is **process-wide** (two Contexts over the same
+pure scope share one result), and it is **non-destructive** (the summary sits beside the retained
+`params.arrangement`; re-expansion = clear the cache). **Deferred** (the gated decisions): the
+observer/distance trigger (camera-driven LOD abstraction, SPEC-300), unifying scene-graph with
+behavior-graph decomposition, stateful-snapshot collapse, on-disk persistence + eviction, and lossy
+replacement. Abstraction is *designed to relieve* the `MAX_DEPTH` recursion bound — a collapsed scope
+returns its summary without descending, turning a deep emergence cascade into a flat sequence of cache
+hits — but note that in the MVP a scope containing a nested wrapper (Chip/Context) is non-cacheable
+(the purity gate is non-recursive), so this relief lands only once recursive/nested abstraction does.
+
 ## 3. Terminating the regress (the worry this design must answer)
 
 *If a connection is a module, and modules communicate via connections, what connects the connection?*
@@ -163,13 +207,18 @@ reproducing today's behavior exactly. After this change the foundation is *thinn
 "how to propagate" to a module) while gaining *more* expressive power (any number of disciplines, all
 as modules).
 
-**What is implemented now (this change):** the `Context` module (`primitives/prim_context.gd`) with
-three handlers — `dataflow` (≡ Chip, the backward-compatible default), `gate` (powered-scope), and
-`modulate` (per-node param override). This is the minimal faithful proof that *communication is a
-module*: the same inner arrangement demonstrably behaves differently under different Contexts, with no
-change to the inner modules and no new foundation logic. The `event` / `tick` / `proximity` /
-`connector` handlers, and the edge-level `Channel` module with capacity/backpressure, are the
-sequenced follow-ons — each a new module, not a foundation edit.
+**What is implemented now:** the `Context` module (`primitives/prim_context.gd`) with four handlers —
+`dataflow` (≡ Chip, the backward-compatible default), `gate` (powered-scope), `modulate` (per-node
+param override), and `abstract` (content-addressed memoize/collapse — §2.5). This is the minimal
+faithful proof that *communication is a module* AND that *abstraction/precompute is a module*: the
+same inner arrangement demonstrably behaves differently under different Contexts, and a pure scope is
+computed once then shortcut — both with no change to the inner modules and **no change to
+`GraphRuntime`** (the propagation floor). `is_cacheable()` is the only addition to the `Primitive`
+base contract; the handler computes its own content-address inline (inner arrangement + ports +
+canonical inputs) — folding it into the schema's still-inert `id` field is a deferred unification. The
+`event` / `tick` / `proximity` / `connector` handlers, the edge-level `Channel` module with
+capacity/backpressure, and the deferred abstraction extensions (§2.5) are the sequenced follow-ons —
+each a new module, not a foundation edit.
 
 ---
 

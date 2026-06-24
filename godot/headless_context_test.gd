@@ -42,6 +42,54 @@ func _initialize() -> void:
 	ok = _check("modulate is non-destructive (mul=>12, add=>7, base Chip=>7 still)",
 		_eval_log(ctx_mul) == 12.0 and _eval_log(ctx_add) == 7.0 and _eval_log(g) == 7.0) and ok
 
+	# (5) abstract — "a primitive is a node you chose not to open": compute-once, then shortcut.
+	#     (a) a pure scope abstracted == the same scope as a Chip; (b) across N evals (fresh
+	#     instances sharing the process-wide cache) the real dataflow runs exactly ONCE; (c) a scope
+	#     containing an impure node (Log) falls through and is never cached (the purity gate).
+	PrimContext._summaries.clear()
+	var ev_before := PrimContext._evals
+	var ctx_abs := _as_context(g, "abstract", {})
+	var av1 = _eval_log(ctx_abs)
+	var av2 = _eval_log(ctx_abs)
+	var av3 = _eval_log(ctx_abs)
+	ok = _check("Context[abstract] pure scope == Chip => 7", av1 == 7.0) and ok
+	ok = _check("Context[abstract] compute-once: 3 evals, real dataflow ran exactly once + cached",
+		av1 == 7.0 and av2 == 7.0 and av3 == 7.0 and (PrimContext._evals - ev_before) == 1
+		and PrimContext._summaries.size() == 1) and ok
+
+	PrimContext._summaries.clear()
+	var ctx_impure := _inject_inner_log(_as_context(g, "abstract", {}))
+	var iv1 = _eval_log(ctx_impure)
+	var iv2 = _eval_log(ctx_impure)
+	ok = _check("Context[abstract] over impure (Log) scope falls through, not cached, still => 7",
+		iv1 == 7.0 and iv2 == 7.0 and PrimContext._summaries.size() == 0) and ok
+
+	# (6) abstract is HERMETIC on inputs: the same pure scope under different inputs caches per-input
+	#     (no collision). A scope-with-inputs (group [m]) abstracted; bumping a feeding Const changes
+	#     the input, so the result differs and a SECOND cache entry is made.
+	PrimContext._summaries.clear()
+	var g_in := ChipOps.group(base, ["m"], resolver)      # Context-with-inputs (a,b) => 7
+	var ctx_in := _as_context(g_in, "abstract", {})
+	var d1 = _eval_log(ctx_in)                            # a=3,b=4 => 7  (miss)
+	var ctx_in2: Dictionary = ctx_in.duplicate(true)     # same scope, bump Const "a" 3 -> 30
+	for n in ctx_in2.get("nodes", []):
+		if String(n.get("id")) == "a":
+			n["params"]["value"] = 30
+	var d2 = _eval_log(ctx_in2)                           # a=30,b=4 => 34 (miss, different inputs)
+	ok = _check("Context[abstract] is hermetic on inputs: 7 then 34, two distinct cache entries",
+		d1 == 7.0 and d2 == 34.0 and PrimContext._summaries.size() == 2) and ok
+
+	# (7) precondition canary: a scope containing a nested WRAPPER (Chip, which may hide a Log) is
+	#     NOT cached, because wrappers default is_cacheable()=false and the gate is non-recursive.
+	#     This passes trivially today; it exists to FAIL LOUDLY if a future edit ever flips a wrapper
+	#     cacheable without making the purity gate recursive (which would wrongly cache an opaque,
+	#     possibly-impure scope). Keep this green or make the gate recursive.
+	PrimContext._summaries.clear()
+	var ctx_nested := _inject_inner_chip_with_log(_as_context(g, "abstract", {}))
+	var nv1 = _eval_log(ctx_nested)
+	ok = _check("Context[abstract] over a nested-wrapper scope is NOT cached (precondition canary)",
+		nv1 == 7.0 and PrimContext._summaries.size() == 0) and ok
+
 	resolver_rt.free()
 	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
 	quit(0 if ok else 1)
@@ -77,6 +125,32 @@ func _inner_math_id(g: Dictionary) -> String:
 				if String(inner_n.get("type")) == "Math":
 					return String(inner_n.get("id"))
 	return ""
+
+## Add an (unconnected) Log node into a Context's inner arrangement, making the scope impure so the
+## abstract handler's purity gate must refuse to cache it.
+func _inject_inner_log(ctx: Dictionary) -> Dictionary:
+	var out: Dictionary = ctx.duplicate(true)
+	for n in out.get("nodes", []):
+		if String(n.get("type")) == "Context":
+			(n["params"]["arrangement"]["nodes"] as Array).append({ "id": "innerlog", "type": "Log", "params": {} })
+			break
+	return out
+
+## Add a nested Chip (which itself hides a Log) into a Context's inner arrangement. The nested
+## wrapper defaults is_cacheable()=false, so the whole scope must be refused by the (non-recursive)
+## purity gate — the canary that catches a future wrapper opting in without a recursive gate.
+func _inject_inner_chip_with_log(ctx: Dictionary) -> Dictionary:
+	var out: Dictionary = ctx.duplicate(true)
+	for n in out.get("nodes", []):
+		if String(n.get("type")) == "Context":
+			(n["params"]["arrangement"]["nodes"] as Array).append({
+				"id": "innerchip", "type": "Chip",
+				"params": {
+					"arrangement": { "format": "resonance.arrangement/v1",
+						"nodes": [{ "id": "hidlog", "type": "Log", "params": {} }], "wires": [] },
+					"ports": { "inputs": [], "outputs": [] } } })
+			break
+	return out
 
 func _first_type_id(arr: Dictionary, type_name: String) -> String:
 	for n in arr.get("nodes", []):

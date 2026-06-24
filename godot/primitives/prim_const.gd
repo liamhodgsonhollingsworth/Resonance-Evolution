@@ -11,3 +11,7 @@ func output_ports() -> Array:
 
 func evaluate(_inputs: Dictionary) -> Dictionary:
 	return { "value": params.get("value", 0) }
+
+## Pure: output is a constant of params, no inputs, no side effect. Safe to memoize.
+func is_cacheable() -> bool:
+	return true

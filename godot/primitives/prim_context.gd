@@ -23,6 +23,18 @@ extends PrimChip
 ##               modules COMPUTE DIFFERENT VALUES under different Contexts. "different properties
 ##               depending on what is going on." Never mutates the source arrangement.
 
+# Process-wide memoization store for the `abstract` handler, keyed by a hermetic content-hash of
+# (effective arrangement + handler + canonical inputs). Process-wide (not per-instance) so two
+# Contexts wrapping the SAME pure arrangement share one computed result — the cross-instance reuse
+# that makes abstraction pay off at scale (a garden's many identical plants compute once). The
+# in-memory Dictionary is the MVP; a content-addressed on-disk store is its drop-in successor behind
+# the same key. NON-DESTRUCTIVE: a summary is a derived cache entry beside the retained
+# params.arrangement, never a replacement — the openable graph is always preserved (append-only).
+static var _summaries: Dictionary = {}
+# Count of REAL super.evaluate() runs through the abstract path — test observability for
+# compute-once-then-shortcut (and a coarse cache-effectiveness signal). Not load-bearing.
+static var _evals: int = 0
+
 func _init() -> void:
 	prim_type = "Context"
 
@@ -46,6 +58,8 @@ func evaluate(inputs: Dictionary) -> Dictionary:
 			return super.evaluate(inputs)
 		"modulate":
 			return _evaluate_modulated(inputs)
+		"abstract":
+			return _evaluate_abstract(inputs)
 		_:
 			# "dataflow" and any unknown handler degrade to a plain Chip (forward-compatible:
 			# an unrecognized future handler still runs as ordinary dataflow rather than failing).
@@ -103,3 +117,75 @@ func _overlay_params(arr: Dictionary, modulation: Dictionary) -> Dictionary:
 				p[k] = modulation[nid][k]
 			n["params"] = p
 	return out
+
+# --- abstract ("a primitive is a node you chose not to open") --------------------------------
+
+## Treat this scope as a PRIMITIVE with cached, content-addressed properties instead of re-running
+## it. The first evaluation for a given content-address runs the real recursive dataflow once and
+## stores the result; every later evaluation with the same key SHORTCUTS to the stored result
+## (compute-once-then-shortcut). This is the runtime form of scale-independent abstraction: the
+## stored result IS the scope's behavior summary, so a node built from interacting sub-nodes is
+## consumed at larger scale as one coherent primitive.
+##
+## SOUND ONLY for a pure scope: if ANY inner node is not is_cacheable(), this DEGRADES to a plain
+## Chip (runs live every time) — so abstraction never silently freezes a side effect or orphans a
+## renderer-bound live instance. Re-expansion in the MVP is just "clear the cache".
+func _evaluate_abstract(inputs: Dictionary) -> Dictionary:
+	if not _scope_is_cacheable():
+		return super.evaluate(inputs)
+	var key := _cache_key(inputs)
+	if _summaries.has(key):
+		# Return a PRIVATE copy. The cache is process-wide and GDScript dicts are references, so
+		# handing the cached dict out directly would let any future read-then-write caller corrupt
+		# every other node sharing the key. Outputs are plain serializable data → the copy is cheap.
+		return (_summaries[key] as Dictionary).duplicate(true)
+	_evals += 1
+	var fresh: Dictionary = super.evaluate(inputs)
+	_summaries[key] = fresh.duplicate(true)
+	return fresh
+
+## True iff EVERY node in the scope opts in to memoization (Primitive.is_cacheable()). A throwaway
+## runtime resolves each node's type to its declared cacheability — so the rule respects each
+## primitive's own contract and extends automatically as new cacheable primitives are added. (An
+## unknown / unresolvable type is treated as non-cacheable: fail safe.)
+func _scope_is_cacheable() -> bool:
+	var arr: Dictionary = params.get("arrangement", {})
+	var nodes_list: Array = arr.get("nodes", [])
+	if nodes_list.is_empty():
+		return false
+	var probe := GraphRuntime.new()
+	var ok := true
+	for n in nodes_list:
+		var prim: Primitive = probe._instance(String(n.get("type")))
+		var cacheable := prim != null and prim.is_cacheable()
+		if prim != null:
+			prim.free()
+		if not cacheable:
+			ok = false
+			break
+	probe.free()
+	return ok
+
+## Hermetic content-address: EVERY input that affects the output is in the key — the inner
+## arrangement, the PORTS map (PrimChip.evaluate feeds inputs to inner sites and reads outputs FROM
+## inner sites via params.ports, so two scopes with the same arrangement but a different port map
+## compute different outputs and must NOT share a key), the "abstract:" tag (so keys never cross
+## handlers), and the canonicalized inputs (so equal inputs hash equal). Reuses the same
+## String.sha256_text() idiom as live_host.gd / chip_ops.gd. NOTE: this handler ignores
+## params.modulation — `abstract` and `modulate` are separate match arms and must not be composed
+## until the key folds in the overlay; the worst case of the JSON-stringify key (insertion-order
+## sensitivity) is a missed hit, never a wrong hit.
+func _cache_key(inputs: Dictionary) -> String:
+	var arr_hash := JSON.stringify(params.get("arrangement", {})).sha256_text()
+	var ports_hash := JSON.stringify(params.get("ports", {})).sha256_text()
+	var in_hash := _canonical_inputs(inputs).sha256_text()
+	return "abstract:%s:%s:%s" % [arr_hash, ports_hash, in_hash]
+
+## A stable string for an inputs dict: keys sorted so two equal-valued dicts produce equal strings.
+func _canonical_inputs(inputs: Dictionary) -> String:
+	var keys: Array = inputs.keys()
+	keys.sort()
+	var parts := []
+	for k in keys:
+		parts.append("%s=%s" % [String(k), JSON.stringify(inputs[k])])
+	return "|".join(PackedStringArray(parts))
