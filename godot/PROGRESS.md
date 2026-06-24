@@ -12,15 +12,19 @@ The runtime no longer bakes in a single communication discipline. `primitives/pr
 `dataflow` (default, == a plain Chip), `gate` (the powered scope — the whole scope is dormant
 unless its `enabled` input is truthy), `modulate` (per-inner-node param overrides, so the SAME
 modules compute different values per context), `abstract` (treat the pure scope as a primitive:
-compute once, content-address, shortcut forever after — §2.5), and `proximity` (the **spatial gate**:
+compute once, content-address, shortcut forever after — §2.5), `proximity` (the **spatial gate**:
 the scope is live only while its two `pos_a`/`pos_b` vector inputs are within a static `radius` —
 the per-pair 3D "use X on Y" interaction, and the first handler to realize "observer/spatial state
-is just an INPUT a handler reads"). The realization of "scenes/contexts/menus/sims are methods of
-communication; the same nodes behave differently depending on what is going on" — and it lives
-entirely in a MODULE (the foundation gained only a registry entry). `event`/`tick`/`sim`/`connector`
-handlers + the edge-level `Channel` (capacity/backpressure) are the sequenced follow-ons (each a new
-module, never a foundation edit). Test: `headless_context_test.gd` (20/20) — one shared scope proven
-to behave differently under each handler, modulate/proximity non-destructive, abstract compute-once.
+is just an INPUT a handler reads"), and `tick`/`sim` (**time-stepped propagation** over the new
+`State` module — the one stateful primitive, a unit-delay holding cross-tick memory; `tick` is
+continuous/living, `sim` is reproducible/fresh → content-addressable for precompute/bake; two
+semantics, one stepping core, picked per context by the handler). The realization of
+"scenes/contexts/menus/sims are methods of communication; the same nodes behave differently depending
+on what is going on" — and it lives entirely in a MODULE (the foundation gained only registry entries
+for `Context` + `State`). `event`/`connector` handlers + the edge-level `Channel`
+(capacity/backpressure) are the sequenced follow-ons (each a new module, never a foundation edit).
+Test: `headless_context_test.gd` (31/31) — one shared scope proven to behave differently under each
+handler; modulate/proximity non-destructive; abstract compute-once; tick accumulates while sim resets.
 
 **Phase 0 + 1:** arrangement data substrate (`schema/`), diff-based hotload runtime
 (`runtime/graph_runtime.gd`), content-hash watcher (`runtime/live_host.gd`), primitives
