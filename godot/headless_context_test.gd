@@ -132,6 +132,9 @@ func _initialize() -> void:
 		_eval_log(_counter_context("sim", 0)) == 0.0) and ok
 	ok = _check("counter under sim, steps=3 => 3",
 		_eval_log(_counter_context("sim", 3)) == 3.0) and ok
+	# A DERIVED (non-State) output is read from the final tick's outputs (no observational re-evaluate).
+	ok = _check("counter under sim with derived output (Math.result), steps=4 => 4",
+		_eval_log(_counter_context("sim", 4, "m", "result")) == 4.0) and ok
 	# sim is REPRODUCIBLE: three evaluations of the same runtime each restart from init => [5,5,5].
 	ok = _check("sim is reproducible across evaluations => [5, 5, 5]",
 		_eval_times(_counter_context("sim", 5), 3) == [5.0, 5.0, 5.0]) and ok
@@ -193,7 +196,7 @@ func _as_context_proximity(g: Dictionary, radius: float, pos_a, pos_b, wire_b :=
 ## A top-level arrangement: a Context (the given handler) wrapping a State counter
 ## (State -> Math(+1) -> State.next), its "count" output (= State's held value) wired to a Log "out".
 ## Under dataflow this is static; under sim/tick it advances `steps` ticks per evaluation.
-func _counter_context(handler: String, steps: int) -> Dictionary:
+func _counter_context(handler: String, steps: int, out_node := "s", out_port := "value") -> Dictionary:
 	var inner := {
 		"format": "resonance.arrangement/v1",
 		"nodes": [
@@ -212,7 +215,7 @@ func _counter_context(handler: String, steps: int) -> Dictionary:
 		"nodes": [
 			{ "id": "ctx", "type": "Context", "params": {
 				"handler": handler, "steps": steps, "arrangement": inner,
-				"ports": { "inputs": [], "outputs": [{ "name": "count", "node": "s", "port": "value" }] } } },
+				"ports": { "inputs": [], "outputs": [{ "name": "count", "node": out_node, "port": out_port }] } } },
 			{ "id": "out", "type": "Log", "params": {} },
 		],
 		"wires": [{ "from": "ctx", "out": "count", "to": "out", "in": "in" }],

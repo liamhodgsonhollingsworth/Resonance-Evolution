@@ -183,7 +183,8 @@ func _vec_sq_distance(a: Array, b: Array) -> float:
 ## `tick` (persist == true), across outer evaluations too (a living sim). `sim` (persist == false)
 ## re-inits every State to params.init first, making each run a pure, content-addressable function.
 ## Each tick: evaluate the scope (State outputs are the cycle-breaking sources) → commit each State's
-## "next" input. A final no-commit evaluate reads the now-current state through the normal port map.
+## "next". Outputs are then read WITHOUT a re-evaluate (State ports via current(), derived ports from
+## the final tick's outputs), so an inner side-effecting node fires exactly `steps` times, never +1.
 func _evaluate_sim(inputs: Dictionary, persist: bool) -> Dictionary:
 	var arr: Dictionary = params.get("arrangement", {})
 	# Load a DAG with the State feedback wires REMOVED so every State node is an unambiguous SOURCE
@@ -211,16 +212,25 @@ func _evaluate_sim(inputs: Dictionary, persist: bool) -> Dictionary:
 		ext[nid][String(p.get("port"))] = inputs.get(String(p.get("name")))
 	_sub.set_external_inputs(ext)
 	var steps: int = maxi(0, int(Primitive.as_num(params.get("steps", 1))))
+	# Advance `steps` ticks. There is deliberately NO post-loop observational evaluate — that would
+	# re-run the whole DAG and re-fire any inner side-effecting node, so an inner Log would log steps+1
+	# times. Instead, post-step state is read directly below. (steps == 0 → no tick runs: State outputs
+	# resolve to their init via current(); a derived output stays null until at least one tick runs.)
 	var outs := {}
 	for _i in steps:
 		outs = _sub.evaluate()
 		_commit_states(arr, outs)
-	# Final read pass (no commit): outputs reflect the committed state via the normal port mapping.
-	outs = _sub.evaluate()
+	# Read outputs WITHOUT re-running the DAG: a State output port reports its COMMITTED held value
+	# (current(), side-effect-free); any other (derived) port reflects the final tick's computed value.
 	var result := {}
 	for p in ports.get("outputs", []):
-		var src: Dictionary = outs.get(String(p.get("node")), {})
-		result[String(p.get("name"))] = src.get(String(p.get("port")))
+		var node_id := String(p.get("node"))
+		var prim = _sub.nodes.get(node_id)
+		if prim != null and prim.has_method("current"):
+			result[String(p.get("name"))] = prim.current()
+		else:
+			var src: Dictionary = outs.get(node_id, {})
+			result[String(p.get("name"))] = src.get(String(p.get("port")))
 	return result
 
 ## A deep copy of `arr` with every wire feeding a State node's "next" port dropped, so State nodes are
@@ -250,8 +260,14 @@ func _commit_states(arr: Dictionary, outs: Dictionary) -> void:
 			continue
 		for w in wires:
 			if String(w.get("to")) == node_id and String(w.get("in")) == "next":
-				var src: Dictionary = outs.get(String(w.get("from")), {})
-				prim.commit(src.get(String(w.get("out"))))
+				var from_id := String(w.get("from"))
+				if not outs.has(from_id):
+					# Broken feedback wire (the "next" source node is absent from the scope). Don't
+					# silently corrupt the held value with null — warn and preserve it. A source that
+					# IS present but legitimately yields null still commits below.
+					push_warning("PrimContext[sim]: State '%s' next-source '%s' missing — commit skipped" % [node_id, from_id])
+					break
+				prim.commit((outs.get(from_id, {}) as Dictionary).get(String(w.get("out"))))
 				break
 
 ## Restore every State node to params.init (the reproducible `sim` handler calls this before stepping).

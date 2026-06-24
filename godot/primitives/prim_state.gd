@@ -29,13 +29,24 @@ func input_ports() -> Array:
 func output_ports() -> Array:
 	return [{ "name": "value", "type": "any" }]
 
-## Pull the held value. Ignores "next" by design (that is committed at the tick boundary, not read
-## here) — which is precisely what makes State a cycle-breaking source.
-func evaluate(_inputs: Dictionary) -> Dictionary:
+## Lazily adopt params.init the first time the value is needed.
+func _ensure_init() -> void:
 	if not _initialized:
 		_held = params.get("init", 0)
 		_initialized = true
+
+## Pull the held value. Ignores "next" by design (that is committed at the tick boundary, not read
+## here) — which is precisely what makes State a cycle-breaking source.
+func evaluate(_inputs: Dictionary) -> Dictionary:
+	_ensure_init()
 	return { "value": _held }
+
+## The committed held value, read WITHOUT re-running the dataflow. Lets the tick/sim handler observe
+## post-step state directly, so it never needs an extra evaluate() pass (which would re-fire any inner
+## side-effecting node — a Log, a renderer emission). Side-effect-free by construction.
+func current() -> Variant:
+	_ensure_init()
+	return _held
 
 ## Adopt the next held value. Called by the tick/sim handler at the tick boundary, never by dataflow.
 func commit(next_value: Variant) -> void:
