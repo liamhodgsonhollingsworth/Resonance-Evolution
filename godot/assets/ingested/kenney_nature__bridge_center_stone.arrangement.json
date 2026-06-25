@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-kenney_nature__bridge_center_stone",
+  "nodes": [
+    {
+      "id": "kenney_nature__bridge_center_stone",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_center_stone.glb",
+        "name": "bridge_center_stone"
+      }
+    }
+  ],
+  "wires": []
+}

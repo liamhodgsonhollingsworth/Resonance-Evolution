@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-kenney_nature__campfire_planks",
+  "nodes": [
+    {
+      "id": "kenney_nature__campfire_planks",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__campfire_planks.glb",
+        "name": "campfire_planks"
+      }
+    }
+  ],
+  "wires": []
+}

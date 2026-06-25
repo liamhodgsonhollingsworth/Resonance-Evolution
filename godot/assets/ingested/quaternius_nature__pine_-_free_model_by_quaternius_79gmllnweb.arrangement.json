@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-quaternius_nature__pine_-_free_model_by_quaternius_79gmllnweb",
+  "nodes": [
+    {
+      "id": "quaternius_nature__pine_-_free_model_by_quaternius_79gmllnweb",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_79gmllnweb.glb",
+        "name": "Pine - Free Model By Quaternius"
+      }
+    }
+  ],
+  "wires": []
+}

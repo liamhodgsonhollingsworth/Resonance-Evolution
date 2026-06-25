@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-quaternius_nature__rock_path_square_wide_-_free_model_by_quaternius_8wdmuvrsya",
+  "nodes": [
+    {
+      "id": "quaternius_nature__rock_path_square_wide_-_free_model_by_quaternius_8wdmuvrsya",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/quaternius_nature/quaternius_nature__rock_path_square_wide_-_free_model_by_quaternius_8wdmuvrsya.glb",
+        "name": "Rock Path Square Wide - Free Model By Quaternius"
+      }
+    }
+  ],
+  "wires": []
+}

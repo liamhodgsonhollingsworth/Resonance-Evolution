@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-kenney_nature__bed",
+  "nodes": [
+    {
+      "id": "kenney_nature__bed",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bed.glb",
+        "name": "bed"
+      }
+    }
+  ],
+  "wires": []
+}

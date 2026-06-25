@@ -1,0 +1,24 @@
+{
+  "name": "cactus_short",
+  "translation": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "rotation": [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+  ],
+  "scale": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "mesh": {
+    "source": "glb",
+    "path": "res://assets/vendor/kenney_nature/kenney_nature__cactus_short.glb"
+  },
+  "children": []
+}

@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-quaternius_nature__twisted_tree_-_free_model_by_quaternius_8orakn9m0x",
+  "nodes": [
+    {
+      "id": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_8orakn9m0x",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_8orakn9m0x.glb",
+        "name": "Twisted Tree - Free Model By Quaternius"
+      }
+    }
+  ],
+  "wires": []
+}

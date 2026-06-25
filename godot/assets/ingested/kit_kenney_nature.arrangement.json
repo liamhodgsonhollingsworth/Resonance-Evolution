@@ -1,0 +1,849 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "kit-kenney_nature",
+  "kit": "kenney_nature",
+  "nodes": [
+    {
+      "id": "m_0",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bed.glb",
+        "name": "bed"
+      }
+    },
+    {
+      "id": "t_0",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -5.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_1",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bed_floor.glb",
+        "name": "bed_floor"
+      }
+    },
+    {
+      "id": "t_1",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -2.5,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_2",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_center_stone.glb",
+        "name": "bridge_center_stone"
+      }
+    },
+    {
+      "id": "t_2",
+      "type": "Transform",
+      "params": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_3",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_center_stoneround.glb",
+        "name": "bridge_center_stoneround"
+      }
+    },
+    {
+      "id": "t_3",
+      "type": "Transform",
+      "params": {
+        "position": [
+          2.5,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_4",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_center_wood.glb",
+        "name": "bridge_center_wood"
+      }
+    },
+    {
+      "id": "t_4",
+      "type": "Transform",
+      "params": {
+        "position": [
+          5.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_5",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_center_woodround.glb",
+        "name": "bridge_center_woodround"
+      }
+    },
+    {
+      "id": "t_5",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -5.0,
+          0.0,
+          2.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_6",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_side_stone.glb",
+        "name": "bridge_side_stone"
+      }
+    },
+    {
+      "id": "t_6",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -2.5,
+          0.0,
+          2.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_7",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_side_stoneround.glb",
+        "name": "bridge_side_stoneround"
+      }
+    },
+    {
+      "id": "t_7",
+      "type": "Transform",
+      "params": {
+        "position": [
+          0.0,
+          0.0,
+          2.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_8",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_side_wood.glb",
+        "name": "bridge_side_wood"
+      }
+    },
+    {
+      "id": "t_8",
+      "type": "Transform",
+      "params": {
+        "position": [
+          2.5,
+          0.0,
+          2.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_9",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_side_woodround.glb",
+        "name": "bridge_side_woodround"
+      }
+    },
+    {
+      "id": "t_9",
+      "type": "Transform",
+      "params": {
+        "position": [
+          5.0,
+          0.0,
+          2.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_10",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_stone.glb",
+        "name": "bridge_stone"
+      }
+    },
+    {
+      "id": "t_10",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -5.0,
+          0.0,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_11",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_stonenarrow.glb",
+        "name": "bridge_stonenarrow"
+      }
+    },
+    {
+      "id": "t_11",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -2.5,
+          0.0,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_12",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_stoneround.glb",
+        "name": "bridge_stoneround"
+      }
+    },
+    {
+      "id": "t_12",
+      "type": "Transform",
+      "params": {
+        "position": [
+          0.0,
+          0.0,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_13",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_stoneroundnarrow.glb",
+        "name": "bridge_stoneroundnarrow"
+      }
+    },
+    {
+      "id": "t_13",
+      "type": "Transform",
+      "params": {
+        "position": [
+          2.5,
+          0.0,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_14",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_wood.glb",
+        "name": "bridge_wood"
+      }
+    },
+    {
+      "id": "t_14",
+      "type": "Transform",
+      "params": {
+        "position": [
+          5.0,
+          0.0,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_15",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_woodnarrow.glb",
+        "name": "bridge_woodnarrow"
+      }
+    },
+    {
+      "id": "t_15",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -5.0,
+          0.0,
+          7.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_16",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_woodround.glb",
+        "name": "bridge_woodround"
+      }
+    },
+    {
+      "id": "t_16",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -2.5,
+          0.0,
+          7.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_17",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_woodroundnarrow.glb",
+        "name": "bridge_woodroundnarrow"
+      }
+    },
+    {
+      "id": "t_17",
+      "type": "Transform",
+      "params": {
+        "position": [
+          0.0,
+          0.0,
+          7.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_18",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__cactus_short.glb",
+        "name": "cactus_short"
+      }
+    },
+    {
+      "id": "t_18",
+      "type": "Transform",
+      "params": {
+        "position": [
+          2.5,
+          0.0,
+          7.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_19",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__cactus_tall.glb",
+        "name": "cactus_tall"
+      }
+    },
+    {
+      "id": "t_19",
+      "type": "Transform",
+      "params": {
+        "position": [
+          5.0,
+          0.0,
+          7.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_20",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__campfire_bricks.glb",
+        "name": "campfire_bricks"
+      }
+    },
+    {
+      "id": "t_20",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -5.0,
+          0.0,
+          10.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_21",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__campfire_logs.glb",
+        "name": "campfire_logs"
+      }
+    },
+    {
+      "id": "t_21",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -2.5,
+          0.0,
+          10.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_22",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__campfire_planks.glb",
+        "name": "campfire_planks"
+      }
+    },
+    {
+      "id": "t_22",
+      "type": "Transform",
+      "params": {
+        "position": [
+          0.0,
+          0.0,
+          10.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_23",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__campfire_stones.glb",
+        "name": "campfire_stones"
+      }
+    },
+    {
+      "id": "t_23",
+      "type": "Transform",
+      "params": {
+        "position": [
+          2.5,
+          0.0,
+          10.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    }
+  ],
+  "wires": [
+    {
+      "from": "m_0",
+      "out": "node",
+      "to": "t_0",
+      "in": "node"
+    },
+    {
+      "from": "m_1",
+      "out": "node",
+      "to": "t_1",
+      "in": "node"
+    },
+    {
+      "from": "m_2",
+      "out": "node",
+      "to": "t_2",
+      "in": "node"
+    },
+    {
+      "from": "m_3",
+      "out": "node",
+      "to": "t_3",
+      "in": "node"
+    },
+    {
+      "from": "m_4",
+      "out": "node",
+      "to": "t_4",
+      "in": "node"
+    },
+    {
+      "from": "m_5",
+      "out": "node",
+      "to": "t_5",
+      "in": "node"
+    },
+    {
+      "from": "m_6",
+      "out": "node",
+      "to": "t_6",
+      "in": "node"
+    },
+    {
+      "from": "m_7",
+      "out": "node",
+      "to": "t_7",
+      "in": "node"
+    },
+    {
+      "from": "m_8",
+      "out": "node",
+      "to": "t_8",
+      "in": "node"
+    },
+    {
+      "from": "m_9",
+      "out": "node",
+      "to": "t_9",
+      "in": "node"
+    },
+    {
+      "from": "m_10",
+      "out": "node",
+      "to": "t_10",
+      "in": "node"
+    },
+    {
+      "from": "m_11",
+      "out": "node",
+      "to": "t_11",
+      "in": "node"
+    },
+    {
+      "from": "m_12",
+      "out": "node",
+      "to": "t_12",
+      "in": "node"
+    },
+    {
+      "from": "m_13",
+      "out": "node",
+      "to": "t_13",
+      "in": "node"
+    },
+    {
+      "from": "m_14",
+      "out": "node",
+      "to": "t_14",
+      "in": "node"
+    },
+    {
+      "from": "m_15",
+      "out": "node",
+      "to": "t_15",
+      "in": "node"
+    },
+    {
+      "from": "m_16",
+      "out": "node",
+      "to": "t_16",
+      "in": "node"
+    },
+    {
+      "from": "m_17",
+      "out": "node",
+      "to": "t_17",
+      "in": "node"
+    },
+    {
+      "from": "m_18",
+      "out": "node",
+      "to": "t_18",
+      "in": "node"
+    },
+    {
+      "from": "m_19",
+      "out": "node",
+      "to": "t_19",
+      "in": "node"
+    },
+    {
+      "from": "m_20",
+      "out": "node",
+      "to": "t_20",
+      "in": "node"
+    },
+    {
+      "from": "m_21",
+      "out": "node",
+      "to": "t_21",
+      "in": "node"
+    },
+    {
+      "from": "m_22",
+      "out": "node",
+      "to": "t_22",
+      "in": "node"
+    },
+    {
+      "from": "m_23",
+      "out": "node",
+      "to": "t_23",
+      "in": "node"
+    }
+  ]
+}
