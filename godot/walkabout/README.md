@@ -14,6 +14,7 @@ C:\Users\Liam\godot\Godot_v4.6.3-stable_win64_console.exe --path godot res://wal
 
 (run from the Resonance-Evolution repo root). **Controls:** WASD move · mouse look ·
 Space jump · Shift sprint · **E pick up / use** the nearest object you're standing next to ·
+**Q place** the selected inventory object back into the world · **Tab cycle** the selected object ·
 Esc release mouse · click recapture.
 
 ## What you'll see
@@ -36,6 +37,25 @@ Context's static `radius`. The scope is live (emits an "available" signal) only 
 positions are within range. Spatial state is just an INPUT a handler reads — no bespoke gating
 code. The interactor lives in `walkabout/pickup_interactor.gd`; headless test
 `headless_pickup_test.gd`.
+
+## The build loop — inventory HUD + place-down
+
+Pick-up (E) + **place-down (Q)** close a **modular-building loop**: the CC0 kits become a buildable
+world. An on-screen **inventory HUD** (bottom-left, `walkabout/build_hud.gd`) lists every object type
+you're holding with a per-type count and flags the **selected** type (a `▸` marker). **Tab** cycles
+the selection.
+
+Pressing **Q** places one of the selected type back into the world at the **aim point**: a ray is
+cast from the camera forward, and on a hit the object lands at the hit point; with no hit it drops
+onto the ground plane a few meters in front of you. The point is **snapped to a 1 m grid** so builds
+line up. The placed object is re-rendered from the SAME renderer-neutral `scene_node` descriptor it
+was picked up from (via `GodotSceneRenderer.build_node` — no Godot objects on any wire), so it is a
+real scene object again AND is registered back as a fresh pickable: place → pick up → move → place.
+
+Inventory + selection + placement all live in `pickup_interactor.gd` as pure, headless-testable
+methods (`held_rows()`, `cycle_selection()`, `place_at()`, `place_selected_at()`, `place_target()`);
+the HUD is pure presentation that refreshes on the interactor's `inventory_changed` signal. Headless
+test: `headless_build_loop_test.gd`.
 
 ## Populate it with assets — the ingestion pipeline
 
@@ -74,6 +94,8 @@ full pack (the Kenney Nature Kit alone has 329 GLBs). FBX/OBJ-only packs are a d
 C:\Users\Liam\godot\Godot_v4.6.3-stable_win64_console.exe --headless --path godot -s res://headless_walkabout_test.gd
 # proximity-gated pickup/interaction:
 C:\Users\Liam\godot\Godot_v4.6.3-stable_win64_console.exe --headless --path godot -s res://headless_pickup_test.gd
+# the build loop (inventory + place-down):
+C:\Users\Liam\godot\Godot_v4.6.3-stable_win64_console.exe --headless --path godot -s res://headless_build_loop_test.gd
 ```
 
 ## Licensing
