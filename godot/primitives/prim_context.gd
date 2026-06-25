@@ -11,10 +11,10 @@ extends PrimChip
 ## unaffected, and new disciplines are new handlers (new data), never foundation edits.
 ##
 ## params shape (extends Chip's { arrangement, ports }):
-##   "handler":    "dataflow"|"gate"|"modulate"|"abstract"|"proximity"|"tick"|"sim"  (default "dataflow")
+##   "handler":    "dataflow"|"gate"|"modulate"|"abstract"|"proximity"|"tick"|"sim"|"event"  (default "dataflow")
 ##   "modulation": { "<inner node id>": { "<param>": <value>, ... }, ... }   (handler "modulate")
 ##   "radius":     <float>   (handler "proximity": the static interaction range; default 1.0)
-##   "steps":      <int>     (handlers "tick"/"sim": ticks to advance per evaluation; default 1)
+##   "steps":      <int>     (handlers "tick"/"sim"/"event": ticks to advance when it fires; default 1)
 ##
 ## Handlers:
 ##   dataflow  — synchronous pull, topo-ordered. Identical to a Chip. (The identity case.)
@@ -43,6 +43,17 @@ extends PrimChip
 ##                 sim  — REPRODUCIBLE / fresh: State is re-init to params.init before each outer
 ##                        evaluation, so the run is a PURE function (init, inputs, steps) → output, hence
 ##                        content-addressable — the substrate for precompute/bake + the abstract handler.
+##   event     — PUSH, not pull: the scope re-propagates ONLY when a module FIRES this evaluation,
+##               signalled by the implicit boolean input port "fire"; otherwise it is QUIESCENT and
+##               re-emits its last pushed outputs without recomputing. This is the discipline of menus,
+##               input, click-to-use, and triggers (a click event pushes downstream; nothing recomputes
+##               between clicks), the dual of dataflow's "recompute on every read". It reuses the SAME
+##               tick stepping core (a fire advances the scope `steps` ticks, committing State, exactly
+##               like a CONTINUOUS `tick` — State persists across evaluations, so a push permanently
+##               moves downstream state), but ONLY when fire is truthy: a quiescent evaluation runs zero
+##               ticks and zero inner evaluations, so a downstream Log fires once PER event, never on the
+##               idle frames between events. fire falsy/missing/unwired → quiescent (the rest state), so
+##               an event scope idles until something actually fires it.
 
 # Process-wide memoization store for the `abstract` handler, keyed by a hermetic content-hash of
 # (effective arrangement + handler + canonical inputs). Process-wide (not per-instance) so two
@@ -55,6 +66,13 @@ static var _summaries: Dictionary = {}
 # Count of REAL super.evaluate() runs through the abstract path — test observability for
 # compute-once-then-shortcut (and a coarse cache-effectiveness signal). Not load-bearing.
 static var _evals: int = 0
+
+# The `event` handler's last PUSHED outputs (per instance). A quiescent (un-fired) evaluation re-emits
+# this instead of recomputing — the "nothing re-propagates between events" rest state. Null until the
+# first fire, so an event scope that has never fired emits all-null outputs (the menu/trigger has not
+# fired yet → no downstream value). Instance state lives in the MODULE, never the floor — same posture
+# as State._held and PrimChip._sub.
+var _last_event_outputs: Variant = null
 
 func _init() -> void:
 	prim_type = "Context"
@@ -78,6 +96,9 @@ func input_ports() -> Array:
 			ports = ports.duplicate()
 			ports.append({ "name": "pos_a", "type": "vector" })
 			ports.append({ "name": "pos_b", "type": "vector" })
+		"event":
+			ports = ports.duplicate()
+			ports.append({ "name": "fire", "type": "bool" })
 	return ports
 
 func evaluate(inputs: Dictionary) -> Dictionary:
@@ -94,6 +115,8 @@ func evaluate(inputs: Dictionary) -> Dictionary:
 			return _evaluate_sim(inputs, true)
 		"sim":
 			return _evaluate_sim(inputs, false)
+		"event":
+			return _evaluate_event(inputs)
 		"modulate":
 			return _evaluate_modulated(inputs)
 		"abstract":
@@ -276,6 +299,35 @@ func _reset_states() -> void:
 		var prim = _sub.nodes[node_id]
 		if prim.has_method("reset_state"):
 			prim.reset_state()
+
+# --- event (PUSH: re-propagate only when a module fires) -------------------------------------
+
+## PUSH propagation. The scope re-propagates ONLY when the implicit boolean "fire" input is truthy
+## THIS evaluation; otherwise it is QUIESCENT and re-emits its last pushed outputs without recomputing.
+##   fire truthy  → a module fired: advance the scope by the CONTINUOUS tick core (persist == true), so
+##                  the push commits State and permanently moves downstream state, exactly like one
+##                  `tick`. The freshly-computed outputs are cached as the new "last pushed" and returned.
+##   fire falsy   → no event this frame: run ZERO inner evaluations (so a downstream Log fires once PER
+##                  event, never on the idle frames between) and re-emit the last pushed outputs. Before
+##                  the first fire there is no history → all-declared-outputs null (the menu/trigger has
+##                  not fired yet). This is the rest state that makes "only downstream re-propagates when
+##                  something fires" true: between events nothing recomputes.
+## Reusing the tick stepping core (not a parallel propagator) is the whole point — `event` is `tick`
+## conditioned on a fire signal, so State-as-memory and the no-observational-re-evaluate discipline are
+## inherited unchanged; the ONLY addition is the fire gate + the quiescent re-emit.
+func _evaluate_event(inputs: Dictionary) -> Dictionary:
+	if not _truthy(inputs.get("fire")):
+		# Quiescent: re-emit the last pushed outputs (a private copy if a dict, so a downstream
+		# read-then-write caller can't corrupt the retained snapshot), or all-null before the first fire.
+		if _last_event_outputs == null:
+			return _outputs_null()
+		if typeof(_last_event_outputs) == TYPE_DICTIONARY:
+			return (_last_event_outputs as Dictionary).duplicate(true)
+		return _last_event_outputs
+	# Fired: push one continuous-tick advance through the scope and remember the result.
+	var fired: Dictionary = _evaluate_sim(inputs, true)
+	_last_event_outputs = fired.duplicate(true)
+	return fired
 
 # --- modulate --------------------------------------------------------------------------------
 
