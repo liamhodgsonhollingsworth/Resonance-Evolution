@@ -22,7 +22,7 @@ func _initialize() -> void:
 		return im
 
 	# --- 0. The vocabulary mirror exists and lists every implemented effect with a param schema. ---
-	for t in ["passthrough", "posterize", "kuwahara", "generalized_kuwahara", "edge_darken", "outline", "paper_grain"]:
+	for t in ["passthrough", "posterize", "kuwahara", "generalized_kuwahara", "edge_darken", "outline", "paper_grain", "normal_map", "lighting", "temporal_stability"]:
 		ok = _check("EFFECT_TYPES knows '%s'" % t, EffectStackCpu.EFFECT_TYPES.has(t)) and ok
 
 	# --- 1. KUWAHARA: edge-preserving. On the vertical-edge image it must NOT blur the edge to a
@@ -82,6 +82,57 @@ func _initialize() -> void:
 	ok = _check("paper_grain is seed-sensitive (different seed → different field)", not _approx_color(g_a.get_pixel(0, 0), g_c.get_pixel(0, 0))) and ok
 	var g_zero := EffectStackCpu.apply({ "stack": [ { "type": "paper_grain", "params": { "amount": 0.0, "scale": 4.0, "seed": 7 } } ] }, flat)
 	ok = _check("paper_grain amount=0 is identity", _approx_color(g_zero.get_pixel(1, 1), Color(0.5, 0.4, 0.3, 1.0))) and ok
+
+	# --- L4.1 NORMAL_MAP: a FLAT image (zero gradient) → the canonical flat-normal blue (0.5,0.5,1.0).
+	# A vertical luminance edge → a non-flat normal whose RED channel (encoding nx) departs from 0.5 at
+	# the edge columns (the slope is horizontal). Alpha is carried through. ---
+	var nm_flat := EffectStackCpu.apply({ "stack": [ { "type": "normal_map", "params": { "strength": 2.0 } } ] }, flat)
+	ok = _check("normal_map on a flat image is the flat-normal blue (0.5,0.5,1.0)",
+		_approx_color(nm_flat.get_pixel(1, 1), Color(0.5, 0.5, 1.0, 1.0))) and ok
+	var nm_edge := EffectStackCpu.apply({ "stack": [ { "type": "normal_map", "params": { "strength": 2.0 } } ] }, edge.call())
+	ok = _check("normal_map tilts the normal at a luminance edge (red channel leaves 0.5)",
+		absf(nm_edge.get_pixel(1, 1).r - 0.5) > 0.01) and ok
+	ok = _check("normal_map preserves alpha", is_equal_approx(nm_edge.get_pixel(1, 1).a, 1.0)) and ok
+	var nm_zero := EffectStackCpu.apply({ "stack": [ { "type": "normal_map", "params": { "strength": 0.0 } } ] }, edge.call())
+	ok = _check("normal_map strength=0 is flat blue everywhere (no relief)",
+		_approx_color(nm_zero.get_pixel(1, 1), Color(0.5, 0.5, 1.0, 1.0))) and ok
+
+	# --- L4.2 LIGHTING: ambient=1 is identity (fully lit). On a flat image (constant normal (0,0,1)) the
+	# shade is uniform → every pixel scaled by the same factor (relative tone preserved). strength=0 also
+	# → constant normal → uniform shade. The edge gets a NON-uniform shade (relief catches the light). ---
+	var lit_amb1 := EffectStackCpu.apply({ "stack": [ { "type": "lighting", "params": { "ambient": 1.0, "strength": 2.0 } } ] }, flat)
+	ok = _check("lighting ambient=1 is identity (fully lit)", _approx_color(lit_amb1.get_pixel(1, 1), Color(0.5, 0.4, 0.3, 1.0))) and ok
+	var lit_flat := EffectStackCpu.apply({ "stack": [ { "type": "lighting", "params": { "ambient": 0.3, "strength": 2.0, "light_x": 0.0, "light_y": 0.0, "light_z": 1.0 } } ] }, flat)
+	# Flat normal (0,0,1) dot straight-down light (0,0,1) = 1 → shade = ambient + (1-ambient)*1 = 1 → identity.
+	ok = _check("lighting on a flat image with top light is fully lit (shade=1)", _approx_color(lit_flat.get_pixel(1, 1), Color(0.5, 0.4, 0.3, 1.0))) and ok
+	var lit_dark := EffectStackCpu.apply({ "stack": [ { "type": "lighting", "params": { "ambient": 0.2, "strength": 2.0, "light_x": 1.0, "light_y": 0.0, "light_z": 0.0 } } ] }, flat)
+	# Flat normal (0,0,1) dot a purely-SIDEWAYS light (1,0,0) = 0 → shade = ambient only = 0.2 → darkened.
+	ok = _check("lighting with a grazing (sideways) light darkens a flat surface to ambient",
+		lit_dark.get_pixel(1, 1).r < 0.5 * 0.5) and ok
+	ok = _check("lighting preserves alpha", is_equal_approx(lit_dark.get_pixel(0, 0).a, 1.0)) and ok
+
+	# --- L4.3 TEMPORAL_STABILITY: blend toward a previous frame. blend=0 (or no prev) → identity; blend=1
+	# → freeze to prev; blend=0.5 → the exact midpoint of current and prev (per channel). prev is supplied
+	# as the renderer-neutral serialized payload {w,h,pixels:[[r,g,b,a],...]} (JSON-portable). ---
+	var cur := Image.create(2, 2, false, Image.FORMAT_RGBAF)
+	for y in 2:
+		for x in 2:
+			cur.set_pixel(x, y, Color(0.8, 0.8, 0.8, 1.0))  # current = light grey
+	var prev_payload := { "w": 2, "h": 2, "pixels": [
+		[0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0],
+		[0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0],
+	] }  # prev = black
+	var ts_id := EffectStackCpu.apply({ "stack": [ { "type": "temporal_stability", "params": { "blend": 0.0, "prev": prev_payload } } ] }, cur)
+	ok = _check("temporal_stability blend=0 is identity (history ignored)", _approx_color(ts_id.get_pixel(0, 0), Color(0.8, 0.8, 0.8, 1.0))) and ok
+	var ts_noprev := EffectStackCpu.apply({ "stack": [ { "type": "temporal_stability", "params": { "blend": 0.9 } } ] }, cur)
+	ok = _check("temporal_stability with no prev is identity (first frame has no history)", _approx_color(ts_noprev.get_pixel(0, 0), Color(0.8, 0.8, 0.8, 1.0))) and ok
+	var ts_freeze := EffectStackCpu.apply({ "stack": [ { "type": "temporal_stability", "params": { "blend": 1.0, "prev": prev_payload } } ] }, cur)
+	ok = _check("temporal_stability blend=1 freezes to prev (→ black)", _approx_color(ts_freeze.get_pixel(0, 0), Color(0.0, 0.0, 0.0, 1.0))) and ok
+	var ts_half := EffectStackCpu.apply({ "stack": [ { "type": "temporal_stability", "params": { "blend": 0.5, "prev": prev_payload } } ] }, cur)
+	ok = _check("temporal_stability blend=0.5 is the midpoint of current(0.8) and prev(0.0) → 0.4", is_equal_approx(ts_half.get_pixel(0, 0).r, 0.4)) and ok
+	# A size-mismatched prev is dropped (can't blend pixel-wise) → identity, never a crash.
+	var ts_mismatch := EffectStackCpu.apply({ "stack": [ { "type": "temporal_stability", "params": { "blend": 0.9, "prev": { "w": 4, "h": 4, "pixels": [] } } } ] }, cur)
+	ok = _check("temporal_stability with a size-mismatched prev is identity (fail-safe)", _approx_color(ts_mismatch.get_pixel(0, 0), Color(0.8, 0.8, 0.8, 1.0))) and ok
 
 	# --- 6. A MULTI-LAYER PAINTERLY STACK applies all layers in order, returns a valid image, leaves
 	# the source untouched (the renderer-neutral "arcane painted look" recipe the char-creation arc reuses). ---
