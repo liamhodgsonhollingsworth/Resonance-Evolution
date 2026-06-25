@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-kenney_nature__bridge_side_stoneround",
+  "nodes": [
+    {
+      "id": "kenney_nature__bridge_side_stoneround",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_side_stoneround.glb",
+        "name": "bridge_side_stoneround"
+      }
+    }
+  ],
+  "wires": []
+}

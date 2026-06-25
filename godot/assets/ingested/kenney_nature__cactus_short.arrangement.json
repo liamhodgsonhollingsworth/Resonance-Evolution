@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-kenney_nature__cactus_short",
+  "nodes": [
+    {
+      "id": "kenney_nature__cactus_short",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__cactus_short.glb",
+        "name": "cactus_short"
+      }
+    }
+  ],
+  "wires": []
+}

@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-kenney_nature__campfire_stones",
+  "nodes": [
+    {
+      "id": "kenney_nature__campfire_stones",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__campfire_stones.glb",
+        "name": "campfire_stones"
+      }
+    }
+  ],
+  "wires": []
+}

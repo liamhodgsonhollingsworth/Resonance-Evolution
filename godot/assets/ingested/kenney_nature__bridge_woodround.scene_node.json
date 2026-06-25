@@ -1,0 +1,24 @@
+{
+  "name": "bridge_woodround",
+  "translation": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "rotation": [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+  ],
+  "scale": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "mesh": {
+    "source": "glb",
+    "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_woodround.glb"
+  },
+  "children": []
+}

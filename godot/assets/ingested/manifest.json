@@ -1,51 +1,1017 @@
 {
   "assets": {
-    "avocado": {
-      "_status": "unchanged",
-      "arrangement_file": "assets/ingested/avocado.arrangement.json",
-      "asset_id": "avocado",
-      "ingested_at": "2026-06-25T17:10:28+00:00",
+    "kenney_nature__bed": {
+      "arrangement_file": "assets/ingested/kenney_nature__bed.arrangement.json",
+      "asset_id": "kenney_nature__bed",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
       "kind": "glb",
+      "kit": "kenney_nature",
       "license": "CC0 1.0 Universal",
-      "res_path": "res://assets/vendor/avocado.glb",
-      "scene_node_file": "assets/ingested/avocado.scene_node.json",
-      "sha256": "ccc9c3ce56423720b09399c2351537207cd5a65f859f9e6e2f30922762f3abd4",
-      "source_site": "local",
-      "source_url": "local:repos\\Resonance-Evolution\\godot\\assets\\vendor\\Avocado.glb",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bed.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bed.scene_node.json",
+      "sha256": "ed064d4d9e6cf0c87f9146cb38a652d0df5427b60d0486fed190ab74d9510df4",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bed.glb",
       "summary": {
         "gltf_version": "2.0",
         "has_animations": false,
-        "materials": 1,
+        "materials": 3,
         "meshes": 1,
-        "nodes": 1
+        "nodes": 2
       },
-      "title": "avocado",
-      "vendor_file": "assets/vendor/avocado.glb",
-      "wavelet_node": "Alethea-cc/nodes/asset_avocado.md"
+      "title": "bed",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bed.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bed.md"
     },
-    "corset": {
-      "_status": "unchanged",
-      "arrangement_file": "assets/ingested/corset.arrangement.json",
-      "asset_id": "corset",
-      "ingested_at": "2026-06-25T17:10:28+00:00",
+    "kenney_nature__bed_floor": {
+      "arrangement_file": "assets/ingested/kenney_nature__bed_floor.arrangement.json",
+      "asset_id": "kenney_nature__bed_floor",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
       "kind": "glb",
+      "kit": "kenney_nature",
       "license": "CC0 1.0 Universal",
-      "res_path": "res://assets/vendor/corset.glb",
-      "scene_node_file": "assets/ingested/corset.scene_node.json",
-      "sha256": "9582c0dc0dee813be77f60e6ddf7213987c7e11497bf3cc66fd7b18957ae0d26",
-      "source_site": "local",
-      "source_url": "local:repos\\Resonance-Evolution\\godot\\assets\\vendor\\Corset.glb",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bed_floor.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bed_floor.scene_node.json",
+      "sha256": "a59c8878186ab180f43e55249184b5c8e6af7d6501f908898202ac14c474a05f",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bed_floor.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 3,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bed_floor",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bed_floor.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bed_floor.md"
+    },
+    "kenney_nature__bridge_center_stone": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_center_stone.arrangement.json",
+      "asset_id": "kenney_nature__bridge_center_stone",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_center_stone.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_center_stone.scene_node.json",
+      "sha256": "f3681603a3d6523f8298da7d4c8d00e653c6028136c3427af07952fa3ca10519",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_center_stone.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_center_stone",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_center_stone.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_center_stone.md"
+    },
+    "kenney_nature__bridge_center_stoneround": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_center_stoneround.arrangement.json",
+      "asset_id": "kenney_nature__bridge_center_stoneround",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_center_stoneround.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_center_stoneround.scene_node.json",
+      "sha256": "ec0e73f593a3230b9f10bfe69dec5e95c8c031f1a1a81e1a308501ef3a70e68c",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_center_stoneRound.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_center_stoneround",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_center_stoneround.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_center_stoneround.md"
+    },
+    "kenney_nature__bridge_center_wood": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_center_wood.arrangement.json",
+      "asset_id": "kenney_nature__bridge_center_wood",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_center_wood.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_center_wood.scene_node.json",
+      "sha256": "ed9ede934d5be5737863713f4648d8ffaca48038d299442a2ae2c3a2b6b79984",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_center_wood.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 3,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_center_wood",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_center_wood.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_center_wood.md"
+    },
+    "kenney_nature__bridge_center_woodround": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_center_woodround.arrangement.json",
+      "asset_id": "kenney_nature__bridge_center_woodround",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_center_woodround.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_center_woodround.scene_node.json",
+      "sha256": "382c95860d1805457a77e43ae1e47cc77d7a05cb5b1921e5e0f44f6627d0e11f",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_center_woodRound.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 4,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_center_woodround",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_center_woodround.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_center_woodround.md"
+    },
+    "kenney_nature__bridge_side_stone": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_side_stone.arrangement.json",
+      "asset_id": "kenney_nature__bridge_side_stone",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_side_stone.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_side_stone.scene_node.json",
+      "sha256": "2da6236082152f843a29393225be8bbbd28abacf597acc35704c0bb393bc4127",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_side_stone.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_side_stone",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_side_stone.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_side_stone.md"
+    },
+    "kenney_nature__bridge_side_stoneround": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_side_stoneround.arrangement.json",
+      "asset_id": "kenney_nature__bridge_side_stoneround",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_side_stoneround.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_side_stoneround.scene_node.json",
+      "sha256": "26554af65f17af00b12246aa950f267fd940cd0b3973314ee767f6a458687005",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_side_stoneRound.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_side_stoneround",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_side_stoneround.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_side_stoneround.md"
+    },
+    "kenney_nature__bridge_side_wood": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_side_wood.arrangement.json",
+      "asset_id": "kenney_nature__bridge_side_wood",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_side_wood.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_side_wood.scene_node.json",
+      "sha256": "3857c2a286d236375dbae209897884eebc379d18e4af39ee8414f2d9511e2c49",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_side_wood.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 3,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_side_wood",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_side_wood.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_side_wood.md"
+    },
+    "kenney_nature__bridge_side_woodround": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_side_woodround.arrangement.json",
+      "asset_id": "kenney_nature__bridge_side_woodround",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_side_woodround.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_side_woodround.scene_node.json",
+      "sha256": "29a2bd3dc9cf5bf3c9354323a3551ad98a279ad785faa8e22152a313cc4f65cd",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_side_woodRound.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 4,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_side_woodround",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_side_woodround.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_side_woodround.md"
+    },
+    "kenney_nature__bridge_stone": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_stone.arrangement.json",
+      "asset_id": "kenney_nature__bridge_stone",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_stone.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_stone.scene_node.json",
+      "sha256": "b8b311f525ad616fcdebb6463db8b0c7710af58eb45308b54c08bcb290a2315e",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_stone.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_stone",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_stone.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_stone.md"
+    },
+    "kenney_nature__bridge_stonenarrow": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_stonenarrow.arrangement.json",
+      "asset_id": "kenney_nature__bridge_stonenarrow",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_stonenarrow.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_stonenarrow.scene_node.json",
+      "sha256": "ea011dbaa2926013456c001ac93d24be07c2b1bed98fe5b24aae372f68c5ff24",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_stoneNarrow.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_stonenarrow",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_stonenarrow.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_stonenarrow.md"
+    },
+    "kenney_nature__bridge_stoneround": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_stoneround.arrangement.json",
+      "asset_id": "kenney_nature__bridge_stoneround",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_stoneround.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_stoneround.scene_node.json",
+      "sha256": "0b2254c5eb59a5fac2c7185cdc9af8efb941a31f0c0fb5a3fabaeb60c0108b41",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_stoneRound.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_stoneround",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_stoneround.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_stoneround.md"
+    },
+    "kenney_nature__bridge_stoneroundnarrow": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_stoneroundnarrow.arrangement.json",
+      "asset_id": "kenney_nature__bridge_stoneroundnarrow",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_stoneroundnarrow.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_stoneroundnarrow.scene_node.json",
+      "sha256": "b29d3c2a235861651296e5fb4be6bde4f17b3206d452a83cdafe6e4d90dcffda",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_stoneRoundNarrow.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_stoneroundnarrow",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_stoneroundnarrow.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_stoneroundnarrow.md"
+    },
+    "kenney_nature__bridge_wood": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_wood.arrangement.json",
+      "asset_id": "kenney_nature__bridge_wood",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_wood.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_wood.scene_node.json",
+      "sha256": "3da4c208b0f72b7f2ba42db521b62ec4b0278050c75256a6982c40d21aab5701",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_wood.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 3,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_wood",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_wood.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_wood.md"
+    },
+    "kenney_nature__bridge_woodnarrow": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_woodnarrow.arrangement.json",
+      "asset_id": "kenney_nature__bridge_woodnarrow",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_woodnarrow.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_woodnarrow.scene_node.json",
+      "sha256": "df46d1ba2ae557f3c69850c4faf03bcd16786fff305bce772f5b260e50def351",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_woodNarrow.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 3,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_woodnarrow",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_woodnarrow.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_woodnarrow.md"
+    },
+    "kenney_nature__bridge_woodround": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_woodround.arrangement.json",
+      "asset_id": "kenney_nature__bridge_woodround",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_woodround.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_woodround.scene_node.json",
+      "sha256": "3b8593e6f50ae78f0f3f5d51ef5ac4751808fd5cbd462f35d09bbde5388f1034",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_woodRound.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 4,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_woodround",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_woodround.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_woodround.md"
+    },
+    "kenney_nature__bridge_woodroundnarrow": {
+      "arrangement_file": "assets/ingested/kenney_nature__bridge_woodroundnarrow.arrangement.json",
+      "asset_id": "kenney_nature__bridge_woodroundnarrow",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_woodroundnarrow.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__bridge_woodroundnarrow.scene_node.json",
+      "sha256": "fbd1bfc4601b7b195861ca85cc9d1e7a36f87d6178cdefb0aa887b1d2fe41c24",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/bridge_woodRoundNarrow.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 4,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "bridge_woodroundnarrow",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__bridge_woodroundnarrow.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__bridge_woodroundnarrow.md"
+    },
+    "kenney_nature__cactus_short": {
+      "arrangement_file": "assets/ingested/kenney_nature__cactus_short.arrangement.json",
+      "asset_id": "kenney_nature__cactus_short",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__cactus_short.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__cactus_short.scene_node.json",
+      "sha256": "81ac9fc4c66eacceaf4aebcb6df3468ea450a2f5081151bb11400282efbc51bd",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/cactus_short.glb",
       "summary": {
         "gltf_version": "2.0",
         "has_animations": false,
         "materials": 1,
         "meshes": 1,
-        "nodes": 1
+        "nodes": 2
       },
-      "title": "corset",
-      "vendor_file": "assets/vendor/corset.glb",
-      "wavelet_node": "Alethea-cc/nodes/asset_corset.md"
+      "title": "cactus_short",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__cactus_short.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__cactus_short.md"
+    },
+    "kenney_nature__cactus_tall": {
+      "arrangement_file": "assets/ingested/kenney_nature__cactus_tall.arrangement.json",
+      "asset_id": "kenney_nature__cactus_tall",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__cactus_tall.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__cactus_tall.scene_node.json",
+      "sha256": "d43a1aca5952e1f8a104d64a0edfec09c39f15102ca6bdc531460dd5a2c53d25",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/cactus_tall.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "cactus_tall",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__cactus_tall.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__cactus_tall.md"
+    },
+    "kenney_nature__campfire_bricks": {
+      "arrangement_file": "assets/ingested/kenney_nature__campfire_bricks.arrangement.json",
+      "asset_id": "kenney_nature__campfire_bricks",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__campfire_bricks.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__campfire_bricks.scene_node.json",
+      "sha256": "ecdca761c6c07ee417261140d5449872b7f51f3671df2d536e2a03b65480563f",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/campfire_bricks.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "campfire_bricks",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__campfire_bricks.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__campfire_bricks.md"
+    },
+    "kenney_nature__campfire_logs": {
+      "arrangement_file": "assets/ingested/kenney_nature__campfire_logs.arrangement.json",
+      "asset_id": "kenney_nature__campfire_logs",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__campfire_logs.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__campfire_logs.scene_node.json",
+      "sha256": "98d87cdcf9095b94fd348d0946e911dd4ca6c0956bac3318cfd2b0030b86055a",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/campfire_logs.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "campfire_logs",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__campfire_logs.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__campfire_logs.md"
+    },
+    "kenney_nature__campfire_planks": {
+      "arrangement_file": "assets/ingested/kenney_nature__campfire_planks.arrangement.json",
+      "asset_id": "kenney_nature__campfire_planks",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__campfire_planks.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__campfire_planks.scene_node.json",
+      "sha256": "0d26e842f7f5cb607ad37205e930822656b7c6ba570f9d0ba6b039cea90f8ab7",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/campfire_planks.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "campfire_planks",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__campfire_planks.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__campfire_planks.md"
+    },
+    "kenney_nature__campfire_stones": {
+      "arrangement_file": "assets/ingested/kenney_nature__campfire_stones.arrangement.json",
+      "asset_id": "kenney_nature__campfire_stones",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kind": "glb",
+      "kit": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_nature/kenney_nature__campfire_stones.glb",
+      "scene_node_file": "assets/ingested/kenney_nature__campfire_stones.scene_node.json",
+      "sha256": "54869db23243a3f4905bc00bd4cd93b1037b28556ab3ef93e7a893a093791e35",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip#Models/GLTF format/campfire_stones.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "campfire_stones",
+      "vendor_file": "assets/vendor/kenney_nature/kenney_nature__campfire_stones.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_nature__campfire_stones.md"
+    },
+    "quaternius_nature__pine_-_free_model_by_quaternius_699sfulcn2": {
+      "arrangement_file": "assets/ingested/quaternius_nature__pine_-_free_model_by_quaternius_699sfulcn2.arrangement.json",
+      "asset_id": "quaternius_nature__pine_-_free_model_by_quaternius_699sfulcn2",
+      "ingested_at": "2026-06-25T18:05:37+00:00",
+      "kind": "glb",
+      "kit": "quaternius_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_699sfulcn2.glb",
+      "scene_node_file": "assets/ingested/quaternius_nature__pine_-_free_model_by_quaternius_699sfulcn2.scene_node.json",
+      "sha256": "3a5db923999bd47281f1f38cf8451c1544acfad33d953892fa95ca74765be361",
+      "source_site": "Quaternius",
+      "source_url": "https://poly.pizza/m/699sFuLCN2",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "Pine - Free Model By Quaternius",
+      "vendor_file": "assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_699sfulcn2.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_quaternius_nature__pine_-_free_model_by_quaternius_699sfulcn2.md"
+    },
+    "quaternius_nature__pine_-_free_model_by_quaternius_79gmllnweb": {
+      "arrangement_file": "assets/ingested/quaternius_nature__pine_-_free_model_by_quaternius_79gmllnweb.arrangement.json",
+      "asset_id": "quaternius_nature__pine_-_free_model_by_quaternius_79gmllnweb",
+      "ingested_at": "2026-06-25T18:05:37+00:00",
+      "kind": "glb",
+      "kit": "quaternius_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_79gmllnweb.glb",
+      "scene_node_file": "assets/ingested/quaternius_nature__pine_-_free_model_by_quaternius_79gmllnweb.scene_node.json",
+      "sha256": "240e6f60c5b106a892c80490d7c710f20ef902b328b5e173c0a567334e4df972",
+      "source_site": "Quaternius",
+      "source_url": "https://poly.pizza/m/79gmlLnweB",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "Pine - Free Model By Quaternius",
+      "vendor_file": "assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_79gmllnweb.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_quaternius_nature__pine_-_free_model_by_quaternius_79gmllnweb.md"
+    },
+    "quaternius_nature__pine_-_free_model_by_quaternius_igsu0cpobz": {
+      "arrangement_file": "assets/ingested/quaternius_nature__pine_-_free_model_by_quaternius_igsu0cpobz.arrangement.json",
+      "asset_id": "quaternius_nature__pine_-_free_model_by_quaternius_igsu0cpobz",
+      "ingested_at": "2026-06-25T18:05:37+00:00",
+      "kind": "glb",
+      "kit": "quaternius_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_igsu0cpobz.glb",
+      "scene_node_file": "assets/ingested/quaternius_nature__pine_-_free_model_by_quaternius_igsu0cpobz.scene_node.json",
+      "sha256": "b2cc7f2e672f94a41925ba831af8b3db9cbe6621172fb6f2717881c81c074e18",
+      "source_site": "Quaternius",
+      "source_url": "https://poly.pizza/m/igSu0cPoBz",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "Pine - Free Model By Quaternius",
+      "vendor_file": "assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_igsu0cpobz.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_quaternius_nature__pine_-_free_model_by_quaternius_igsu0cpobz.md"
+    },
+    "quaternius_nature__pine_-_free_model_by_quaternius_zt62gcekxz": {
+      "arrangement_file": "assets/ingested/quaternius_nature__pine_-_free_model_by_quaternius_zt62gcekxz.arrangement.json",
+      "asset_id": "quaternius_nature__pine_-_free_model_by_quaternius_zt62gcekxz",
+      "ingested_at": "2026-06-25T18:05:37+00:00",
+      "kind": "glb",
+      "kit": "quaternius_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_zt62gcekxz.glb",
+      "scene_node_file": "assets/ingested/quaternius_nature__pine_-_free_model_by_quaternius_zt62gcekxz.scene_node.json",
+      "sha256": "d5d7714406e11c7f6578adda7f4f1ec6f6fe1c514b1e97fda923d83845b028b2",
+      "source_site": "Quaternius",
+      "source_url": "https://poly.pizza/m/Zt62gceKXZ",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "Pine - Free Model By Quaternius",
+      "vendor_file": "assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_zt62gcekxz.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_quaternius_nature__pine_-_free_model_by_quaternius_zt62gcekxz.md"
+    },
+    "quaternius_nature__rock_path_square_wide_-_free_model_by_quaternius_8wdmuvrsya": {
+      "arrangement_file": "assets/ingested/quaternius_nature__rock_path_square_wide_-_free_model_by_quaternius_8wdmuvrsya.arrangement.json",
+      "asset_id": "quaternius_nature__rock_path_square_wide_-_free_model_by_quaternius_8wdmuvrsya",
+      "ingested_at": "2026-06-25T18:05:37+00:00",
+      "kind": "glb",
+      "kit": "quaternius_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__rock_path_square_wide_-_free_model_by_quaternius_8wdmuvrsya.glb",
+      "scene_node_file": "assets/ingested/quaternius_nature__rock_path_square_wide_-_free_model_by_quaternius_8wdmuvrsya.scene_node.json",
+      "sha256": "0621256adeac3c74df921d0a7fe5fcd5484e23b20bcfe964ca9fb7491436ef38",
+      "source_site": "Quaternius",
+      "source_url": "https://poly.pizza/m/8wDmuvrSya",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "Rock Path Square Wide - Free Model By Quaternius",
+      "vendor_file": "assets/vendor/quaternius_nature/quaternius_nature__rock_path_square_wide_-_free_model_by_quaternius_8wdmuvrsya.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_quaternius_nature__rock_path_square_wide_-_free_model_by_quaternius_8wdmuvrsya.md"
+    },
+    "quaternius_nature__twisted_tree_-_free_model_by_quaternius_7pdbpelkqr": {
+      "arrangement_file": "assets/ingested/quaternius_nature__twisted_tree_-_free_model_by_quaternius_7pdbpelkqr.arrangement.json",
+      "asset_id": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_7pdbpelkqr",
+      "ingested_at": "2026-06-25T18:05:37+00:00",
+      "kind": "glb",
+      "kit": "quaternius_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_7pdbpelkqr.glb",
+      "scene_node_file": "assets/ingested/quaternius_nature__twisted_tree_-_free_model_by_quaternius_7pdbpelkqr.scene_node.json",
+      "sha256": "01c7f5b15d1df6485fd90ce050b015a2023d2717f8c7c535dd12a91cd8a81c73",
+      "source_site": "Quaternius",
+      "source_url": "https://poly.pizza/m/7PDBpElkQr",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "Twisted Tree - Free Model By Quaternius",
+      "vendor_file": "assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_7pdbpelkqr.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_quaternius_nature__twisted_tree_-_free_model_by_quaternius_7pdbpelkqr.md"
+    },
+    "quaternius_nature__twisted_tree_-_free_model_by_quaternius_8orakn9m0x": {
+      "arrangement_file": "assets/ingested/quaternius_nature__twisted_tree_-_free_model_by_quaternius_8orakn9m0x.arrangement.json",
+      "asset_id": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_8orakn9m0x",
+      "ingested_at": "2026-06-25T18:05:37+00:00",
+      "kind": "glb",
+      "kit": "quaternius_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_8orakn9m0x.glb",
+      "scene_node_file": "assets/ingested/quaternius_nature__twisted_tree_-_free_model_by_quaternius_8orakn9m0x.scene_node.json",
+      "sha256": "b2fb1ec0bdb495b7dca7dbd213b0b5349e6da8d7b7143d62d8563820f2997d83",
+      "source_site": "Quaternius",
+      "source_url": "https://poly.pizza/m/8oraKn9m0x",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "Twisted Tree - Free Model By Quaternius",
+      "vendor_file": "assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_8orakn9m0x.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_quaternius_nature__twisted_tree_-_free_model_by_quaternius_8orakn9m0x.md"
+    },
+    "quaternius_nature__twisted_tree_-_free_model_by_quaternius_9awlx82xuf": {
+      "arrangement_file": "assets/ingested/quaternius_nature__twisted_tree_-_free_model_by_quaternius_9awlx82xuf.arrangement.json",
+      "asset_id": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_9awlx82xuf",
+      "ingested_at": "2026-06-25T18:05:37+00:00",
+      "kind": "glb",
+      "kit": "quaternius_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_9awlx82xuf.glb",
+      "scene_node_file": "assets/ingested/quaternius_nature__twisted_tree_-_free_model_by_quaternius_9awlx82xuf.scene_node.json",
+      "sha256": "5da62dd85ee834e189bb8f8dd11febf4d7e6e2158d1295fe5cdf9b4fcef32e5a",
+      "source_site": "Quaternius",
+      "source_url": "https://poly.pizza/m/9aWlx82xUf",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "Twisted Tree - Free Model By Quaternius",
+      "vendor_file": "assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_9awlx82xuf.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_quaternius_nature__twisted_tree_-_free_model_by_quaternius_9awlx82xuf.md"
+    },
+    "quaternius_nature__twisted_tree_-_free_model_by_quaternius_edspjnecm7": {
+      "arrangement_file": "assets/ingested/quaternius_nature__twisted_tree_-_free_model_by_quaternius_edspjnecm7.arrangement.json",
+      "asset_id": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_edspjnecm7",
+      "ingested_at": "2026-06-25T18:05:37+00:00",
+      "kind": "glb",
+      "kit": "quaternius_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_edspjnecm7.glb",
+      "scene_node_file": "assets/ingested/quaternius_nature__twisted_tree_-_free_model_by_quaternius_edspjnecm7.scene_node.json",
+      "sha256": "32276e3b05b7d2789c565cf21b69fa99ba338fe3fb1722f68b31750ed90fd930",
+      "source_site": "Quaternius",
+      "source_url": "https://poly.pizza/m/edSPJNECM7",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "Twisted Tree - Free Model By Quaternius",
+      "vendor_file": "assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_edspjnecm7.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_quaternius_nature__twisted_tree_-_free_model_by_quaternius_edspjnecm7.md"
+    },
+    "quaternius_nature__twisted_tree_-_free_model_by_quaternius_gvtsmmuzv7": {
+      "arrangement_file": "assets/ingested/quaternius_nature__twisted_tree_-_free_model_by_quaternius_gvtsmmuzv7.arrangement.json",
+      "asset_id": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_gvtsmmuzv7",
+      "ingested_at": "2026-06-25T18:05:37+00:00",
+      "kind": "glb",
+      "kit": "quaternius_nature",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_gvtsmmuzv7.glb",
+      "scene_node_file": "assets/ingested/quaternius_nature__twisted_tree_-_free_model_by_quaternius_gvtsmmuzv7.scene_node.json",
+      "sha256": "a01a29f8535255bb50f36a896bdcd6a3f52348fb11f4131789a8ebd95c0f01a5",
+      "source_site": "Quaternius",
+      "source_url": "https://poly.pizza/m/GVTsMmuzv7",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 2,
+        "meshes": 1,
+        "nodes": 2
+      },
+      "title": "Twisted Tree - Free Model By Quaternius",
+      "vendor_file": "assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_gvtsmmuzv7.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_quaternius_nature__twisted_tree_-_free_model_by_quaternius_gvtsmmuzv7.md"
     }
   },
-  "format": "resonance.asset_manifest/v1"
+  "format": "resonance.asset_manifest/v1",
+  "kits": {
+    "kenney_nature": {
+      "combined_arrangement": "assets/ingested/kit_kenney_nature.arrangement.json",
+      "ingested_at": "2026-06-25T18:05:19+00:00",
+      "kit_id": "kenney_nature",
+      "license": "CC0 1.0 Universal",
+      "members": [
+        {
+          "asset_id": "kenney_nature__bed",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bed.glb",
+          "sha256": "ed064d4d9e6cf0c87f9146cb38a652d0df5427b60d0486fed190ab74d9510df4",
+          "title": "bed"
+        },
+        {
+          "asset_id": "kenney_nature__bed_floor",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bed_floor.glb",
+          "sha256": "a59c8878186ab180f43e55249184b5c8e6af7d6501f908898202ac14c474a05f",
+          "title": "bed_floor"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_center_stone",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_center_stone.glb",
+          "sha256": "f3681603a3d6523f8298da7d4c8d00e653c6028136c3427af07952fa3ca10519",
+          "title": "bridge_center_stone"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_center_stoneround",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_center_stoneround.glb",
+          "sha256": "ec0e73f593a3230b9f10bfe69dec5e95c8c031f1a1a81e1a308501ef3a70e68c",
+          "title": "bridge_center_stoneround"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_center_wood",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_center_wood.glb",
+          "sha256": "ed9ede934d5be5737863713f4648d8ffaca48038d299442a2ae2c3a2b6b79984",
+          "title": "bridge_center_wood"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_center_woodround",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_center_woodround.glb",
+          "sha256": "382c95860d1805457a77e43ae1e47cc77d7a05cb5b1921e5e0f44f6627d0e11f",
+          "title": "bridge_center_woodround"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_side_stone",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_side_stone.glb",
+          "sha256": "2da6236082152f843a29393225be8bbbd28abacf597acc35704c0bb393bc4127",
+          "title": "bridge_side_stone"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_side_stoneround",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_side_stoneround.glb",
+          "sha256": "26554af65f17af00b12246aa950f267fd940cd0b3973314ee767f6a458687005",
+          "title": "bridge_side_stoneround"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_side_wood",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_side_wood.glb",
+          "sha256": "3857c2a286d236375dbae209897884eebc379d18e4af39ee8414f2d9511e2c49",
+          "title": "bridge_side_wood"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_side_woodround",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_side_woodround.glb",
+          "sha256": "29a2bd3dc9cf5bf3c9354323a3551ad98a279ad785faa8e22152a313cc4f65cd",
+          "title": "bridge_side_woodround"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_stone",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_stone.glb",
+          "sha256": "b8b311f525ad616fcdebb6463db8b0c7710af58eb45308b54c08bcb290a2315e",
+          "title": "bridge_stone"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_stonenarrow",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_stonenarrow.glb",
+          "sha256": "ea011dbaa2926013456c001ac93d24be07c2b1bed98fe5b24aae372f68c5ff24",
+          "title": "bridge_stonenarrow"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_stoneround",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_stoneround.glb",
+          "sha256": "0b2254c5eb59a5fac2c7185cdc9af8efb941a31f0c0fb5a3fabaeb60c0108b41",
+          "title": "bridge_stoneround"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_stoneroundnarrow",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_stoneroundnarrow.glb",
+          "sha256": "b29d3c2a235861651296e5fb4be6bde4f17b3206d452a83cdafe6e4d90dcffda",
+          "title": "bridge_stoneroundnarrow"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_wood",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_wood.glb",
+          "sha256": "3da4c208b0f72b7f2ba42db521b62ec4b0278050c75256a6982c40d21aab5701",
+          "title": "bridge_wood"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_woodnarrow",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_woodnarrow.glb",
+          "sha256": "df46d1ba2ae557f3c69850c4faf03bcd16786fff305bce772f5b260e50def351",
+          "title": "bridge_woodnarrow"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_woodround",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_woodround.glb",
+          "sha256": "3b8593e6f50ae78f0f3f5d51ef5ac4751808fd5cbd462f35d09bbde5388f1034",
+          "title": "bridge_woodround"
+        },
+        {
+          "asset_id": "kenney_nature__bridge_woodroundnarrow",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_woodroundnarrow.glb",
+          "sha256": "fbd1bfc4601b7b195861ca85cc9d1e7a36f87d6178cdefb0aa887b1d2fe41c24",
+          "title": "bridge_woodroundnarrow"
+        },
+        {
+          "asset_id": "kenney_nature__cactus_short",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__cactus_short.glb",
+          "sha256": "81ac9fc4c66eacceaf4aebcb6df3468ea450a2f5081151bb11400282efbc51bd",
+          "title": "cactus_short"
+        },
+        {
+          "asset_id": "kenney_nature__cactus_tall",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__cactus_tall.glb",
+          "sha256": "d43a1aca5952e1f8a104d64a0edfec09c39f15102ca6bdc531460dd5a2c53d25",
+          "title": "cactus_tall"
+        },
+        {
+          "asset_id": "kenney_nature__campfire_bricks",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__campfire_bricks.glb",
+          "sha256": "ecdca761c6c07ee417261140d5449872b7f51f3671df2d536e2a03b65480563f",
+          "title": "campfire_bricks"
+        },
+        {
+          "asset_id": "kenney_nature__campfire_logs",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__campfire_logs.glb",
+          "sha256": "98d87cdcf9095b94fd348d0946e911dd4ca6c0956bac3318cfd2b0030b86055a",
+          "title": "campfire_logs"
+        },
+        {
+          "asset_id": "kenney_nature__campfire_planks",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__campfire_planks.glb",
+          "sha256": "0d26e842f7f5cb607ad37205e930822656b7c6ba570f9d0ba6b039cea90f8ab7",
+          "title": "campfire_planks"
+        },
+        {
+          "asset_id": "kenney_nature__campfire_stones",
+          "res_path": "res://assets/vendor/kenney_nature/kenney_nature__campfire_stones.glb",
+          "sha256": "54869db23243a3f4905bc00bd4cd93b1037b28556ab3ef93e7a893a093791e35",
+          "title": "campfire_stones"
+        }
+      ],
+      "source_name": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip",
+      "title": "Kenney Nature Kit",
+      "wavelet_node": "Alethea-cc/nodes/asset_kit_kenney_nature.md"
+    },
+    "quaternius_nature": {
+      "combined_arrangement": "assets/ingested/kit_quaternius_nature.arrangement.json",
+      "ingested_at": "2026-06-25T18:05:54+00:00",
+      "kit_id": "quaternius_nature",
+      "license": "CC0 1.0 Universal",
+      "members": [
+        {
+          "asset_id": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_8orakn9m0x",
+          "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_8orakn9m0x.glb",
+          "sha256": "b2fb1ec0bdb495b7dca7dbd213b0b5349e6da8d7b7143d62d8563820f2997d83",
+          "title": "Twisted Tree - Free Model By Quaternius"
+        },
+        {
+          "asset_id": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_7pdbpelkqr",
+          "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_7pdbpelkqr.glb",
+          "sha256": "01c7f5b15d1df6485fd90ce050b015a2023d2717f8c7c535dd12a91cd8a81c73",
+          "title": "Twisted Tree - Free Model By Quaternius"
+        },
+        {
+          "asset_id": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_edspjnecm7",
+          "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_edspjnecm7.glb",
+          "sha256": "32276e3b05b7d2789c565cf21b69fa99ba338fe3fb1722f68b31750ed90fd930",
+          "title": "Twisted Tree - Free Model By Quaternius"
+        },
+        {
+          "asset_id": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_gvtsmmuzv7",
+          "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_gvtsmmuzv7.glb",
+          "sha256": "a01a29f8535255bb50f36a896bdcd6a3f52348fb11f4131789a8ebd95c0f01a5",
+          "title": "Twisted Tree - Free Model By Quaternius"
+        },
+        {
+          "asset_id": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_9awlx82xuf",
+          "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_9awlx82xuf.glb",
+          "sha256": "5da62dd85ee834e189bb8f8dd11febf4d7e6e2158d1295fe5cdf9b4fcef32e5a",
+          "title": "Twisted Tree - Free Model By Quaternius"
+        },
+        {
+          "asset_id": "quaternius_nature__pine_-_free_model_by_quaternius_zt62gcekxz",
+          "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_zt62gcekxz.glb",
+          "sha256": "d5d7714406e11c7f6578adda7f4f1ec6f6fe1c514b1e97fda923d83845b028b2",
+          "title": "Pine - Free Model By Quaternius"
+        },
+        {
+          "asset_id": "quaternius_nature__pine_-_free_model_by_quaternius_699sfulcn2",
+          "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_699sfulcn2.glb",
+          "sha256": "3a5db923999bd47281f1f38cf8451c1544acfad33d953892fa95ca74765be361",
+          "title": "Pine - Free Model By Quaternius"
+        },
+        {
+          "asset_id": "quaternius_nature__pine_-_free_model_by_quaternius_79gmllnweb",
+          "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_79gmllnweb.glb",
+          "sha256": "240e6f60c5b106a892c80490d7c710f20ef902b328b5e173c0a567334e4df972",
+          "title": "Pine - Free Model By Quaternius"
+        },
+        {
+          "asset_id": "quaternius_nature__pine_-_free_model_by_quaternius_igsu0cpobz",
+          "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_igsu0cpobz.glb",
+          "sha256": "b2cc7f2e672f94a41925ba831af8b3db9cbe6621172fb6f2717881c81c074e18",
+          "title": "Pine - Free Model By Quaternius"
+        },
+        {
+          "asset_id": "quaternius_nature__rock_path_square_wide_-_free_model_by_quaternius_8wdmuvrsya",
+          "res_path": "res://assets/vendor/quaternius_nature/quaternius_nature__rock_path_square_wide_-_free_model_by_quaternius_8wdmuvrsya.glb",
+          "sha256": "0621256adeac3c74df921d0a7fe5fcd5484e23b20bcfe964ca9fb7491436ef38",
+          "title": "Rock Path Square Wide - Free Model By Quaternius"
+        }
+      ],
+      "source_name": "Quaternius",
+      "source_url": "https://poly.pizza/",
+      "title": "Quaternius Nature Kit",
+      "wavelet_node": "Alethea-cc/nodes/asset_kit_quaternius_nature.md"
+    }
+  }
 }

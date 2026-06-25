@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-kenney_nature__bridge_woodround",
+  "nodes": [
+    {
+      "id": "kenney_nature__bridge_woodround",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_nature/kenney_nature__bridge_woodround.glb",
+        "name": "bridge_woodround"
+      }
+    }
+  ],
+  "wires": []
+}

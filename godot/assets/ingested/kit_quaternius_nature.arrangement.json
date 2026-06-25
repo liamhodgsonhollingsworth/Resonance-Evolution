@@ -1,0 +1,359 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "kit-quaternius_nature",
+  "kit": "quaternius_nature",
+  "nodes": [
+    {
+      "id": "m_0",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_8orakn9m0x.glb",
+        "name": "Twisted Tree - Free Model By Quaternius"
+      }
+    },
+    {
+      "id": "t_0",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -3.75,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_1",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_7pdbpelkqr.glb",
+        "name": "Twisted Tree - Free Model By Quaternius"
+      }
+    },
+    {
+      "id": "t_1",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -1.25,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_2",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_edspjnecm7.glb",
+        "name": "Twisted Tree - Free Model By Quaternius"
+      }
+    },
+    {
+      "id": "t_2",
+      "type": "Transform",
+      "params": {
+        "position": [
+          1.25,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_3",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_gvtsmmuzv7.glb",
+        "name": "Twisted Tree - Free Model By Quaternius"
+      }
+    },
+    {
+      "id": "t_3",
+      "type": "Transform",
+      "params": {
+        "position": [
+          3.75,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_4",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/quaternius_nature/quaternius_nature__twisted_tree_-_free_model_by_quaternius_9awlx82xuf.glb",
+        "name": "Twisted Tree - Free Model By Quaternius"
+      }
+    },
+    {
+      "id": "t_4",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -3.75,
+          0.0,
+          2.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_5",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_zt62gcekxz.glb",
+        "name": "Pine - Free Model By Quaternius"
+      }
+    },
+    {
+      "id": "t_5",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -1.25,
+          0.0,
+          2.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_6",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_699sfulcn2.glb",
+        "name": "Pine - Free Model By Quaternius"
+      }
+    },
+    {
+      "id": "t_6",
+      "type": "Transform",
+      "params": {
+        "position": [
+          1.25,
+          0.0,
+          2.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_7",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_79gmllnweb.glb",
+        "name": "Pine - Free Model By Quaternius"
+      }
+    },
+    {
+      "id": "t_7",
+      "type": "Transform",
+      "params": {
+        "position": [
+          3.75,
+          0.0,
+          2.5
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_8",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/quaternius_nature/quaternius_nature__pine_-_free_model_by_quaternius_igsu0cpobz.glb",
+        "name": "Pine - Free Model By Quaternius"
+      }
+    },
+    {
+      "id": "t_8",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -3.75,
+          0.0,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "m_9",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/quaternius_nature/quaternius_nature__rock_path_square_wide_-_free_model_by_quaternius_8wdmuvrsya.glb",
+        "name": "Rock Path Square Wide - Free Model By Quaternius"
+      }
+    },
+    {
+      "id": "t_9",
+      "type": "Transform",
+      "params": {
+        "position": [
+          -1.25,
+          0.0,
+          5.0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    }
+  ],
+  "wires": [
+    {
+      "from": "m_0",
+      "out": "node",
+      "to": "t_0",
+      "in": "node"
+    },
+    {
+      "from": "m_1",
+      "out": "node",
+      "to": "t_1",
+      "in": "node"
+    },
+    {
+      "from": "m_2",
+      "out": "node",
+      "to": "t_2",
+      "in": "node"
+    },
+    {
+      "from": "m_3",
+      "out": "node",
+      "to": "t_3",
+      "in": "node"
+    },
+    {
+      "from": "m_4",
+      "out": "node",
+      "to": "t_4",
+      "in": "node"
+    },
+    {
+      "from": "m_5",
+      "out": "node",
+      "to": "t_5",
+      "in": "node"
+    },
+    {
+      "from": "m_6",
+      "out": "node",
+      "to": "t_6",
+      "in": "node"
+    },
+    {
+      "from": "m_7",
+      "out": "node",
+      "to": "t_7",
+      "in": "node"
+    },
+    {
+      "from": "m_8",
+      "out": "node",
+      "to": "t_8",
+      "in": "node"
+    },
+    {
+      "from": "m_9",
+      "out": "node",
+      "to": "t_9",
+      "in": "node"
+    }
+  ]
+}
