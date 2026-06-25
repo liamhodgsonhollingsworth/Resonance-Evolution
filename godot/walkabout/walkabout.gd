@@ -37,7 +37,8 @@ func _ready() -> void:
 	add_child(renderer)
 	var arrangement := _assemble_arrangement()
 	runtime.load_arrangement(arrangement)
-	renderer.render(runtime.evaluate(), runtime.arrangement)
+	var eval_output := runtime.evaluate()
+	renderer.render(eval_output, runtime.arrangement)
 	var found := _asset_arrangements()
 	# Proximity-gated pickup: every laid-out object becomes walk-up-pickable via the `proximity`
 	# Context handler. Registering the rendered nodes (not the data) keeps the gate driven by where
@@ -46,19 +47,33 @@ func _ready() -> void:
 	interactor.name = "PickupInteractor"
 	add_child(interactor)
 	interactor.set_player(_player)
-	_register_pickables()
+	interactor.set_world_root(self)   # placed objects (Q) join the walkabout root, like everything else
+	_register_pickables(eval_output)
+	# Inventory HUD: an on-screen panel of held objects + the active type. It reads the interactor and
+	# refreshes on its `inventory_changed` signal — pure presentation over the pickup/place model.
+	var hud := BuildHud.new()
+	hud.name = "BuildHud"
+	add_child(hud)
+	hud.bind(interactor)
 	print("[walkabout] ready; %d runtime node(s); %d kit(s) found; %d rendered object(s); %d pickable(s)" % [
 		runtime.nodes.size(), (found["kits"] as Array).size(),
 		renderer.get_child_count(), interactor.pickable_count()])
 
 ## Register every rendered scene object as a proximity-gated pickable. The renderer spawns one
-## Node3D child per laid-out asset; each carries its world position from the applied TRS, which is
-## exactly the `pos_b` the proximity handler reads. Walkers can then walk up to any object and use it.
-func _register_pickables() -> void:
+## Node3D child per laid-out asset (in `select_roots` order); each carries its world position from
+## the applied TRS — exactly the `pos_b` the proximity handler reads. We zip each rendered child to
+## the scene_node DESCRIPTOR it was built from (same order), so the pickable knows its inventory
+## TYPE and can be re-rendered on place-down. Walkers can then walk up, pick up (E), and place (Q).
+func _register_pickables(eval_output: Dictionary) -> void:
+	var roots := GodotSceneRenderer.select_roots(eval_output, runtime.arrangement)
+	var descs: Array = []
+	for r in roots:
+		descs.append(r["desc"])
 	var i := 0
 	for child in renderer.get_children():
 		if child is Node3D:
-			interactor.register("obj_%d_%s" % [i, child.name], child)
+			var desc: Dictionary = descs[i] if i < descs.size() else {}
+			interactor.register("obj_%d_%s" % [i, child.name], child, PickupInteractor.DEFAULT_RADIUS, desc)
 			i += 1
 
 func _process(_delta: float) -> void:
