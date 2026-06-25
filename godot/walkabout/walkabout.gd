@@ -18,13 +18,15 @@ extends Node3D
 ##   <godot> --headless --path godot -s res://headless_walkabout_test.gd
 
 const INGESTED_DIR := "res://assets/ingested/"
-const SPACING := 2.5      # meters between laid-out assets
-const ASSET_SCALE := 12.0 # CC0 sample models are authored at real-world cm scale; scale up to be visible
-const ASSET_LIFT := 1.0   # meters off the floor, so a scaled asset sits at roughly eye level
+const SPACING := 2.5      # meters between laid-out single assets
+const ASSET_SCALE := 1.0  # Kenney/Quaternius CC0 kits are authored at real-world METER scale → 1:1
+const ASSET_LIFT := 0.0   # meter-scale kit models already sit on their own origin → no lift
 const SHOT_OUT := "res://live/walkabout_shot.png"
 
 var runtime: GraphRuntime
 var renderer: GodotSceneRenderer
+var interactor: PickupInteractor
+var _player: FpsController
 var _shot_frames := 0
 
 func _ready() -> void:
@@ -36,8 +38,28 @@ func _ready() -> void:
 	var arrangement := _assemble_arrangement()
 	runtime.load_arrangement(arrangement)
 	renderer.render(runtime.evaluate(), runtime.arrangement)
-	print("[walkabout] ready; %d node(s); %d asset(s) laid out" % [
-		runtime.nodes.size(), _asset_arrangements().size()])
+	var found := _asset_arrangements()
+	# Proximity-gated pickup: every laid-out object becomes walk-up-pickable via the `proximity`
+	# Context handler. Registering the rendered nodes (not the data) keeps the gate driven by where
+	# things actually are in the world (the handler reads live positions as inputs each frame).
+	interactor = PickupInteractor.new()
+	interactor.name = "PickupInteractor"
+	add_child(interactor)
+	interactor.set_player(_player)
+	_register_pickables()
+	print("[walkabout] ready; %d runtime node(s); %d kit(s) found; %d rendered object(s); %d pickable(s)" % [
+		runtime.nodes.size(), (found["kits"] as Array).size(),
+		renderer.get_child_count(), interactor.pickable_count()])
+
+## Register every rendered scene object as a proximity-gated pickable. The renderer spawns one
+## Node3D child per laid-out asset; each carries its world position from the applied TRS, which is
+## exactly the `pos_b` the proximity handler reads. Walkers can then walk up to any object and use it.
+func _register_pickables() -> void:
+	var i := 0
+	for child in renderer.get_children():
+		if child is Node3D:
+			interactor.register("obj_%d_%s" % [i, child.name], child)
+			i += 1
 
 func _process(_delta: float) -> void:
 	# CI one-shot: launched with `-- --shot`, render a few frames -> png, quit (proves it runs).
@@ -103,47 +125,102 @@ func _build_world() -> void:
 	cam.position = Vector3(0, 1.6, 0)
 	player.add_child(cam)
 	add_child(player)
+	_player = player   # the body whose position gates proximity pickup
 
-# --- the arrangement: every ingested asset, laid out in a row via Model -> Transform ---------
-func _asset_arrangements() -> Array:
-	var out := []
+# --- the arrangement: ingested MODULAR KITS as buildable sets, single assets in a row ---------
+## All ingested arrangements, split into kit-combined sets (`kit_*.arrangement.json`, pre-laid-out)
+## vs per-asset singles (everything else). A member of an ingested kit ALSO has a single-asset
+## arrangement; to avoid drawing it twice we draw the kit-combined set and skip any single whose
+## Model paths the kits already cover.
+func _asset_arrangements() -> Dictionary:
+	var kits := []
+	var singles := []
 	var d := DirAccess.open(INGESTED_DIR)
 	if d == null:
-		return out
+		return { "kits": kits, "singles": singles }
 	d.list_dir_begin()
 	var f := d.get_next()
 	while f != "":
 		if f.ends_with(".arrangement.json"):
-			out.append(INGESTED_DIR + f)
+			var path := INGESTED_DIR + f
+			if f.begins_with("kit_"):
+				kits.append(path)
+			else:
+				singles.append(path)
 		f = d.get_next()
 	d.list_dir_end()
-	out.sort()
-	return out
+	kits.sort()
+	singles.sort()
+	return { "kits": kits, "singles": singles }
 
 func _assemble_arrangement() -> Dictionary:
 	var nodes := []
 	var wires := []
-	var paths := _asset_arrangements()
+	var found := _asset_arrangements()
+	var kit_paths: Array = found["kits"]
+	var single_paths: Array = found["singles"]
 	var i := 0
-	var n := paths.size()
-	for p in paths:
-		var text := FileAccess.get_file_as_string(p)
-		var data = JSON.parse_string(text)
+	var kit_index := 0
+	var covered_paths := {}   # Model res paths already drawn by a kit (so singles don't duplicate)
+
+	# (1) Each modular kit is a buildable set: take its combined Model -> Transform layout VERBATIM
+	# (already grid-laid-out at correct meter scale by the ingest pipeline) and offset the whole kit
+	# into its own zone along Z so multiple kits don't overlap.
+	const KIT_ZONE_GAP := 12.0   # meters between kit zones
+	for kp in kit_paths:
+		var kdata = JSON.parse_string(FileAccess.get_file_as_string(kp))
+		if typeof(kdata) != TYPE_DICTIONARY:
+			continue
+		var zone_z := float(kit_index) * KIT_ZONE_GAP
+		var id_map := {}
+		for node in kdata.get("nodes", []):
+			var old_id := String(node.get("id"))
+			var new_id := "k%d_%s" % [kit_index, old_id]
+			id_map[old_id] = new_id
+			var nt := String(node.get("type"))
+			var params: Dictionary = (node.get("params", {}) as Dictionary).duplicate(true)
+			if nt == "Transform":
+				# Shift this kit's whole layout into its zone (preserve the kit's internal grid).
+				var pos: Array = params.get("position", [0, 0, 0])
+				params["position"] = [float(pos[0]), float(pos[1]), float(pos[2]) + zone_z]
+			elif nt == "Model":
+				covered_paths[String(params.get("path", ""))] = true
+			nodes.append({ "id": new_id, "type": nt, "params": params })
+		for w in kdata.get("wires", []):
+			wires.append({
+				"from": id_map.get(String(w.get("from")), String(w.get("from"))),
+				"out": w.get("out"),
+				"to": id_map.get(String(w.get("to")), String(w.get("to"))),
+				"in": w.get("in"),
+			})
+		kit_index += 1
+
+	# (2) Any remaining single (non-kit) asset gets the centered-row layout, skipping anything a kit
+	# already covers. Singles render in a row in front of the kit zones (negative Z).
+	var single_models := []
+	for p in single_paths:
+		var data = JSON.parse_string(FileAccess.get_file_as_string(p))
 		if typeof(data) != TYPE_DICTIONARY:
 			continue
 		for node in data.get("nodes", []):
 			if String(node.get("type")) != "Model":
 				continue
-			var mid := "m_%d" % i
-			var tid := "t_%d" % i
-			nodes.append({ "id": mid, "type": "Model", "params": node.get("params", {}) })
-			# Lay assets out in a centered row along X, scaled up + lifted so each is walk-up visible.
-			var x := (float(i) - float(n - 1) / 2.0) * SPACING
-			nodes.append({ "id": tid, "type": "Transform",
-				"params": { "position": [x, ASSET_LIFT, 0.0], "rotation": [0, 0, 0],
-					"scale": [ASSET_SCALE, ASSET_SCALE, ASSET_SCALE] } })
-			wires.append({ "from": mid, "out": "node", "to": tid, "in": "node" })
-			i += 1
+			var mpath := String((node.get("params", {}) as Dictionary).get("path", ""))
+			if covered_paths.has(mpath):
+				continue
+			single_models.append(node)
+	var ns := single_models.size()
+	for node in single_models:
+		var mid := "m_%d" % i
+		var tid := "t_%d" % i
+		nodes.append({ "id": mid, "type": "Model", "params": node.get("params", {}) })
+		var x := (float(i) - float(ns - 1) / 2.0) * SPACING
+		nodes.append({ "id": tid, "type": "Transform",
+			"params": { "position": [x, ASSET_LIFT, -KIT_ZONE_GAP], "rotation": [0, 0, 0],
+				"scale": [ASSET_SCALE, ASSET_SCALE, ASSET_SCALE] } })
+		wires.append({ "from": mid, "out": "node", "to": tid, "in": "node" })
+		i += 1
+
 	if nodes.is_empty():
 		# Fallback: a built-in primitive box so the scene is never empty (asset-free, portable).
 		nodes.append({ "id": "fallback", "type": "Model", "params": {} })
