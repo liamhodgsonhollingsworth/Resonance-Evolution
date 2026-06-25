@@ -32,8 +32,28 @@ extends RefCounted
 ##   "paper_grain"  — paper-texture grain: a deterministic value-noise field multiplied onto luminance,
 ##                    so the look "sits on paper". Seeded → reproducible (an evolvable knob). params.seed,
 ##                    params.amount:float (0..1), params.scale:float.
-##   LATER (deferred): normal-mapping + lighting + temporal coherence as their OWN later layers (require
-##                    depth/normal/motion channels the source frame doesn't yet carry — out of scope here).
+##   "normal_map"   — (L4) surface-relief from luminance: treat luminance as a height field, take its
+##                    Sobel x/y gradients as the slope, and encode the resulting unit normal into RGB
+##                    (the standard tangent-space [0..1] packing nx=r*2-1, ny=g*2-1, nz=b*2-1). The
+##                    "embossed/relief" painterly layer — gives the look a sculpted surface WITHOUT a real
+##                    geometric normal channel (derived from the source frame, so the CPU oracle stays
+##                    headless). params.strength:float (height scale; 0 = flat → pure (0.5,0.5,1.0) blue).
+##   "lighting"     — (L4) directional lighting response: derive a normal from luminance (same height-
+##                    from-luma slope as normal_map), light it with a fixed directional light (Lambert
+##                    N·L) plus an ambient floor, and multiply the shading onto the pixel's RGB. The "lit
+##                    painterly surface" layer — makes brush relief catch light. params.light_x/light_y/
+##                    light_z (light DIRECTION, normalized internally), params.ambient:float (0..1),
+##                    params.strength:float (height scale feeding the derived normal).
+##   "temporal_stability" — (L4) frame-to-frame coherence so the painterly look does not shimmer in the
+##                    3D walkabout: blend each pixel toward the SAME pixel of a PREVIOUS frame supplied on
+##                    the descriptor (params.prev, a serialized image payload — see _prev_image), by a
+##                    fixed `blend` factor (0 = ignore history → identity; 1 = freeze to prev). The
+##                    temporal low-pass that kills per-frame flicker. With no/mismatched prev it is
+##                    identity (the first frame has no history). params.blend:float (0..1).
+##   LATER (deferred): true depth/normal/motion-vector CHANNELS from the 3D backend (so normal_map and
+##                    lighting can read a real geometric normal instead of the luminance-derived one, and
+##                    temporal_stability can reproject by motion vectors) — out of scope here; these three
+##                    layers are the renderer-neutral, source-frame-only first cut.
 
 ## Machine-readable vocabulary + param schema, read by EffectGenome (the evolver) so the genome's
 ## mutate/crossover stays in sync with what the applier actually understands — adding an effect here is
@@ -65,6 +85,21 @@ const EFFECT_TYPES := {
 		"scale": { "type": "float", "min": 1.0, "max": 32.0, "default": 8.0 },
 		"seed": { "type": "int", "min": 0, "max": 65535, "default": 1337 },
 	} },
+	"normal_map": { "params": {
+		"strength": { "type": "float", "min": 0.0, "max": 8.0, "default": 2.0 },
+	} },
+	"lighting": { "params": {
+		"strength": { "type": "float", "min": 0.0, "max": 8.0, "default": 2.0 },
+		"ambient": { "type": "float", "min": 0.0, "max": 1.0, "default": 0.3 },
+		"light_x": { "type": "float", "min": -1.0, "max": 1.0, "default": -0.5 },
+		"light_y": { "type": "float", "min": -1.0, "max": 1.0, "default": -0.5 },
+		"light_z": { "type": "float", "min": 0.0, "max": 1.0, "default": 1.0 },
+	} },
+	"temporal_stability": { "params": {
+		"blend": { "type": "float", "min": 0.0, "max": 1.0, "default": 0.5 },
+		# `prev` (the previous-frame payload) carries no numeric range → the evolver leaves it untouched
+		# (it is supplied by the render loop, not a tunable knob), exactly as color/bg are on `outline`.
+	} },
 }
 
 ## Apply an effect_stack descriptor to a source Image, returning a NEW Image (source untouched).
@@ -91,6 +126,12 @@ static func apply(desc: Dictionary, src: Image) -> Image:
 				img = _outline(img, p)
 			"paper_grain":
 				_paper_grain(img, p)
+			"normal_map":
+				img = _normal_map(img, p)
+			"lighting":
+				img = _lighting(img, p)
+			"temporal_stability":
+				img = _temporal_stability(img, p)
 			_:
 				push_warning("EffectStackCpu: unknown effect '%s' (skipped)" % layer.get("type"))
 	return img
@@ -319,6 +360,102 @@ static func _paper_grain(img: Image, params: Dictionary) -> void:
 			))
 
 # ---------------------------------------------------------------------------------------------------
+# normal_map (L4) — surface relief from luminance, encoded as a tangent-space normal in RGB
+# ---------------------------------------------------------------------------------------------------
+
+## Height-from-luminance normal map. Treat the source luminance as a height field h(x,y); its surface
+## normal is (-dh/dx, -dh/dy, 1) normalized, where the slopes are the Sobel x/y gradients scaled by
+## `strength`. The unit normal is packed into RGB the standard way: r=nx*0.5+0.5, g=ny*0.5+0.5,
+## b=nz*0.5+0.5 — so a flat region (zero gradient) is the canonical flat-normal blue (0.5,0.5,1.0).
+## strength=0 → every pixel is exactly that flat blue (the identity-of-relief floor). Alpha is carried
+## through from the source. Reads from the input snapshot, writes a fresh output → a true convolution.
+## Returns a NEW image. CC0 (Sobel + the universal tangent-space normal packing).
+static func _normal_map(img: Image, params: Dictionary) -> Image:
+	var strength := float(params.get("strength", 2.0))
+	if strength < 0.0:
+		strength = 0.0
+	var w := img.get_width()
+	var h := img.get_height()
+	var out := Image.create(w, h, false, img.get_format())
+	for y in h:
+		for x in w:
+			var n := _height_normal(img, x, y, w, h, strength)
+			out.set_pixel(x, y, Color(
+				n.x * 0.5 + 0.5,
+				n.y * 0.5 + 0.5,
+				n.z * 0.5 + 0.5,
+				img.get_pixel(x, y).a
+			))
+	return out
+
+# ---------------------------------------------------------------------------------------------------
+# lighting (L4) — directional lighting response over the luminance-derived relief
+# ---------------------------------------------------------------------------------------------------
+
+## Directional lighting response. Derive the same luminance height-normal as normal_map, then shade it
+## with one fixed directional light: Lambert term = max(0, N·L), final shade = clamp(ambient + (1-
+## ambient) * N·L, 0, 1), and multiply that scalar onto the pixel's RGB. `light_x/y/z` give the light
+## DIRECTION (normalized internally; a zero vector degrades to straight-down so it never divides by
+## zero), `ambient` is the unlit floor (ambient=1 → fully lit → identity), `strength` is the height
+## scale feeding the normal (strength=0 → flat normal → N·L is constant → uniform shade). Alpha carried
+## through. Reads from the snapshot, writes a fresh output. Returns a NEW image. CC0 (Lambert N·L).
+static func _lighting(img: Image, params: Dictionary) -> Image:
+	var strength := float(params.get("strength", 2.0))
+	if strength < 0.0:
+		strength = 0.0
+	var ambient := clampf(float(params.get("ambient", 0.3)), 0.0, 1.0)
+	var lx := float(params.get("light_x", -0.5))
+	var ly := float(params.get("light_y", -0.5))
+	var lz := float(params.get("light_z", 1.0))
+	var light := Vector3(lx, ly, lz)
+	if light.length() < 0.000001:
+		light = Vector3(0.0, 0.0, 1.0)  # degenerate light → straight down, never a NaN
+	light = light.normalized()
+	var w := img.get_width()
+	var h := img.get_height()
+	var out := Image.create(w, h, false, img.get_format())
+	for y in h:
+		for x in w:
+			var n := _height_normal(img, x, y, w, h, strength)
+			var ndotl: float = max(0.0, n.dot(light))
+			var shade := clampf(ambient + (1.0 - ambient) * ndotl, 0.0, 1.0)
+			var c := img.get_pixel(x, y)
+			out.set_pixel(x, y, Color(c.r * shade, c.g * shade, c.b * shade, c.a))
+	return out
+
+# ---------------------------------------------------------------------------------------------------
+# temporal_stability (L4) — frame-to-frame coherence (anti-shimmer temporal low-pass)
+# ---------------------------------------------------------------------------------------------------
+
+## Temporal low-pass against a previous frame. For each pixel, out = lerp(current, prev, blend) — an
+## exponential-moving-average toward history that suppresses the per-frame flicker the painterly
+## neighbourhood effects produce as the camera moves. `blend`=0 → ignore history (identity), 1 → freeze
+## to prev. The previous frame is supplied ON THE DESCRIPTOR as `params.prev` (a serialized image
+## payload — see _prev_image — so the whole stack stays JSON-portable DATA, no live Image on the wire).
+## If no prev is supplied, or its size does not match, it is identity (the first frame has no history,
+## and a resized frame can't be blended pixel-wise — fail safe to the current frame, never a crash).
+## Reads from the current snapshot, writes a fresh output. Returns a NEW image.
+static func _temporal_stability(img: Image, params: Dictionary) -> Image:
+	var blend := clampf(float(params.get("blend", 0.5)), 0.0, 1.0)
+	var w := img.get_width()
+	var h := img.get_height()
+	var prev := _prev_image(params.get("prev"), w, h)
+	if prev == null or blend <= 0.0:
+		return img.duplicate() as Image  # identity: no history, or history ignored
+	var out := Image.create(w, h, false, img.get_format())
+	for y in h:
+		for x in w:
+			var c := img.get_pixel(x, y)
+			var pc := prev.get_pixel(x, y)
+			out.set_pixel(x, y, Color(
+				lerpf(c.r, pc.r, blend),
+				lerpf(c.g, pc.g, blend),
+				lerpf(c.b, pc.b, blend),
+				lerpf(c.a, pc.a, blend)
+			))
+	return out
+
+# ---------------------------------------------------------------------------------------------------
 # shared helpers
 # ---------------------------------------------------------------------------------------------------
 
@@ -336,6 +473,55 @@ static func _sobel_magnitude(img: Image, x: int, y: int, w: int, h: int) -> floa
 	var gx := (tr + 2.0 * mr + br) - (tl + 2.0 * ml + bl)
 	var gy := (bl + 2.0 * bc + br) - (tl + 2.0 * tc + tr)
 	return sqrt(gx * gx + gy * gy)
+
+## Sobel luminance GRADIENT (gx, gy) at (x,y) as a Vector2 — the signed slope, not just the magnitude.
+## Shared by the relief layers (normal_map, lighting) which need the gradient direction, where
+## _sobel_magnitude only gives the strength. Same 3x3 Sobel pair, bounds-clamped.
+static func _sobel_gradient(img: Image, x: int, y: int, w: int, h: int) -> Vector2:
+	var l := func(ix: int, iy: int) -> float:
+		return _luma(img.get_pixel(clampi(ix, 0, w - 1), clampi(iy, 0, h - 1)))
+	var tl: float = l.call(x - 1, y - 1); var tc: float = l.call(x, y - 1); var tr: float = l.call(x + 1, y - 1)
+	var ml: float = l.call(x - 1, y);     var mr: float = l.call(x + 1, y)
+	var bl: float = l.call(x - 1, y + 1); var bc: float = l.call(x, y + 1); var br: float = l.call(x + 1, y + 1)
+	var gx := (tr + 2.0 * mr + br) - (tl + 2.0 * ml + bl)
+	var gy := (bl + 2.0 * bc + br) - (tl + 2.0 * tc + tr)
+	return Vector2(gx, gy)
+
+## The unit surface normal of the luminance height field at (x,y), with the slope scaled by `strength`.
+## normal = normalize(-strength*gx, -strength*gy, 1): a flat region (zero gradient) is exactly the
+## up-facing normal (0,0,1), and steeper luminance ramps tilt the normal more. Shared by normal_map
+## (which packs it into RGB) and lighting (which dots it with the light). strength=0 → always (0,0,1).
+static func _height_normal(img: Image, x: int, y: int, w: int, h: int, strength: float) -> Vector3:
+	var g := _sobel_gradient(img, x, y, w, h)
+	return Vector3(-strength * g.x, -strength * g.y, 1.0).normalized()
+
+## Decode a serialized previous-frame payload (params.prev) into an Image, or null if absent/invalid.
+## The payload is renderer-neutral DATA so the whole stack stays JSON-portable (no live Image on the
+## wire): { "w": int, "h": int, "pixels": [ [r,g,b,a], ... ] } in row-major order (length w*h). A live
+## Godot Image is also accepted directly (the render loop may hand one in without serializing). Returns
+## null on any mismatch (wrong size, malformed payload) → the caller treats "no usable history" as
+## identity, never a crash. Only decodes when the declared size matches the current frame (the temporal
+## blend is pixel-aligned; a differently-sized history can't be blended and is dropped).
+static func _prev_image(payload, w: int, h: int) -> Image:
+	if payload is Image:
+		var im := payload as Image
+		return im if (im.get_width() == w and im.get_height() == h) else null
+	if typeof(payload) != TYPE_DICTIONARY:
+		return null
+	var pw := int(payload.get("w", -1))
+	var ph := int(payload.get("h", -1))
+	if pw != w or ph != h:
+		return null
+	var pixels = payload.get("pixels", null)
+	if typeof(pixels) != TYPE_ARRAY or pixels.size() != w * h:
+		return null
+	var out := Image.create(w, h, false, Image.FORMAT_RGBAF)
+	var i := 0
+	for y in h:
+		for x in w:
+			out.set_pixel(x, y, _color_param(pixels[i], Color(0, 0, 0, 0)))
+			i += 1
+	return out
 
 ## Coerce a descriptor colour param ([r,g,b,a] array, or a Color, or absent) into a Color.
 static func _color_param(v, fallback: Color) -> Color:
