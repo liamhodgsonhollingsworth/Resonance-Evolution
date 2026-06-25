@@ -1,0 +1,51 @@
+{
+  "assets": {
+    "avocado": {
+      "_status": "unchanged",
+      "arrangement_file": "assets/ingested/avocado.arrangement.json",
+      "asset_id": "avocado",
+      "ingested_at": "2026-06-25T17:10:28+00:00",
+      "kind": "glb",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/avocado.glb",
+      "scene_node_file": "assets/ingested/avocado.scene_node.json",
+      "sha256": "ccc9c3ce56423720b09399c2351537207cd5a65f859f9e6e2f30922762f3abd4",
+      "source_site": "local",
+      "source_url": "local:repos\\Resonance-Evolution\\godot\\assets\\vendor\\Avocado.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "avocado",
+      "vendor_file": "assets/vendor/avocado.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_avocado.md"
+    },
+    "corset": {
+      "_status": "unchanged",
+      "arrangement_file": "assets/ingested/corset.arrangement.json",
+      "asset_id": "corset",
+      "ingested_at": "2026-06-25T17:10:28+00:00",
+      "kind": "glb",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/corset.glb",
+      "scene_node_file": "assets/ingested/corset.scene_node.json",
+      "sha256": "9582c0dc0dee813be77f60e6ddf7213987c7e11497bf3cc66fd7b18957ae0d26",
+      "source_site": "local",
+      "source_url": "local:repos\\Resonance-Evolution\\godot\\assets\\vendor\\Corset.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "corset",
+      "vendor_file": "assets/vendor/corset.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_corset.md"
+    }
+  },
+  "format": "resonance.asset_manifest/v1"
+}
