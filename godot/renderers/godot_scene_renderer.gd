@@ -73,6 +73,11 @@ func _sync(desc: Dictionary, parent: Node, key: String, seen: Dictionary) -> voi
 		inst = { "node": node, "mesh_key": want_key }
 		_instances[key] = inst
 	apply_trs(inst["node"], desc)
+	# Re-apply character morph (blend-shape) weights every render so live tuning of morph_weights on a
+	# reused instance (same glb → instance kept) updates the face without a geometry reload.
+	var msh = desc.get("mesh")
+	if typeof(msh) == TYPE_DICTIONARY and String((msh as Dictionary).get("source", "")) == "character":
+		_apply_morph_weights(inst["node"], (msh as Dictionary).get("morph_weights", {}))
 	var kids: Array = desc.get("children", [])
 	for j in kids.size():
 		_sync(kids[j], inst["node"], key + ".%d" % j, seen)
@@ -108,6 +113,18 @@ static func build_node(desc: Dictionary) -> Node3D:
 				var loaded := _load_glb(path)
 				if loaded != null:
 					node.add_child(loaded)
+		elif src == "character":
+			# A CHARACTER is a resolved FLAME-style genome whose geometry lives in a generated GLB
+			# (with morph targets) at mesh.glb — produced by tools/character_resolver.py. It is an
+			# ADDITIVE sibling of "glb": the genome (mesh.genome) + per-expression morph_weights ride
+			# as DATA (provenance, evolvable), and the geometry loads through the SAME glb path, so a
+			# character is just another renderer-neutral scene_node — zero floor/primitive edits.
+			var cpath := String(mesh.get("glb", mesh.get("path", "")))
+			if cpath != "":
+				var cloaded := _load_glb(cpath)
+				if cloaded != null:
+					_apply_morph_weights(cloaded, mesh.get("morph_weights", {}))
+					node.add_child(cloaded)
 		elif src == "primitive":
 			# Engine-built primitive mesh (box/sphere/cylinder): a portable, ASSET-FREE mesh
 			# source. It exports to glTF and loads in three.js the same as any other mesh, so an
@@ -117,6 +134,36 @@ static func build_node(desc: Dictionary) -> Node3D:
 			mi.mesh = _primitive_mesh(String(mesh.get("shape", "box")))
 			node.add_child(mi)
 	return node
+
+## Drive the imported character's blend-shape (morph) weights from the descriptor's morph_weights
+## ({ "expr0": w, ... } | { "0": w, ... }). The character GLB names blend shapes "morph0..N" (Godot's
+## default for unnamed glTF targets); we map by INDEX so an "exprN"/"N"/raw-index key all land. This is
+## what makes a face "tunable live" — the same morph_weights field the evolver mutates (research §2).
+static func _apply_morph_weights(root: Node, weights) -> void:
+	if typeof(weights) != TYPE_DICTIONARY or (weights as Dictionary).is_empty():
+		return
+	for child in _find_mesh_instances(root):
+		var m: Mesh = child.mesh
+		if m == null:
+			continue
+		for i in m.get_blend_shape_count():
+			var w = _weight_for_index(weights, i)
+			if w != null:
+				child.set_blend_shape_value(i, float(w))
+
+static func _weight_for_index(weights: Dictionary, i: int) -> Variant:
+	for key in ["expr%d" % i, str(i), "morph%d" % i]:
+		if weights.has(key):
+			return weights[key]
+	return null
+
+static func _find_mesh_instances(node: Node) -> Array:
+	var out := []
+	if node is MeshInstance3D:
+		out.append(node)
+	for c in node.get_children():
+		out.append_array(_find_mesh_instances(c))
+	return out
 
 static func _primitive_mesh(shape: String) -> Mesh:
 	match shape:
@@ -154,6 +201,11 @@ static func mesh_key(mesh) -> String:
 	var src := String(mesh.get("source", ""))
 	if src == "glb":
 		return "glb:" + String(mesh.get("path", ""))
+	if src == "character":
+		# Key on the GLB path so a hotload that only changes morph_weights (live tuning) RE-WIRES the
+		# same instance instead of reloading the geometry; the weights are applied per-render via
+		# apply_trs's sibling _apply_morph_weights. (Re-resolving the genome writes a NEW glb path.)
+		return "character:" + String(mesh.get("glb", mesh.get("path", "")))
 	if src == "primitive":
 		return "prim:" + String(mesh.get("shape", ""))
 	return JSON.stringify(mesh)

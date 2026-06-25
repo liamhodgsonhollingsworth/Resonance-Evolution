@@ -1,0 +1,18 @@
+{
+  "_doc": "style_mode Context (modulate handler), ARCANE mode (the DEFAULT target — research:character-arcane-stylization-2026-06-25 §5 fork 1). Same character node + same painterly effect node as style_mode_realistic.json; only these overrides differ. stylize_amount:1 pushes the FLAME identity coefficients along the proportion-exaggeration delta (eyes ↑/jaw ↓/cranium ↑/nose ↓, PCA-space, no remodeling), and effect_stack is the already-built RE painterly NPR pass (kuwahara → edge_darken → outline → posterize → paper_grain) — the Arcane painted read as evolvable DATA (EffectGenome / EffectStackCpu). Continuous: stylize_amount is a slider in [0,1] (fork 2), this config pins the full-arcane end.",
+  "format": "resonance.context/v1",
+  "handler": "modulate",
+  "style_mode": "arcane",
+  "modulation": {
+    "character": { "stylize_amount": 1.0 },
+    "effect": {
+      "effect_stack": [
+        { "type": "kuwahara", "params": { "radius": 3 } },
+        { "type": "edge_darken", "params": { "strength": 1.0, "threshold": 0.1 } },
+        { "type": "outline", "params": { "threshold": 0.25 } },
+        { "type": "posterize", "params": { "levels": 4 } },
+        { "type": "paper_grain", "params": { "amount": 0.15, "scale": 8.0, "seed": 1337 } }
+      ]
+    }
+  }
+}

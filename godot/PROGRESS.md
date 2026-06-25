@@ -6,6 +6,35 @@ arrangements of already-loaded primitives, wired as data; never new code). Full 
 user-facing summary; the rest is implementation detail). This file is self-contained for dev.
 
 ## Done + verified
+**Character Increment A — a FLAME-style genome on a wire, two style_modes (NEW 2026-06-25, verified).**
+The first character proof-slice (research: `notes/research/character_*_2026-06-25.md` in Wavelet). A
+character = a parameter VECTOR (FLAME-style identity βs + expression ψs) that resolves to a GLB **with
+morph targets**, surfaced on the *already-shipped* `mesh.source` seam as `mesh.source="character"` —
+ADDITIVE sibling of `"glb"`/`"primitive"`, **zero floor/primitive edits**.
+- `tools/character_resolver.py` — the one new piece of real code: a ~60-line-core linear resolver
+  (`mean + Σ βᵢ·basisᵢ` → vertices; per-expression deltas → morph targets) + a self-contained glTF-2.0
+  GLB emitter (no pygltflib; numpy only). `stylize_amount ∈ [0,1]` applies a fixed PCA-space
+  `stylize_delta` (eyes↑/jaw↓/cranium↑/nose↓) — 0=realistic, 1=arcane "boil-down", BOTH valid GLBs, no
+  remodeling, continuous. Emits the renderer-neutral `scene_node{source:"character", genome, glb,
+  morph_weights}`. **FLAME weights are behind a registration form → ships against a SMALL SYNTHETIC PCA
+  basis (deterministic); the real-FLAME swap is one function in `load_basis()`, no other code change.**
+- `renderers/godot_scene_renderer.gd` — `build_node` gains a `"character"` branch (reuses the glb
+  loader on `mesh.glb`) + `_apply_morph_weights` (drives blend-shape values from `morph_weights`, live
+  tunable, re-applied each render); `mesh_key` keys characters on the glb path (hotload re-wires).
+- **glTF morph-target gap (research §5): CLOSED with no exporter code.** Godot's `append_from_scene`
+  already preserves the imported blend shapes, so `gltf_exporter.gd` round-trips morph targets as-is —
+  verified by re-import + the external Khronos validator on the Godot-exported GLB.
+- `contexts/style_mode_realistic.json` + `style_mode_arcane.json` — TWO `modulate` Context configs
+  (built BOTH per implement-both) over the SAME character node + SAME painterly effect node; only the
+  overrides differ (`realistic`={stylize_amount:0, effect_stack:[]}, `arcane`={stylize_amount:1,
+  effect_stack:[kuwahara,edge_darken,outline,posterize,paper_grain]}). `arcane` is the DEFAULT target.
+- Tests: `headless_character_test.gd` (22/22) — descriptor is data, delegate builds a mesh that carries
+  morph targets, morph_weights drive blend shapes, exporter round-trips the targets, two genomes →
+  distinct faces, same genome under the two style_mode Contexts → two distinct frames.
+  `tests/test_character_resolver.py` (8/8, pytest). Cross-renderer: `oracle/validate_glb.mjs` (errors=0
+  on the Godot-exported character GLB) + `oracle/character_oracle.mjs` (three.js loads all faces, sees 4
+  morph targets each, asserts pairwise-distinct). Run lines added under "How to run" below.
+
 **Communication is a module (NEW 2026-06-24, verified) — `COMMUNICATION-ARCHITECTURE.md`.**
 The runtime no longer bakes in a single communication discipline. `primitives/prim_context.gd` —
 **Context** = a Chip that ALSO supplies the *handler* for how its scoped modules communicate:
@@ -110,6 +139,11 @@ godot --headless --path godot -s res://headless_primitive_test.gd
 #   one-time:  npm --prefix godot/oracle install
 node godot/oracle/validate_glb.mjs godot/live/portable.glb                              # spec-valid => any renderer
 node godot/oracle/three_parity.mjs godot/live/portable.glb godot/live/portable.counts.json  # three.js agrees
+# character increment A (FLAME-style genome -> GLB w/ morph targets -> scene_node{source:character}):
+godot --headless --path godot -s res://headless_character_test.gd          # 22/22, runs the resolver via `py`
+py -m pytest tests/test_character_resolver.py -q                            # 8/8, resolver unit tests
+py tools/character_resolver.py --identity 1.5 0 -0.8 --stylize-amount 1.0 --out godot/live/char.glb  # one face
+node godot/oracle/character_oracle.mjs godot/live/char_a.glb godot/live/char_b.glb  # three.js: morph targets + distinct
 # evolver<->engine connection (lives in the Resonance-Website repo; reuses window.Evolve as-is):
 #   node tools/test_evolve_node_domain.js   # window.Evolve evolves valid scene_node genomes (headless)
 # windowed screenshot -> godot/shot.png:
