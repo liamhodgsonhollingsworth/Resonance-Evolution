@@ -50,6 +50,12 @@ func _init() -> void:
 	# the tick/sim Context handlers (continuous + reproducible time-stepping). Like every other type
 	# this is just a registry entry; the time-stepping discipline lives entirely in the Context module.
 	register("State", PrimState)
+	# EffectStack: emits a renderer-NEUTRAL ordered list of post-process effect layers as DATA (the
+	# painterly look as an arrangement). Like Model emits scene_node data for a swappable 3D delegate,
+	# this emits effect_stack data for a swappable 2D delegate (EffectStackCpu now; GPU/three.js later).
+	# A new painterly effect is a new layer TYPE a delegate learns, never a new primitive — see
+	# PROGRESS.md item #1 + COMMUNICATION-ARCHITECTURE.md (composition-as-data).
+	register("EffectStack", PrimEffectStack)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
