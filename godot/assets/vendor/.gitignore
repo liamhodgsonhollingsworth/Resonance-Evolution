@@ -1,0 +1,5 @@
+# Vendored CC0 assets: commit the .glb SOURCE + its .glb.import config only.
+# Godot auto-EXTRACTS embedded textures to <name>_N.png on import — those are derived
+# artifacts that regenerate from the .glb on any editor open, so they are not committed.
+*_*.png
+*_*.png.import

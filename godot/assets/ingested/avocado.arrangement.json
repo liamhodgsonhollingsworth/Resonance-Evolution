@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-avocado",
+  "nodes": [
+    {
+      "id": "avocado",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/avocado.glb",
+        "name": "avocado"
+      }
+    }
+  ],
+  "wires": []
+}
