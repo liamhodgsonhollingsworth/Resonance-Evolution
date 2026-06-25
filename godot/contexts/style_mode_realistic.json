@@ -1,0 +1,10 @@
+{
+  "_doc": "style_mode Context (modulate handler), REALISTIC mode. One of two configs built BOTH (per the implement-both directive) over the SAME character node + the SAME painterly effect node — only the per-inner-node param OVERRIDES differ between this and style_mode_arcane.json. Realizes research:character-arcane-stylization-2026-06-25 §3 against the shipped `modulate` Context handler (prim_context.gd, COMMUNICATION-ARCHITECTURE.md §2.3). NO module edits: the character + effect nodes are identical across modes; the Context scopes them and injects these overrides.",
+  "format": "resonance.context/v1",
+  "handler": "modulate",
+  "style_mode": "realistic",
+  "modulation": {
+    "character": { "stylize_amount": 0.0 },
+    "effect": { "effect_stack": [] }
+  }
+}
