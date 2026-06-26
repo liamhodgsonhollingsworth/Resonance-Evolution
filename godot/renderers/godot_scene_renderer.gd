@@ -152,9 +152,12 @@ static func drive_camera(cam: Camera3D, view: Dictionary, scene_roots: Array = [
 # Resolve the aim point: explicit look_at, else the world-origin translation of the named target
 # node found in scene_roots, else null (no aim -> authored rotation is used). Returns Vector3 | null.
 static func _resolve_aim(view: Dictionary, scene_roots: Array):
-	if view.has("look_at"):
+	if view.has("look_at") and view.get("look_at") != null:
 		return _vec3(view.get("look_at"), Vector3.ZERO)
-	var target := String(view.get("target_node", ""))
+	# Read into a var and treat a present-but-null target_node as absent: the {} default of get()
+	# does NOT apply to a key that is present with value null, and String(null) is a runtime error.
+	var tv = view.get("target_node")
+	var target := "" if tv == null else String(tv)
 	if target == "":
 		return null
 	for r in scene_roots:
