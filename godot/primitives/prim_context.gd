@@ -11,11 +11,12 @@ extends PrimChip
 ## unaffected, and new disciplines are new handlers (new data), never foundation edits.
 ##
 ## params shape (extends Chip's { arrangement, ports }):
-##   "handler":    "dataflow"|"gate"|"modulate"|"abstract"|"proximity"|"observer"|"tick"|"sim"|"event"  (default "dataflow")
+##   "handler":    "dataflow"|"gate"|"modulate"|"abstract"|"proximity"|"observer"|"tick"|"sim"|"event"|"wfc"  (default "dataflow")
 ##   "modulation": { "<inner node id>": { "<param>": <value>, ... }, ... }   (handler "modulate")
 ##   "radius":     <float>   (handler "proximity": the static interaction range; default 1.0)
 ##   "lod_radius": <float>   (handler "observer": the static near/far LOD distance; default 1.0)
 ##   "steps":      <int>     (handlers "tick"/"sim"/"event": ticks to advance when it fires; default 1)
+##   "wfc":        { width, height, tiles, adjacency }   (handler "wfc": the static generation ruleset — see the wfc section)
 ##
 ## Handlers:
 ##   dataflow  — synchronous pull, topo-ordered. Identical to a Chip. (The identity case.)
@@ -71,6 +72,15 @@ extends PrimChip
 ##               ticks and zero inner evaluations, so a downstream Log fires once PER event, never on the
 ##               idle frames between events. fire falsy/missing/unwired → quiescent (the rest state), so
 ##               an event scope idles until something actually fires it.
+##   wfc       — PROCEDURAL GENERATION (wave-function-collapse): the first GENERATOR handler. Unlike the
+##               handlers above it has NO inner arrangement; it collapses a grid against a static tile-
+##               adjacency ruleset (params.wfc) seeded by the implicit "seed" input and emits the
+##               collapsed grid to its declared output ports. "Procedural generation is a Context handler"
+##               made concrete — same locked posture as proximity/observer (the seed is a dynamic INPUT,
+##               the ruleset a static PARAM), and a pure function of (ruleset, seed) → grid, so the SAME
+##               seed always reproduces the SAME structure. The "tag a generated structure's rules
+##               local/global" and "convert a generated structure to a single unitary node on manual
+##               review" steps are SUPERVISED GUI work, surfaced separately, not built into the handler.
 
 # Process-wide memoization store for the `abstract` handler, keyed by a hermetic content-hash of
 # (effective arrangement + handler + canonical inputs). Process-wide (not per-instance) so two
@@ -121,6 +131,13 @@ func input_ports() -> Array:
 		"event":
 			ports = ports.duplicate()
 			ports.append({ "name": "fire", "type": "bool" })
+		"wfc":
+			# The implicit "seed" input is the DYNAMIC part of a deterministic generator (position-like:
+			# dynamic -> an input, exactly as proximity reads positions; the ruleset -- tiles + adjacency +
+			# dimensions -- is STATIC -> a param). A missing/unwired seed defaults to 0 (a stable scene), so
+			# an unwired WFC Context still generates deterministically rather than failing.
+			ports = ports.duplicate()
+			ports.append({ "name": "seed", "type": "number" })
 	return ports
 
 func evaluate(inputs: Dictionary) -> Dictionary:
@@ -145,6 +162,8 @@ func evaluate(inputs: Dictionary) -> Dictionary:
 			return _evaluate_modulated(inputs)
 		"abstract":
 			return _evaluate_abstract(inputs)
+		"wfc":
+			return _evaluate_wfc(inputs)
 		_:
 			# "dataflow" and any unknown handler degrade to a plain Chip (forward-compatible:
 			# an unrecognized future handler still runs as ordinary dataflow rather than failing).
@@ -528,3 +547,264 @@ func _canonical_inputs(inputs: Dictionary) -> String:
 	for k in keys:
 		parts.append("%s=%s" % [String(k), JSON.stringify(inputs[k])])
 	return "|".join(PackedStringArray(parts))
+
+# --- wfc (wave-function-collapse procedural generation: a deterministic generator handler) ---------
+
+## The WFC (wave-function-collapse) generator. Unlike the dataflow-derived handlers above (which run
+## or memoize an inner ARRANGEMENT), `wfc` is a pure GENERATOR: it collapses a grid of cells against a
+## tile-adjacency ruleset and emits the collapsed grid as data, with NO inner arrangement required. It
+## is "procedural generation is a Context handler" (COMMUNICATION-ARCHITECTURE.md, the procedural row)
+## made concrete -- the same locked posture as proximity/observer ("the dynamic state is just an INPUT a
+## handler reads"): the seed is dynamic so it is the implicit "seed" INPUT; the ruleset (tiles + adjacency
+## + dimensions) is static so it is a PARAM. The result is a pure function of (ruleset, seed) -> grid, so
+## the SAME seed always collapses to the SAME grid (content-addressable, headless-reproducible, the
+## substrate for the "convert a generated structure to a single unitary node" review step -- which is a
+## SUPERVISED GUI step, not built here). Determinism is total: a seeded RNG (RandomNumberGenerator) + a
+## fixed cell scan order + lexicographic tie-breaks, so no run-to-run wobble.
+##
+## params.wfc shape (all under params["wfc"]):
+##   "width":   <int>     grid columns (default 4; clamped >= 1)
+##   "height":  <int>     grid rows    (default 4; clamped >= 1)
+##   "tiles":   [ { "name": <string>, "weight": <number?> }, ... ]   the alphabet (weight default 1.0)
+##              OR the shorthand [ "<name>", ... ] (each weight 1.0).
+##   "adjacency": { "<dir>": { "<tileA>": ["<tileB>", ...], ... }, ... }
+##              per-direction allow-lists: tileB may sit in direction <dir> of tileA. Directions are the
+##              4-neighbourhood "right"/"left"/"down"/"up". An omitted direction is auto-completed as the
+##              OPPOSITE of its partner (right<->left, down<->up) so a ruleset need only state half of each
+##              pair; an omitted pair entirely means "no constraint in that axis" (everything allowed),
+##              the least-surprising open default.
+##
+## Outputs: the Context's DECLARED output ports (params.ports.outputs) receive the result by NAME --
+##   "grid"          -> the collapsed grid as a row-major Array of rows, each row an Array of tile-name
+##                      strings (the canonical generated structure).
+##   "contradiction" -> bool: true iff propagation wiped a cell's whole domain (an over-constrained
+##                      ruleset). A contradiction is REPORTED, never thrown -- the grid is still emitted
+##                      with the contradicted cell(s) left empty ("") so a caller sees exactly where it
+##                      failed (fail-soft, detail-preserving, like every other handler's fail-safe).
+##   "collapses"     -> int: how many cells the generator explicitly OBSERVED/collapsed (1..width*height).
+##                      Constraint propagation then decides further cells for free, so on a constrained
+##                      ruleset this is BELOW width*height (a strongly-constrained ruleset fills the whole
+##                      grid from a few observations) -- a coarse "how much was forced vs chosen" signal,
+##                      mirroring the abstract handler's `_evals`. The grid is still fully filled.
+## Any declared port not in {grid, contradiction, collapses} receives null. If a scope declares NO
+## outputs, the result is still computed and the empty outputs dict returned, exactly like a no-output Chip.
+func _evaluate_wfc(inputs: Dictionary) -> Dictionary:
+	var cfg: Dictionary = params.get("wfc", {})
+	var w: int = maxi(1, int(Primitive.as_num(cfg.get("width", 4))))
+	var h: int = maxi(1, int(Primitive.as_num(cfg.get("height", 4))))
+	var tiles := _wfc_tiles(cfg)
+	var adjacency := _wfc_adjacency(cfg, tiles)
+	# seed: dynamic input. Missing/null -> 0 (a stable default scene). Coerced to a stable int so floats
+	# that are equal-as-numbers (1.0 vs 1) seed identically.
+	var seed := int(Primitive.as_num(inputs.get("seed", 0)))
+	var res := _wfc_collapse(w, h, tiles, adjacency, seed)
+	# Emit to the DECLARED output ports by name (same enumeration as _outputs_null). A port whose name is
+	# not a known WFC field gets null -- the result is published only through ports the scope asked for.
+	var out := {}
+	for p in (params.get("ports", {}) as Dictionary).get("outputs", []):
+		var nm := String(p.get("name"))
+		match nm:
+			"grid":
+				out[nm] = res.get("grid")
+			"contradiction":
+				out[nm] = res.get("contradiction")
+			"collapses":
+				out[nm] = res.get("collapses")
+			_:
+				out[nm] = null
+	return out
+
+## Normalize params.wfc.tiles to an ordered Array of { name, weight }. Accepts both the object form
+## ([{name, weight}]) and the string shorthand (["a", "b"]). Order is preserved (it is the deterministic
+## tie-break order). A tile with a non-positive / missing weight gets weight 1.0 (a tile in the alphabet
+## is at least minimally pickable -- a 0-weight tile would be in the domain but never chosen, a footgun).
+## Empty/absent tiles -> a single inert "" tile, so the grid is well-formed (all empty), not a crash.
+func _wfc_tiles(cfg: Dictionary) -> Array:
+	var raw: Array = cfg.get("tiles", [])
+	var tiles := []
+	for t in raw:
+		if t is Dictionary:
+			var nm := String(t.get("name", ""))
+			var wv = t.get("weight")
+			var wt: float = 1.0 if wv == null else maxf(0.000001, Primitive.as_num(wv))
+			tiles.append({ "name": nm, "weight": wt })
+		else:
+			tiles.append({ "name": String(t), "weight": 1.0 })
+	if tiles.is_empty():
+		tiles.append({ "name": "", "weight": 1.0 })
+	return tiles
+
+## Build the per-direction adjacency allow-set as { dir: { tileName: { allowedTileName: true } } } over the
+## 4-neighbourhood. Auto-completes the opposite direction of each stated pair (right<->left, down<->up): if
+## B is allowed to the right of A then A is allowed to the left of B, so a ruleset states each constraint
+## once. A direction with NO stated rules at all is left fully permissive (every tile may neighbour every
+## tile) -- the open default, so a partial ruleset constrains only what it names. The allow-sets are
+## symmetric-completed but NOT made reflexive: same-tile adjacency is allowed only if the ruleset says so.
+func _wfc_adjacency(cfg: Dictionary, tiles: Array) -> Dictionary:
+	var names := []
+	for t in tiles:
+		names.append(String(t.get("name")))
+	var opposite := { "right": "left", "left": "right", "down": "up", "up": "down" }
+	var allow := {}
+	for d in ["right", "left", "down", "up"]:
+		allow[d] = {}
+	var raw: Dictionary = cfg.get("adjacency", {})
+	# Pass 1: ingest stated rules + mirror into the opposite direction.
+	for d in raw.keys():
+		var ds := String(d)
+		if not allow.has(ds):
+			continue
+		var per_tile: Dictionary = raw[d]
+		for a in per_tile.keys():
+			var an := String(a)
+			for b in per_tile[a]:
+				var bn := String(b)
+				_wfc_allow(allow, ds, an, bn)
+				_wfc_allow(allow, String(opposite[ds]), bn, an)
+	# Pass 2: any direction with zero stated rules is fully permissive (no constraint). A direction that
+	# got ANY rule stays exactly as constrained as stated (a tile absent from its allow-set neighbours
+	# nothing in that direction -- an explicit, intended constraint).
+	for d in ["right", "left", "down", "up"]:
+		if (allow[d] as Dictionary).is_empty():
+			for an in names:
+				allow[d][an] = {}
+				for bn in names:
+					allow[d][an][bn] = true
+	return allow
+
+func _wfc_allow(allow: Dictionary, d: String, a: String, b: String) -> void:
+	if not (allow[d] as Dictionary).has(a):
+		allow[d][a] = {}
+	allow[d][a][b] = true
+
+## The collapse loop. Returns { grid, contradiction, collapses }. Algorithm (classic observe/propagate):
+##   - every cell starts with the FULL tile domain (superposition);
+##   - OBSERVE: pick the undecided cell of MINIMUM domain size (min-entropy), ties broken by lowest
+##     row-major index (deterministic), and collapse it to ONE tile chosen by a seeded weighted draw;
+##   - PROPAGATE: AC-3-style -- a neighbour may keep only tiles that some surviving tile of the collapsed
+##     cell permits in that direction; repeat until fixpoint;
+##   - a cell whose domain is wiped is a CONTRADICTION: flag it, leave it "", and continue (fail-soft).
+## Total determinism: fixed scan order + a single seeded RNG drawn in a fixed sequence + lexicographic
+## tie-break on equal-weight draws. Same (ruleset, seed) -> identical grid, every run, every machine.
+func _wfc_collapse(w: int, h: int, tiles: Array, adjacency: Dictionary, seed: int) -> Dictionary:
+	var n := w * h
+	var names := []
+	var weight := {}
+	for t in tiles:
+		var nm := String(t.get("name"))
+		names.append(nm)
+		weight[nm] = float(t.get("weight", 1.0))
+	# domains[i] = Array of still-possible tile names for cell i (row-major: i = y*w + x).
+	var domains := []
+	for i in n:
+		domains.append(names.duplicate())
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	var contradiction := false
+	var collapses := 0
+	for _step in n:
+		var ci := _wfc_min_entropy_cell(domains)
+		if ci < 0:
+			break  # every cell decided
+		var chosen := _wfc_weighted_pick(domains[ci], weight, rng)
+		domains[ci] = [chosen] if chosen != "" else []
+		if chosen == "":
+			contradiction = true
+		else:
+			collapses += 1
+		if not _wfc_propagate(domains, w, h, adjacency, ci):
+			contradiction = true
+	# Materialize the grid: a decided cell shows its single tile; an undecided/empty cell shows "".
+	var grid := []
+	for y in h:
+		var row := []
+		for x in w:
+			var dom: Array = domains[y * w + x]
+			row.append(String(dom[0]) if dom.size() == 1 else "")
+		grid.append(row)
+	return { "grid": grid, "contradiction": contradiction, "collapses": collapses }
+
+## Index of the undecided cell (domain size > 1) with the SMALLEST domain, ties broken by lowest index
+## (the deterministic min-entropy heuristic). Returns -1 when every cell is decided (size <= 1). A size-0
+## (already contradicted) cell is skipped -- it cannot be collapsed further.
+func _wfc_min_entropy_cell(domains: Array) -> int:
+	var best := -1
+	var best_size := 0
+	for i in domains.size():
+		var sz: int = (domains[i] as Array).size()
+		if sz > 1 and (best < 0 or sz < best_size):
+			best = i
+			best_size = sz
+	return best
+
+## A seeded WEIGHTED choice from a cell's domain, deterministic for a given (domain order, weights, rng
+## stream). The domain is sorted by name first so the draw is independent of the order tiles happened to
+## be eliminated in (only the seed + ruleset decide the outcome, never propagation history). An empty
+## domain -> "" (a contradiction marker; the caller flags it). A zero total weight (shouldn't happen --
+## every weight is clamped > 0) falls back to the first name.
+func _wfc_weighted_pick(domain: Array, weight: Dictionary, rng: RandomNumberGenerator) -> String:
+	if domain.is_empty():
+		return ""
+	var sorted := domain.duplicate()
+	sorted.sort()
+	var total := 0.0
+	for nm in sorted:
+		total += float(weight.get(String(nm), 1.0))
+	if total <= 0.0:
+		return String(sorted[0])
+	var r := rng.randf() * total
+	var acc := 0.0
+	for nm in sorted:
+		acc += float(weight.get(String(nm), 1.0))
+		if r < acc:
+			return String(nm)
+	return String(sorted[sorted.size() - 1])
+
+## AC-3-style constraint propagation from a just-changed cell `start`. A neighbour keeps only tiles that
+## SOME surviving tile of the source permits in the source->neighbour direction; any neighbour that loses a
+## tile is itself re-queued so the wave reaches fixpoint. Returns false iff propagation wiped some cell's
+## entire domain (a contradiction). The 4-neighbourhood uses the same direction names as the ruleset
+## (right/left/down/up). Bounds are respected (edge cells simply have fewer neighbours).
+func _wfc_propagate(domains: Array, w: int, h: int, adjacency: Dictionary, start: int) -> bool:
+	var queue := [start]
+	var ok := true
+	while not queue.is_empty():
+		var ci: int = queue.pop_back()
+		var cx := ci % w
+		var cy := ci / w
+		for nb in _wfc_neighbours(cx, cy, w, h):
+			var ni: int = nb[0]
+			var dir: String = nb[1]
+			var allowed := {}
+			# Union of what the source's surviving tiles permit toward the neighbour.
+			for src_tile in domains[ci]:
+				var per: Dictionary = (adjacency[dir] as Dictionary).get(String(src_tile), {})
+				for at in per.keys():
+					allowed[String(at)] = true
+			# Keep only neighbour tiles that remain allowed; track whether anything was removed.
+			var kept := []
+			for nt in domains[ni]:
+				if allowed.has(String(nt)):
+					kept.append(nt)
+			if kept.size() != (domains[ni] as Array).size():
+				domains[ni] = kept
+				if kept.is_empty():
+					ok = false
+				else:
+					queue.append(ni)
+	return ok
+
+## The in-bounds 4-neighbours of (x, y) as [index, direction] pairs, where `direction` is the direction
+## FROM the centre cell TO the neighbour -- matching the ruleset's allow-set orientation. Order is fixed
+## (right, left, down, up) for determinism.
+func _wfc_neighbours(x: int, y: int, w: int, h: int) -> Array:
+	var out := []
+	if x + 1 < w:
+		out.append([y * w + (x + 1), "right"])
+	if x - 1 >= 0:
+		out.append([y * w + (x - 1), "left"])
+	if y + 1 < h:
+		out.append([(y + 1) * w + x, "down"])
+	if y - 1 >= 0:
+		out.append([(y - 1) * w + x, "up"])
+	return out
