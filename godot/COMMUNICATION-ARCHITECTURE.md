@@ -95,7 +95,8 @@ a different handler changes the propagation discipline of its whole scope. The h
 | `abstract` | treat the scope as a **primitive**: run its dataflow ONCE, content-address the result, and shortcut to the cache forever after — "a primitive is a node you chose not to open" (§2.5) | **shipped** |
 | `event` | push, not pull: a module fires; only its downstream re-propagates (menus, input, triggers) | planned |
 | `tick` / `sim` | time-stepped propagation over `State` modules: advance `steps` ticks, committing each `State`'s `next` at the tick boundary. **`tick`** = continuous/living (state persists across evaluations — real-time worlds); **`sim`** = reproducible/fresh (re-inits from `init` each evaluation → a pure, content-addressable function — the substrate for precompute/bake + the `abstract` handler). Two semantics, one stepping core, selected per context by the handler value | **shipped** |
-| `proximity` | the **spatial gate**: the scope propagates only while its two implicit `pos_a`/`pos_b` vector inputs are within a static `radius` (per-pair 3D interaction: "use X on Y"); otherwise dormant, like a disabled `gate`. First handler to realize "the observer/spatial state is just an INPUT a handler reads" — position is dynamic (an input port), range is static (a param); the observer-driven `abstract`/LOD handler will read camera distance the same way | **shipped** |
+| `proximity` | the **spatial gate**: the scope propagates only while its two implicit `pos_a`/`pos_b` vector inputs are within a static `radius` (per-pair 3D interaction: "use X on Y"); otherwise dormant, like a disabled `gate`. First handler to realize "the observer/spatial state is just an INPUT a handler reads" — position is dynamic (an input port), range is static (a param); the observer-driven `abstract`/LOD handler reads camera distance the same way | **shipped** |
+| `observer` | the **observer-driven `abstract`/LOD gate**: the spatial dual of `proximity`. Reads the observer/camera position `observer_pos` + the scope's own position `pos` (both implicit vector inputs) and a static `lod_radius`. WITHIN range it runs the **full live** scope (you see the detail); OUTSIDE it **collapses to the §2.5 content-addressed summary** (the distant scope is consumed as one cached primitive, not re-simulated) — reusing the very same `abstract` cache + purity gate. "A primitive is a node you chose not to open", opened only when the observer is near enough to care. Realizes the §2.5-deferred *observer/distance trigger (camera-driven LOD abstraction)* | **shipped** |
 | `connector` | the scope's far endpoint is an **external** system (§2.4) | planned |
 
 New handlers are **new modules / new data**, never foundation edits — that is the whole point.
@@ -165,10 +166,12 @@ collapses only when **every** inner node opts in via `Primitive.is_cacheable()` 
 time, so abstraction never silently freezes a side effect. The key is **hermetic** (effective
 arrangement + handler + canonical inputs), the cache is **process-wide** (two Contexts over the same
 pure scope share one result), and it is **non-destructive** (the summary sits beside the retained
-`params.arrangement`; re-expansion = clear the cache). **Deferred** (the gated decisions): the
-observer/distance trigger (camera-driven LOD abstraction, SPEC-300), unifying scene-graph with
-behavior-graph decomposition, stateful-snapshot collapse, on-disk persistence + eviction, and lossy
-replacement. Abstraction is *designed to relieve* the `MAX_DEPTH` recursion bound — a collapsed scope
+`params.arrangement`; re-expansion = clear the cache). The
+observer/distance trigger (camera-driven LOD abstraction, SPEC-300) is now **shipped** as the
+`observer` Context handler (§2.3): close to the observer the scope runs live, far from it the scope
+collapses to this same content-addressed summary — the abstract cache reached through a distance gate.
+**Still deferred** (the remaining gated decisions): unifying scene-graph with behavior-graph
+decomposition, stateful-snapshot collapse, on-disk persistence + eviction, and lossy replacement. Abstraction is *designed to relieve* the `MAX_DEPTH` recursion bound — a collapsed scope
 returns its summary without descending, turning a deep emergence cascade into a flat sequence of cache
 hits — but note that in the MVP a scope containing a nested wrapper (Chip/Context) is non-cacheable
 (the purity gate is non-recursive), so this relief lands only once recursive/nested abstraction does.
@@ -216,9 +219,11 @@ computed once then shortcut — both with no change to the inner modules and **n
 `GraphRuntime`** (the propagation floor). `is_cacheable()` is the only addition to the `Primitive`
 base contract; the handler computes its own content-address inline (inner arrangement + ports +
 canonical inputs) — folding it into the schema's still-inert `id` field is a deferred unification. The
-`event` / `tick` / `proximity` / `connector` handlers, the edge-level `Channel` module with
-capacity/backpressure, and the deferred abstraction extensions (§2.5) are the sequenced follow-ons —
-each a new module, not a foundation edit.
+`event` / `tick` / `proximity` / `observer` handlers all shipped (the `observer` handler realizes the
+§2.5 camera-driven LOD-abstraction trigger by reading observer distance as an input and reusing the
+`abstract` cache); the `connector` handler, the edge-level `Channel` module with capacity/backpressure,
+and the remaining abstraction extensions (§2.5) are the sequenced follow-ons — each a new module, not a
+foundation edit.
 
 ---
 
