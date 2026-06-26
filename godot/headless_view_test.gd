@@ -123,6 +123,66 @@ func _initialize() -> void:
 	ok = _check("no-View arrangement: apply_view is a no-op (returns null, no camera built)",
 		no_view == null and rendererf.get_child_count() == 1) and ok
 
+	# --- (c2) had-then-removed: View-present -> hotload-to-no-View RESTORES the host fallback ------
+	# The regression case the never-had-a-View path (c) misses: on ONE renderer that ALREADY has a
+	# current ViewCamera, hotloading to an arrangement with NO View must release the ViewCamera so the
+	# host's hardcoded fallback camera resumes control. We use a DEDICATED SubViewport so the camera
+	# set is exactly the realistic {fallback, ViewCamera} — matching a real game's single-fallback
+	# topology, not the test root viewport which by here holds many leftover cameras from parts (a)-(c).
+	# We assert against the VIEWPORT's active camera (get_camera_3d()), the authoritative signal: Godot
+	# propagates a `current=true` takeover on the NEXT frame (deferred), so we await a frame before
+	# asserting takeover; a `current=false` release restores the remaining camera synchronously.
+	var viewport := SubViewport.new()
+	get_root().add_child(viewport)
+	var fallback := Camera3D.new()
+	viewport.add_child(fallback)
+	fallback.current = true   # the host's fallback is current before any View takes over
+	var rths := GraphRuntime.new()
+	viewport.add_child(rths)
+	var renderer_hs := GodotSceneRenderer.new()
+	viewport.add_child(renderer_hs)
+	# (1) render WITH a View: the ViewCamera becomes the active viewport camera, ousting the fallback.
+	rths.load_arrangement({
+		"format": "resonance.arrangement/v1",
+		"nodes": [ { "id": "cam", "type": "View", "params": { "position": VIEW_POS, "look_at": [0, 0, 0] } } ],
+		"wires": []
+	})
+	var outs_hs := rths.evaluate()
+	renderer_hs.render(outs_hs, rths.arrangement)
+	var hs_cam := renderer_hs.apply_view(outs_hs, rths.arrangement, renderer_hs)
+	await process_frame   # let Godot propagate the deferred current-camera takeover
+	ok = _check("had-then-removed (1): a View becomes the active viewport camera (ousts the fallback)",
+		hs_cam != null and viewport.get_camera_3d() == hs_cam and viewport.get_camera_3d() != fallback) and ok
+	# (2) hotload to NO View on the SAME renderer: the ViewCamera must be released + the fallback resume.
+	rths.load_arrangement({
+		"format": "resonance.arrangement/v1",
+		"nodes": [
+			{ "id": "box", "type": "Model", "params": { "path": glb, "name": "box_model" } },
+			{ "id": "place", "type": "Transform", "params": { "position": [0, 0, 0] } }
+		],
+		"wires": [ { "from": "box", "out": "node", "to": "place", "in": "node" } ]
+	})
+	var outs_hs2 := rths.evaluate()
+	renderer_hs.render(outs_hs2, rths.arrangement)
+	var hs_cam2 := renderer_hs.apply_view(outs_hs2, rths.arrangement, renderer_hs)
+	ok = _check("had-then-removed (2): no-View hotload returns null (ViewCamera released)", hs_cam2 == null) and ok
+	ok = _check("had-then-removed (2): the released ViewCamera is no longer current",
+		not (is_instance_valid(hs_cam) and hs_cam.current)) and ok
+	ok = _check("had-then-removed (2): the host fallback camera resumed control of the viewport",
+		fallback.current and viewport.get_camera_3d() == fallback) and ok
+	# (3) re-adding a View on the same renderer works again (rebuilds a fresh ViewCamera, takes over).
+	rths.load_arrangement({
+		"format": "resonance.arrangement/v1",
+		"nodes": [ { "id": "cam", "type": "View", "params": { "position": VIEW_POS, "look_at": [0, 0, 0] } } ],
+		"wires": []
+	})
+	var outs_hs3 := rths.evaluate()
+	renderer_hs.render(outs_hs3, rths.arrangement)
+	var hs_cam3 := renderer_hs.apply_view(outs_hs3, rths.arrangement, renderer_hs)
+	await process_frame
+	ok = _check("had-then-removed (3): re-adding a View takes over the viewport again",
+		hs_cam3 != null and viewport.get_camera_3d() == hs_cam3) and ok
+
 	# --- (d) glTF camera round-trip: Group scene + View export to a GLB carrying a camera node ---
 	DirAccess.make_dir_recursive_absolute("res://live")
 	var scene_roots := []
