@@ -135,6 +135,11 @@ godot --headless --path godot -s res://headless_editor_test.gd
 godot --headless --path godot -s res://headless_portable_test.gd
 godot --headless --path godot -s res://headless_compose_test.gd
 godot --headless --path godot -s res://headless_primitive_test.gd
+# painterly effect-stack (renderer-neutral {type,params} DATA + its applier twins):
+godot --headless --path godot -s res://headless_effect_test.gd            # the effect-stack seam (11/11)
+godot --headless --path godot -s res://headless_effect_library_test.gd    # the L0-L4 effect library (40/40)
+godot --headless --path godot -s res://headless_effect_evolve_test.gd     # the EffectGenome evolver (21/21)
+godot --headless --path godot -s res://headless_effect_gpu_test.gd        # L1 GPU parity: EffectStackGpu == EffectStackCpu within tol (25/25)
 # cross-renderer gates (the portable test writes godot/live/portable.glb + portable.counts.json):
 #   one-time:  npm --prefix godot/oracle install
 node godot/oracle/validate_glb.mjs godot/live/portable.glb                              # spec-valid => any renderer
