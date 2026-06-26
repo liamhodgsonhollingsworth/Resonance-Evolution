@@ -56,6 +56,12 @@ func _init() -> void:
 	# A new painterly effect is a new layer TYPE a delegate learns, never a new primitive — see
 	# PROGRESS.md item #1 + COMMUNICATION-ARCHITECTURE.md (composition-as-data).
 	register("EffectStack", PrimEffectStack)
+	# View: emits a renderer-NEUTRAL glTF-2.0-camera descriptor as DATA (the camera as an
+	# arrangement, not a hardcoded Camera3D). Like Model emits scene_node data for a swappable 3D
+	# delegate, this emits `view` data the renderer delegate (GodotSceneRenderer) turns into a live
+	# Camera3D — and the glTF exporter turns into a glTF camera node, so the same single-scene view
+	# is portable to three.js / <model-viewer> / Blender. The "single scene -> static view" keystone.
+	register("View", PrimView)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
