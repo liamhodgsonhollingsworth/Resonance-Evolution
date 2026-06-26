@@ -97,14 +97,23 @@ static func find_view(eval_output: Dictionary) -> Dictionary:
 ## Build / update the live Camera3D from one evaluate() output, ALONGSIDE render(). When the output
 ## contains a View descriptor, the delegate's own Camera3D is built (once) + driven from it and made
 ## current; on hotload the SAME camera instance is re-driven (never rebuilt). When NO View is present
-## this is a no-op and _view_camera (if any) is left untouched — so the host's hardcoded fallback
-## camera keeps working. Returns the active view Camera3D, or null if no View descriptor was found.
-## `scene_roots` (optional) is the same roots list render() used; it lets `target_node` aim resolve
-## against the placed scene. Pass the GodotSceneRenderer's own parent as `mount` if you want the
-## camera outside the (possibly transformed) renderer subtree; defaults to this renderer.
+## the previously-built ViewCamera (if any) is RELEASED — freed and the ref nulled — so the host's
+## hardcoded fallback camera resumes being `current`. This makes the "additive no-op" contract hold
+## for the had-then-removed hotload case too (View-present -> hotload-to-no-View must restore the
+## fallback), not merely the never-had-a-View case. Returns the active view Camera3D, or null if no
+## View descriptor was found. `scene_roots` (optional) is the same roots list render() used; it lets
+## `target_node` aim resolve against the placed scene. Pass the GodotSceneRenderer's own parent as
+## `mount` if you want the camera outside the (possibly transformed) renderer subtree; defaults to this.
 func apply_view(eval_output: Dictionary, arrangement: Dictionary, mount: Node = null) -> Camera3D:
 	var view := find_view(eval_output)
 	if view.is_empty():
+		# Had-then-removed: release the ViewCamera so it stops being `current`. queue_free() leaves it
+		# `current` until it's actually freed (next frame), which would orphan the viewport's camera for
+		# a frame; clearing `current` first hands control straight back to the host's fallback camera.
+		if _view_camera != null and is_instance_valid(_view_camera):
+			_view_camera.current = false
+			_view_camera.queue_free()
+		_view_camera = null
 		return null
 	if _view_camera == null or not is_instance_valid(_view_camera):
 		_view_camera = Camera3D.new()
