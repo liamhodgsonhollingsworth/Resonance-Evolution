@@ -11,9 +11,10 @@ extends PrimChip
 ## unaffected, and new disciplines are new handlers (new data), never foundation edits.
 ##
 ## params shape (extends Chip's { arrangement, ports }):
-##   "handler":    "dataflow"|"gate"|"modulate"|"abstract"|"proximity"|"tick"|"sim"|"event"  (default "dataflow")
+##   "handler":    "dataflow"|"gate"|"modulate"|"abstract"|"proximity"|"observer"|"tick"|"sim"|"event"  (default "dataflow")
 ##   "modulation": { "<inner node id>": { "<param>": <value>, ... }, ... }   (handler "modulate")
 ##   "radius":     <float>   (handler "proximity": the static interaction range; default 1.0)
+##   "lod_radius": <float>   (handler "observer": the static near/far LOD distance; default 1.0)
 ##   "steps":      <int>     (handlers "tick"/"sim"/"event": ticks to advance when it fires; default 1)
 ##
 ## Handlers:
@@ -34,6 +35,22 @@ extends PrimChip
 ##               handler to realize the locked direction "the observer/spatial state is just an INPUT
 ##               a handler reads" (the later observer-driven abstract/LOD handler reads camera
 ##               distance the SAME way): position is dynamic → an input port; range is static → a param.
+##   observer  — the OBSERVER-DRIVEN abstract / LOD gate: the spatial dual of `proximity`, but instead
+##               of going DORMANT when far it COLLAPSES to its abstract content-addressed summary. The
+##               handler reads two implicit "vector" inputs — the observer/camera position "observer_pos"
+##               and the scope's own representative position "pos" — and a static "lod_radius" param.
+##               WITHIN lod_radius (observer is close, you can see the detail) it runs the FULL live
+##               dataflow scope; OUTSIDE it (observer is far, the detail isn't worth simulating) it
+##               SHORTCUTS to the same compute-once content-addressed cache the `abstract` handler uses —
+##               "a primitive is a node you chose not to open", now opened only when the observer is near
+##               enough to care. This is the §2.5 deferred "observer/distance trigger (camera-driven LOD
+##               abstraction)": the SAME scope is a live, re-simulatable arrangement up close and one
+##               cached primitive at a distance, purely as a function of where the observer is (the locked
+##               direction "the observer/spatial state is just an INPUT a handler reads"). Like `abstract`
+##               it is SOUND only for a pure scope: an impure scope can't be cached, so it degrades to
+##               running live every time at every distance (it never silently freezes a side effect).
+##               Fail-safe: a missing observer or scope position (null) means "no LOD signal" → run live
+##               (never collapse a scope we can't place — the conservative, detail-preserving default).
 ##   tick / sim — time-stepped propagation: advance the scope "steps" ticks, where each tick evaluates
 ##               the scope (State nodes supply their held values — the cycle-breaking sources) and then
 ##               commits each State's "next" input as its new held value. The two are the SAME stepping
@@ -81,8 +98,9 @@ func _handler() -> String:
 	return String(params.get("handler", "dataflow"))
 
 ## "gate" adds an implicit boolean "enabled" input beyond the Chip's mapped ports; "proximity" adds
-## the two implicit "vector" inputs "pos_a"/"pos_b"; other handlers expose exactly the Chip's ports.
-## These handler-implicit names ("enabled", "pos_a", "pos_b") are RESERVED: if a scope also maps an
+## the two implicit "vector" inputs "pos_a"/"pos_b"; "observer" adds the two implicit "vector" inputs
+## "observer_pos"/"pos"; other handlers expose exactly the Chip's ports. These handler-implicit names
+## ("enabled", "pos_a", "pos_b", "observer_pos", "pos", "fire") are RESERVED: if a scope also maps an
 ## inner port of the same name, both appear here (the handler reads its own; the mapped one still
 ## feeds its inner site). Whether handler-implicit ports should live in a separate namespace from
 ## mapped ports is a cross-cutting decision deferred across the whole handler family, not settled here.
@@ -96,6 +114,10 @@ func input_ports() -> Array:
 			ports = ports.duplicate()
 			ports.append({ "name": "pos_a", "type": "vector" })
 			ports.append({ "name": "pos_b", "type": "vector" })
+		"observer":
+			ports = ports.duplicate()
+			ports.append({ "name": "observer_pos", "type": "vector" })
+			ports.append({ "name": "pos", "type": "vector" })
 		"event":
 			ports = ports.duplicate()
 			ports.append({ "name": "fire", "type": "bool" })
@@ -111,6 +133,8 @@ func evaluate(inputs: Dictionary) -> Dictionary:
 			if not _within_proximity(inputs):
 				return _outputs_null()
 			return super.evaluate(inputs)
+		"observer":
+			return _evaluate_observer(inputs)
 		"tick":
 			return _evaluate_sim(inputs, true)
 		"sim":
@@ -198,6 +222,75 @@ func _vec_sq_distance(a: Array, b: Array) -> float:
 		var d := ai - bi
 		sum += d * d
 	return sum
+
+# --- observer (observer-driven abstract / LOD: live up close, cached at a distance) ----------
+
+## The OBSERVER-DRIVEN abstract/LOD gate. The spatial dual of `proximity` (it reads positions as
+## INPUTS the SAME way) but, instead of going dormant when far, it COLLAPSES the scope to its
+## content-addressed summary:
+##   observer WITHIN lod_radius  → run the FULL live dataflow scope (you're close → render the detail);
+##   observer OUTSIDE lod_radius → SHORTCUT to the compute-once cache (you're far → consume the
+##                                 abstracted primitive instead of re-simulating).
+## This is "a primitive is a node you chose not to open", opened only when the observer is near enough
+## to care — the §2.5 deferred "observer/distance trigger (camera-driven LOD abstraction)". The cache
+## is the SAME process-wide store + purity gate the `abstract` handler uses, so the two share the
+## compute-once-then-shortcut machinery (a distant scope is computed once, then every later distant
+## evaluation hits the cache). Soundness inherits from `abstract`: an impure scope can't be cached →
+## it degrades to running LIVE at every distance (never silently freezes a side effect). The LOD
+## decision is computed entirely from INPUTS (observer + scope position) + one static param
+## (lod_radius), exactly like proximity — position is dynamic, range is static.
+func _evaluate_observer(inputs: Dictionary) -> Dictionary:
+	# Near (or no LOD signal) → run the full live scope. A missing observer/scope position is the
+	# fail-safe "we can't place this scope" case → DON'T collapse it (the detail-preserving default).
+	if _observer_is_near(inputs):
+		return super.evaluate(inputs)
+	# Far → consume the abstracted primitive. Same purity gate as `abstract`: a non-pure scope can't be
+	# memoized, so it falls through to a live run rather than caching a side effect.
+	if not _scope_is_cacheable():
+		return super.evaluate(inputs)
+	var key := _observer_cache_key(inputs)
+	if _summaries.has(key):
+		# Private copy: the process-wide cache holds references, so hand out a duplicate (same posture
+		# as the abstract handler) — a downstream read-then-write can't corrupt other sharers of the key.
+		return (_summaries[key] as Dictionary).duplicate(true)
+	_evals += 1
+	var fresh: Dictionary = super.evaluate(inputs)
+	_summaries[key] = fresh.duplicate(true)
+	return fresh
+
+## True iff the observer is within `lod_radius` of the scope's representative position — OR either
+## position is missing (the fail-safe "no LOD signal → stay live" case, so an unplaced scope is never
+## wrongly collapsed). Mirrors `_within_proximity` exactly (squared distance, no sqrt; lod_radius
+## clamped >= 0; explicit-null radius → the 1.0 default), differing only in the missing-position
+## branch: proximity treats "no position" as DORMANT, observer treats it as STAY-LIVE — the opposite
+## fail-safe, because here "can't tell" must preserve detail, not discard it.
+func _observer_is_near(inputs: Dictionary) -> bool:
+	var o := _as_vec(inputs.get("observer_pos"))
+	var p := _as_vec(inputs.get("pos"))
+	if o.is_empty() or p.is_empty():
+		return true   # no LOD signal → run live (never collapse a scope we can't place)
+	var rv = params.get("lod_radius")
+	var r: float = 1.0 if rv == null else maxf(0.0, Primitive.as_num(rv))
+	return _vec_sq_distance(o, p) <= r * r
+
+## Hermetic content-address for the OBSERVER cache. Identical construction to `_cache_key` (arrangement
+## + ports + canonical inputs hashes) but with an "observer:" tag so observer and abstract entries NEVER
+## collide in the shared `_summaries` store — and so this handler's precondition (the abstract key's
+## "reached solely from the abstract arm" note) stays honest. The observer/scope POSITIONS and lod_radius
+## are deliberately OMITTED from the key: they decide near-vs-far, NOT the cached OUTPUT (the
+## handler-reserved "observer_pos"/"pos" feed the LOD test, not any inner mapped site), so two distant
+## evaluations of the same pure scope under different far-away observer positions correctly share ONE
+## summary — the same reasoning that excludes proximity's positions/radius from the abstract key. Only
+## the scope's MAPPED inputs (the ones PrimChip actually feeds inner sites) enter the key, so the cache
+## stays exact (no wrong hit) without fragmenting on the observer's whereabouts.
+func _observer_cache_key(inputs: Dictionary) -> String:
+	var arr_hash := JSON.stringify(params.get("arrangement", {})).sha256_text()
+	var ports_hash := JSON.stringify(params.get("ports", {})).sha256_text()
+	var mapped := inputs.duplicate()
+	mapped.erase("observer_pos")   # handler-reserved LOD inputs — not part of the cached output
+	mapped.erase("pos")
+	var in_hash := _canonical_inputs(mapped).sha256_text()
+	return "observer:%s:%s:%s" % [arr_hash, ports_hash, in_hash]
 
 # --- tick / sim (time-stepped propagation; State is the cross-tick memory) --------------------
 
