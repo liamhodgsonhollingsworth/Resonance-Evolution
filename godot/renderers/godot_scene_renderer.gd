@@ -17,6 +17,11 @@ extends Node3D
 # Live instances kept across renders so a hotload RE-WIRES (not rebuilds): key -> {node, mesh_key}.
 var _instances: Dictionary = {}
 
+# The single live Camera3D this delegate builds/drives from a `view` descriptor, kept across renders
+# so a hotload RE-WIRES it (not rebuilds). Null until a View descriptor is first seen. ADDITIVE: when
+# no View is present this stays null and any pre-existing hardcoded camera remains the active one.
+var _view_camera: Camera3D = null
+
 ## Build / update the live scene from one evaluate() output. Unchanged instances are reused
 ## (a live model survives re-wiring of everything around it); vanished ones are pruned.
 func render(eval_output: Dictionary, arrangement: Dictionary) -> void:
@@ -60,6 +65,109 @@ static func _gather_scene_nodes(node_id, outs, into: Array) -> void:
 
 static func is_scene_node(v) -> bool:
 	return typeof(v) == TYPE_DICTIONARY and v.has("translation") and v.has("rotation") and v.has("scale")
+
+# --- camera / view (the renderer-neutral `view` descriptor -> a live Camera3D) ---------------
+# These are PURELY ADDITIVE: render() (above) is untouched and only ever builds scene_node trees,
+# so a graph with no View node renders exactly as before and the host's hardcoded fallback camera
+# stays active. apply_view() runs alongside render() only when a View descriptor is present.
+
+## A `view` descriptor is one glTF-2.0 camera, in glTF canonical space (+Y up, meters, radians):
+##   { type:"perspective", yfov:<rad>, znear:<f>, zfar:<f>,
+##     transform:{ translation:[x,y,z], rotation:[x,y,z,w], scale:[x,y,z] },
+##     look_at:[x,y,z]?, target_node:"<id>"? }
+static func is_view(v) -> bool:
+	return typeof(v) == TYPE_DICTIONARY and String((v as Dictionary).get("type", "")) == "perspective" \
+		and (v as Dictionary).has("transform")
+
+## Find the FIRST view descriptor in an evaluate() output (scanning every node's output ports).
+## Returns the descriptor Dictionary, or {} if the arrangement carries no View. Stable scan order
+## (sorted node ids) so a multi-View arrangement picks deterministically.
+static func find_view(eval_output: Dictionary) -> Dictionary:
+	var ids: Array = eval_output.keys()
+	ids.sort()
+	for node_id in ids:
+		var outs = eval_output[node_id]
+		if typeof(outs) != TYPE_DICTIONARY:
+			continue
+		for port in outs.keys():
+			if is_view(outs[port]):
+				return outs[port]
+	return {}
+
+## Build / update the live Camera3D from one evaluate() output, ALONGSIDE render(). When the output
+## contains a View descriptor, the delegate's own Camera3D is built (once) + driven from it and made
+## current; on hotload the SAME camera instance is re-driven (never rebuilt). When NO View is present
+## the previously-built ViewCamera (if any) is RELEASED — freed and the ref nulled — so the host's
+## hardcoded fallback camera resumes being `current`. This makes the "additive no-op" contract hold
+## for the had-then-removed hotload case too (View-present -> hotload-to-no-View must restore the
+## fallback), not merely the never-had-a-View case. Returns the active view Camera3D, or null if no
+## View descriptor was found. `scene_roots` (optional) is the same roots list render() used; it lets
+## `target_node` aim resolve against the placed scene. Pass the GodotSceneRenderer's own parent as
+## `mount` if you want the camera outside the (possibly transformed) renderer subtree; defaults to this.
+func apply_view(eval_output: Dictionary, arrangement: Dictionary, mount: Node = null) -> Camera3D:
+	var view := find_view(eval_output)
+	if view.is_empty():
+		# Had-then-removed: release the ViewCamera so it stops being `current`. queue_free() leaves it
+		# `current` until it's actually freed (next frame), which would orphan the viewport's camera for
+		# a frame; clearing `current` first hands control straight back to the host's fallback camera.
+		if _view_camera != null and is_instance_valid(_view_camera):
+			_view_camera.current = false
+			_view_camera.queue_free()
+		_view_camera = null
+		return null
+	if _view_camera == null or not is_instance_valid(_view_camera):
+		_view_camera = Camera3D.new()
+		_view_camera.name = "ViewCamera"
+		var parent: Node = mount if mount != null else self
+		parent.add_child(_view_camera)
+	drive_camera(_view_camera, view, select_roots(eval_output, arrangement))
+	_view_camera.current = true
+	return _view_camera
+
+## Drive a Camera3D from a `view` descriptor (static so the headless test + any host can reuse it).
+## Placement: transform.translation + transform.rotation (glTF quaternion). Aim override: look_at
+## (explicit point) or target_node (resolved against scene_roots; falls back to world origin).
+## Projection: yfov (radians) -> Camera3D.fov (degrees, the VERTICAL fov since keep_aspect = KEEP_HEIGHT,
+## Godot's default), znear/zfar -> near/far.
+static func drive_camera(cam: Camera3D, view: Dictionary, scene_roots: Array = []) -> void:
+	var trs: Dictionary = view.get("transform", {})
+	var pos := _vec3(trs.get("translation", [0, 0, 0]), Vector3.ZERO)
+	# Aim override (look_at wins over target_node; both override the quaternion). look_at == camera
+	# position is degenerate, so fall back to the authored rotation then.
+	var aim = _resolve_aim(view, scene_roots)
+	if aim != null and not (aim as Vector3).is_equal_approx(pos):
+		# Compute the look-at basis MANUALLY (not Camera3D.look_at, which requires the node to be in
+		# the tree) so this works off-tree too — e.g. the glTF exporter's off-tree scene. Godot cameras
+		# look down -Z, matching Basis.looking_at's convention.
+		cam.transform = Transform3D(Basis.looking_at(aim - pos, Vector3.UP), pos)
+	else:
+		cam.transform = Transform3D(_quat(trs.get("rotation", [0, 0, 0, 1])), pos)
+	if view.has("yfov"):
+		cam.fov = rad_to_deg(float(view.get("yfov")))
+	if view.has("znear"):
+		cam.near = float(view.get("znear"))
+	if view.has("zfar"):
+		cam.far = float(view.get("zfar"))
+
+# Resolve the aim point: explicit look_at, else the world-origin translation of the named target
+# node found in scene_roots, else null (no aim -> authored rotation is used). Returns Vector3 | null.
+static func _resolve_aim(view: Dictionary, scene_roots: Array):
+	if view.has("look_at") and view.get("look_at") != null:
+		return _vec3(view.get("look_at"), Vector3.ZERO)
+	# Read into a var and treat a present-but-null target_node as absent: the {} default of get()
+	# does NOT apply to a key that is present with value null, and String(null) is a runtime error.
+	var tv = view.get("target_node")
+	var target := "" if tv == null else String(tv)
+	if target == "":
+		return null
+	for r in scene_roots:
+		if typeof(r) == TYPE_DICTIONARY and String((r as Dictionary).get("node_id", "")) == target:
+			var d = (r as Dictionary).get("desc")
+			if typeof(d) == TYPE_DICTIONARY:
+				return _vec3((d as Dictionary).get("translation", [0, 0, 0]), Vector3.ZERO)
+	# Named but unresolved (e.g. the target's not a terminal root): aim at the world origin so a
+	# target-by-id view still frames the scene center instead of silently falling back to rotation.
+	return Vector3.ZERO
 
 func _sync(desc: Dictionary, parent: Node, key: String, seen: Dictionary) -> void:
 	seen[key] = true

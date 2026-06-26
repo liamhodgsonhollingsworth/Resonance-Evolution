@@ -43,7 +43,13 @@ func _on_reloaded() -> void:
 	# The arrangement changed on disk: re-evaluate it to renderer-neutral data and let the
 	# Godot delegate (re)build the live scene from that data. The runtime + the data stay
 	# engine-agnostic; only the delegate knows about Node3D.
-	renderer.render(runtime.evaluate(), runtime.arrangement)
+	var eval_output := runtime.evaluate()
+	renderer.render(eval_output, runtime.arrangement)
+	# ADDITIVE camera-as-DATA: if the arrangement carries a View node, the delegate builds/drives a
+	# Camera3D from that renderer-neutral descriptor and makes it current (mounted on `self`, not the
+	# renderer, so it's outside any rendered subtree). If there's NO View node, apply_view is a no-op
+	# and the hardcoded fallback camera from _add_view() stays current — walkabout/gallery unaffected.
+	renderer.apply_view(eval_output, runtime.arrangement, self)
 
 
 func _process(delta: float) -> void:
@@ -77,6 +83,10 @@ func _capture(path: String) -> void:
 	img.save_png(path)
 
 func _add_view() -> void:
+	# The FALLBACK camera: active whenever the arrangement has no View node. If a View node IS
+	# present, GodotSceneRenderer.apply_view() builds a camera from its renderer-neutral descriptor
+	# and makes THAT current (this one stays in the tree, just not `current`). Same default framing
+	# as PrimView's defaults so the two agree when a View merely restates the default pose.
 	var cam := Camera3D.new()
 	add_child(cam)
 	cam.position = Vector3(2.5, 2.0, 3.5)

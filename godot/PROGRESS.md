@@ -135,6 +135,13 @@ godot --headless --path godot -s res://headless_editor_test.gd
 godot --headless --path godot -s res://headless_portable_test.gd
 godot --headless --path godot -s res://headless_compose_test.gd
 godot --headless --path godot -s res://headless_primitive_test.gd
+# View/Camera as DATA — the "single scene -> static view" keystone (View primitive + renderer camera
+# branch + glTF camera round-trip; render() and walkabout/gallery cameras unchanged via fallback):
+godot --headless --path godot -s res://headless_view_test.gd              # 26/26: descriptor + framing parity + fallback + glTF camera round-trip
+godot --headless --path godot res://render_view.tscn                      # headless smoke: assemble(Group+View)->render->apply_view runs
+godot --path godot res://render_view.tscn -- --shot                       # windowed: render(scene,view) -> godot/live/render_view.png (one still through the View camera)
+node godot/oracle/validate_glb.mjs godot/live/view.glb                    # the camera-bearing GLB is spec-valid (0 errors)
+node godot/oracle/three_parity.mjs godot/live/view.glb                    # three.js loads it; parses 1 PerspectiveCamera (fov 75, near 0.05, far 4000)
 # painterly effect-stack (renderer-neutral {type,params} DATA + its applier twins):
 godot --headless --path godot -s res://headless_effect_test.gd            # the effect-stack seam (11/11)
 godot --headless --path godot -s res://headless_effect_library_test.gd    # the L0-L4 effect library (40/40)

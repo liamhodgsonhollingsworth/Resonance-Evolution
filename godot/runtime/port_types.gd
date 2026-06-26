@@ -24,6 +24,7 @@ const TYPE_IDS := {
 	"signal": 8,
 	"scene_node": 9,
 	"message": 10,
+	"view": 11,
 }
 
 # One-way widenings beyond same-type and "any" (from_type -> [allowed to_type ...]).
