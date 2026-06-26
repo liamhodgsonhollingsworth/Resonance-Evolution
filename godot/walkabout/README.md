@@ -87,6 +87,27 @@ pass each pack's Poly Pizza permalink ids (CC0-only is enforced). Drop `--limit`
 full pack (the Kenney Nature Kit alone has 329 GLBs). FBX/OBJ-only packs are a deferred follow-up
 (a converter step prepends to the same pipeline).
 
+### Validate the ingested store
+
+```
+py Alethea-cc/tools/asset_ingest_gltf.py validate          # quick consistency audit (read-only)
+py Alethea-cc/tools/asset_ingest_gltf.py validate --deep   # also re-validates each vendor file's bytes
+```
+
+A read-only audit that checks what the manifest claims still matches what is on disk: every asset's
+vendor file is present, its arrangement parses and its `Model` path equals the manifest `res_path`,
+every kit's combined arrangement is present and its members resolve to real manifest assets, and a
+license is recorded. It reports orphan arrangements (on disk, no manifest entry) as warnings and exits
+non-zero on any error — usable as a pre-launch / CI gate. This complements the per-asset byte
+validation the ingest path runs (now also checking the GLB container header: version + declared-vs-
+actual length + chunk framing, so a truncated/corrupt download is rejected at ingest, not at load).
+
+## A second scene — the gallery turntable
+
+The same ingested assets drive a **second sample scene** at `gallery/` (a circular turntable
+showcase) over the identical renderer-neutral seam — see `gallery/README.md`. It is the increment
+that proves the seam carries any number of scenes, each a pure `Model → Transform` data layout.
+
 ## Headless smoke tests
 
 ```
