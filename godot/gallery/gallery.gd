@@ -36,6 +36,11 @@ func _ready() -> void:
 	runtime.load_arrangement(arrangement)
 	var eval_output := runtime.evaluate()
 	renderer.render(eval_output, runtime.arrangement)
+	# ADDITIVE camera-as-DATA: a View node in the arrangement drives a Camera3D from its
+	# renderer-neutral descriptor and becomes current; with no View (the gallery's default), this is
+	# a no-op and the center turntable camera below stays current. Mounted on `self` (not the orbiting
+	# ring) so a View camera would NOT orbit. Keeps the gallery a single-arrangement scene like main.
+	renderer.apply_view(eval_output, runtime.arrangement, self)
 	print("[gallery] ready; %d runtime node(s); %d asset(s) ringed; %d rendered object(s)" % [
 		runtime.nodes.size(), _asset_count(), renderer.get_child_count()])
 
@@ -56,7 +61,9 @@ func _capture(path: String) -> void:
 
 # --- the world (center camera + lights + the orbiting ring pivot) ----------------------------
 func _build_world() -> void:
-	# A fixed camera at the center, looking out across the ring (slightly raised + tilted down).
+	# A fixed FALLBACK camera at the center, looking out across the ring (slightly raised + tilted
+	# down). Active unless the arrangement supplies a View node, in which case apply_view() (in
+	# _ready) builds a camera from that descriptor and makes IT current instead.
 	var cam := Camera3D.new()
 	cam.name = "Camera3D"
 	cam.position = Vector3(0, 2.2, 0)
