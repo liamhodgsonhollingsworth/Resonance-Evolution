@@ -100,13 +100,71 @@ const EFFECT_TYPES := {
 		# `prev` (the previous-frame payload) carries no numeric range → the evolver leaves it untouched
 		# (it is supplied by the render loop, not a tunable knob), exactly as color/bg are on `outline`.
 	} },
+	# ── OPTICAL layers (Convergence cycle #1) — screen-space VISIBLE-LIGHT effects ────────────────────
+	# These three read the SAME color frame as the painterly layers, plus (optionally) the light's
+	# SCREEN POSITION supplied as DATA on the descriptor (`light_screen:[u,v]`, normalized 0..1) via the
+	# typed-I/O contract (see apply_io). With no light_screen they fall back to the frame centre, so they
+	# stay color-in/color-out compatible — a legacy `{stack:[...]}` still runs them, just centred. The
+	# bright pixels of the frame ARE the occlusion mask (a luminance threshold), so no real depth buffer
+	# is required for the renderer-neutral first cut (a true depth channel is the deferred richer input).
+	"god_rays": { "params": {
+		"density": { "type": "float", "min": 0.0, "max": 1.5, "default": 0.9 },
+		"decay": { "type": "float", "min": 0.5, "max": 1.0, "default": 0.95 },
+		"weight": { "type": "float", "min": 0.0, "max": 2.0, "default": 0.5 },
+		"exposure": { "type": "float", "min": 0.0, "max": 2.0, "default": 0.6 },
+		"threshold": { "type": "float", "min": 0.0, "max": 1.0, "default": 0.7 },
+		"samples": { "type": "int", "min": 8, "max": 128, "default": 48 },
+	} },
+	"lens_flare": { "params": {
+		"ghosts": { "type": "int", "min": 0, "max": 8, "default": 4 },
+		"dispersal": { "type": "float", "min": 0.0, "max": 1.0, "default": 0.3 },
+		"halo_width": { "type": "float", "min": 0.0, "max": 1.0, "default": 0.45 },
+		"strength": { "type": "float", "min": 0.0, "max": 2.0, "default": 0.7 },
+		"threshold": { "type": "float", "min": 0.0, "max": 1.0, "default": 0.75 },
+	} },
+	"bloom": { "params": {
+		"threshold": { "type": "float", "min": 0.0, "max": 1.0, "default": 0.7 },
+		"intensity": { "type": "float", "min": 0.0, "max": 3.0, "default": 0.9 },
+		"radius": { "type": "int", "min": 1, "max": 16, "default": 6 },
+	} },
 }
 
+## ── Typed-I/O contract (SPEC-748a) ──────────────────────────────────────────────────────────────────
+## The canonical input bundle the typed applier consumes. The ONLY required channel is `color`; every
+## other channel is optional and defaults to "absent" so a layer self-derives it (e.g. the optical
+## layers derive their occlusion mask from `color`'s bright pixels when no `mask`/`depth` is supplied).
+## A renderer hands these in as DATA (Images + a normalized [u,v] light position); nothing here is
+## renderer-specific. The whole reformat is BACKWARD-COMPATIBLE: apply(desc, src) wraps src as
+## {color: src} and runs unchanged, and a legacy {stack:[...]} descriptor (no light_screen) still
+## passes — the optical layers just centre their light. See test_effect_stack_io_backcompat.gd.
+##   { "color": Image (required),
+##     "depth": Image|null,    # linear depth, 0=near..1=far — DEFERRED richer input; null today
+##     "normal": Image|null,   # geometric normal (tangent/world) — DEFERRED richer input; null today
+##     "mask": Image|null,     # explicit occlusion/bright mask; null → derived from color luminance
+##     "light_screen": [u,v]|null }  # the light's normalized screen position; null → frame centre
+
 ## Apply an effect_stack descriptor to a source Image, returning a NEW Image (source untouched).
+## LEGACY color-in/color-out entry point — UNCHANGED contract. It is now a thin wrapper over the typed
+## apply_io: it bundles `src` as the `color` channel (no depth/normal/mask, light defaults to centre),
+## so every pre-existing caller and every legacy `{stack:[...]}` descriptor behaves exactly as before.
 ## Unknown effect types are skipped with a warning (forward-compatible: a descriptor authored against
 ## a richer delegate still runs the layers THIS applier understands, the rest are no-ops here).
 static func apply(desc: Dictionary, src: Image) -> Image:
-	var img := src.duplicate() as Image
+	return apply_io(desc, { "color": src })
+
+## TYPED-I/O applier (SPEC-748a). Consumes the typed input bundle (see the contract above) plus the
+## effect_stack descriptor, returns a NEW color Image. The descriptor MAY carry a top-level
+## `light_screen:[u,v]` (DATA) which seeds the optical layers' light position; an explicit `light_screen`
+## key inside `inputs` overrides it; absent both, the optical layers centre the light. All non-optical
+## layers ignore the extra channels entirely, so they are bit-identical to the old apply() path.
+static func apply_io(desc: Dictionary, inputs: Dictionary) -> Image:
+	var color = inputs.get("color")
+	assert(color is Image, "EffectStackCpu.apply_io requires a `color` Image input")
+	var img := (color as Image).duplicate() as Image
+	# Resolve the light's normalized screen position once: inputs override the descriptor, descriptor
+	# overrides the default centre. Carried as a plain [u,v] (0..1), renderer-neutral DATA.
+	var light_uv := _light_uv(inputs.get("light_screen", desc.get("light_screen", null)))
+	var mask = inputs.get("mask")  # optional explicit bright/occlusion mask Image; null → derive
 	for layer in desc.get("stack", []):
 		if typeof(layer) != TYPE_DICTIONARY:
 			continue
@@ -132,9 +190,25 @@ static func apply(desc: Dictionary, src: Image) -> Image:
 				img = _lighting(img, p)
 			"temporal_stability":
 				img = _temporal_stability(img, p)
+			"god_rays":
+				img = _god_rays(img, p, light_uv, mask)
+			"lens_flare":
+				img = _lens_flare(img, p, light_uv, mask)
+			"bloom":
+				img = _bloom(img, p)
 			_:
 				push_warning("EffectStackCpu: unknown effect '%s' (skipped)" % layer.get("type"))
 	return img
+
+## Coerce a light_screen value ([u,v] array, or a Vector2, or null) into a clamped Vector2 in [0,1]^2.
+## null (or malformed) → the frame centre (0.5, 0.5), so the optical layers degrade gracefully when no
+## light position is supplied (the legacy color-in/color-out case). Renderer-neutral DATA in.
+static func _light_uv(v) -> Vector2:
+	if v is Vector2:
+		return Vector2(clampf(v.x, 0.0, 1.0), clampf(v.y, 0.0, 1.0))
+	if typeof(v) == TYPE_ARRAY and v.size() >= 2:
+		return Vector2(clampf(float(v[0]), 0.0, 1.0), clampf(float(v[1]), 0.0, 1.0))
+	return Vector2(0.5, 0.5)
 
 # ---------------------------------------------------------------------------------------------------
 # posterize (L0) — per-pixel palette quantization
@@ -453,6 +527,203 @@ static func _temporal_stability(img: Image, params: Dictionary) -> Image:
 				lerpf(c.b, pc.b, blend),
 				lerpf(c.a, pc.a, blend)
 			))
+	return out
+
+# ===================================================================================================
+# OPTICAL layers (Convergence cycle #1) — visible-light effects: sunbeams / lens flares / bloom
+# ===================================================================================================
+# All three are screen-space and renderer-neutral by construction: same DATA descriptor, same per-pixel
+# algebra a GPU shader (Godot Compositor or three.js post-pass) reproduces. They share ONE occlusion
+# mask derived from the frame's own bright pixels (`_bright_mask`) — so they need no real depth buffer,
+# only the (optional) light SCREEN POSITION passed as DATA. The standard reference algorithm for each is
+# CC0 / public-domain (Mitchell's GPU-Gems3 radial scattering god-rays; the Kawase/GPU-Gems lens-flare
+# feature generation; the threshold→blur→add bloom). A future tier can swap the derived mask for a true
+# depth/light-occlusion channel via the typed-I/O `depth`/`mask` inputs — no descriptor change.
+
+## GOD-RAYS (sunbeams / crepuscular rays). Screen-space radial light scattering: from each pixel, march
+## `samples` steps TOWARD the light's screen position, accumulating the BRIGHT mask with exponential
+## `decay` and `weight`, then add `exposure * accumulated` back onto the pixel. `density` scales the
+## per-step march distance (how far the rays reach). `threshold` is the brightness above which a pixel
+## emits rays (the sun disc / sky gaps through the canopy). The canonical GPU-Gems3 ch.13 "Volumetric
+## Light Scattering as a Post-Process" formula, on the CPU. light_uv (0..1) is the radial origin.
+## Returns a NEW image. Additive over the source → the beams glow, the rest of the frame is unchanged.
+static func _god_rays(img: Image, params: Dictionary, light_uv: Vector2, mask) -> Image:
+	var w := img.get_width()
+	var h := img.get_height()
+	var density := float(params.get("density", 0.9))
+	var decay := clampf(float(params.get("decay", 0.95)), 0.0, 1.0)
+	var weight := float(params.get("weight", 0.5))
+	var exposure := float(params.get("exposure", 0.6))
+	var threshold := clampf(float(params.get("threshold", 0.7)), 0.0, 1.0)
+	var samples: int = max(1, int(params.get("samples", 48)))
+	var bright := _bright_mask(img, mask, threshold)  # the ray-emitting source (sun / sky gaps)
+	var lx := light_uv.x * float(w - 1)
+	var ly := light_uv.y * float(h - 1)
+	var out := Image.create(w, h, false, img.get_format())
+	for y in h:
+		for x in w:
+			# Vector from this pixel toward the light, divided into `samples` decaying steps.
+			var dx := (lx - float(x)) * density / float(samples)
+			var dy := (ly - float(y)) * density / float(samples)
+			var sx := float(x)
+			var sy := float(y)
+			var illum := 0.0
+			var w_acc := 1.0
+			for _s in samples:
+				sx += dx
+				sy += dy
+				var ix := clampi(int(round(sx)), 0, w - 1)
+				var iy := clampi(int(round(sy)), 0, h - 1)
+				illum += bright[iy * w + ix] * w_acc * weight
+				w_acc *= decay
+			illum = clampf(illum / float(samples) * exposure, 0.0, 4.0)
+			var c := img.get_pixel(x, y)
+			out.set_pixel(x, y, Color(
+				clampf(c.r + illum, 0.0, 1.0),
+				clampf(c.g + illum, 0.0, 1.0),
+				clampf(c.b + illum, 0.0, 1.0),
+				c.a))
+	return out
+
+## LENS-FLARE. Screen-space ghosts + halo along the light→frame-centre axis. The bright mask is
+## down-thresholded into a "feature" buffer; `ghosts` copies of it are sampled at evenly-spaced offsets
+## along the vector from the light position through the centre (`dispersal` = spacing), plus a chromatic
+## HALO ring at radius `halo_width` from the centre. The classic GPU-Gems / Kawase lens-flare feature
+## generation, on the CPU. `strength` scales the additive composite. Returns a NEW image.
+static func _lens_flare(img: Image, params: Dictionary, light_uv: Vector2, mask) -> Image:
+	var w := img.get_width()
+	var h := img.get_height()
+	var ghosts: int = max(0, int(params.get("ghosts", 4)))
+	var dispersal := float(params.get("dispersal", 0.3))
+	var halo_width := clampf(float(params.get("halo_width", 0.45)), 0.0, 1.0)
+	var strength := float(params.get("strength", 0.7))
+	var threshold := clampf(float(params.get("threshold", 0.75)), 0.0, 1.0)
+	var bright := _bright_mask(img, mask, threshold)
+	# Work in normalized [0,1] UV centred on the frame so dispersal/halo are resolution-independent.
+	var center := Vector2(0.5, 0.5)
+	# Ghosts march from the light, through the centre, to the far side (the flare "string of pearls").
+	var to_center := (center - light_uv)
+	var out := img.duplicate() as Image
+	for y in h:
+		for x in w:
+			var uv := Vector2(float(x) / float(maxi(1, w - 1)), float(y) / float(maxi(1, h - 1)))
+			var add := 0.0
+			# Ghosts: sample the bright feature buffer at uv reflected+stepped along the light axis.
+			for g in range(1, ghosts + 1):
+				var ghost_uv := uv + to_center * (dispersal * float(g))
+				add += _sample_mask_uv(bright, w, h, ghost_uv) * (1.0 / float(g))
+			# Halo: a soft ring at halo_width from the centre, pulling from the bright buffer radially.
+			if halo_width > 0.0:
+				var dir := (uv - center)
+				var halo_uv := center + dir.normalized() * halo_width if dir.length() > 0.0001 else center
+				var ring := 1.0 - clampf(absf(dir.length() - halo_width) / 0.06, 0.0, 1.0)
+				add += _sample_mask_uv(bright, w, h, halo_uv) * ring * 0.8
+			add = clampf(add * strength, 0.0, 2.0)
+			if add > 0.0:
+				var c := out.get_pixel(x, y)
+				# Subtle chromatic tint so flares read as lens artefacts, not flat white blobs.
+				out.set_pixel(x, y, Color(
+					clampf(c.r + add * 1.0, 0.0, 1.0),
+					clampf(c.g + add * 0.9, 0.0, 1.0),
+					clampf(c.b + add * 1.1, 0.0, 1.0),
+					c.a))
+	return out
+
+## BLOOM (glare). Bright-threshold → box-blur → additive composite: pixels above `threshold` are
+## extracted, blurred by a separable box of half-width `radius`, and added back at `intensity`. The
+## standard threshold/blur/add bloom; the box blur is the cheap renderer-neutral kernel (a Gaussian /
+## dual-Kawase is the GPU refinement against this same descriptor). Returns a NEW image.
+static func _bloom(img: Image, params: Dictionary) -> Image:
+	var w := img.get_width()
+	var h := img.get_height()
+	var threshold := clampf(float(params.get("threshold", 0.7)), 0.0, 1.0)
+	var intensity := float(params.get("intensity", 0.9))
+	var radius: int = max(1, int(params.get("radius", 6)))
+	# 1) Extract the bright pass (soft knee at the threshold so it ramps in, not a hard cut).
+	var bright_r := PackedFloat32Array(); bright_r.resize(w * h)
+	var bright_g := PackedFloat32Array(); bright_g.resize(w * h)
+	var bright_b := PackedFloat32Array(); bright_b.resize(w * h)
+	for y in h:
+		for x in w:
+			var c := img.get_pixel(x, y)
+			var lum := _luma(c)
+			var knee := clampf((lum - threshold) / max(0.0001, 1.0 - threshold), 0.0, 1.0)
+			bright_r[y * w + x] = c.r * knee
+			bright_g[y * w + x] = c.g * knee
+			bright_b[y * w + x] = c.b * knee
+	# 2) Separable box blur (horizontal then vertical) of the bright pass.
+	bright_r = _box_blur_1d(bright_r, w, h, radius, true)
+	bright_g = _box_blur_1d(bright_g, w, h, radius, true)
+	bright_b = _box_blur_1d(bright_b, w, h, radius, true)
+	bright_r = _box_blur_1d(bright_r, w, h, radius, false)
+	bright_g = _box_blur_1d(bright_g, w, h, radius, false)
+	bright_b = _box_blur_1d(bright_b, w, h, radius, false)
+	# 3) Additive composite at `intensity`.
+	var out := Image.create(w, h, false, img.get_format())
+	for y in h:
+		for x in w:
+			var c := img.get_pixel(x, y)
+			var i := y * w + x
+			out.set_pixel(x, y, Color(
+				clampf(c.r + bright_r[i] * intensity, 0.0, 1.0),
+				clampf(c.g + bright_g[i] * intensity, 0.0, 1.0),
+				clampf(c.b + bright_b[i] * intensity, 0.0, 1.0),
+				c.a))
+	return out
+
+## The frame's bright pixels as a flat luminance mask (row-major float array, length w*h). If an explicit
+## `mask` Image is supplied (typed-I/O), its red channel is used directly; otherwise the mask is derived
+## from the color frame's luminance above `threshold` (soft-kneed). This is the shared occlusion source
+## the optical layers scatter — no real depth buffer needed for the renderer-neutral first cut.
+static func _bright_mask(img: Image, mask, threshold: float) -> PackedFloat32Array:
+	var w := img.get_width()
+	var h := img.get_height()
+	var out := PackedFloat32Array()
+	out.resize(w * h)
+	if mask is Image and (mask as Image).get_width() == w and (mask as Image).get_height() == h:
+		var m := mask as Image
+		for y in h:
+			for x in w:
+				out[y * w + x] = m.get_pixel(x, y).r
+		return out
+	for y in h:
+		for x in w:
+			var lum := _luma(img.get_pixel(x, y))
+			out[y * w + x] = clampf((lum - threshold) / max(0.0001, 1.0 - threshold), 0.0, 1.0)
+	return out
+
+## Bilinear sample of a flat float mask at a normalized UV (clamped). The CPU twin of texture(mask, uv).
+static func _sample_mask_uv(m: PackedFloat32Array, w: int, h: int, uv: Vector2) -> float:
+	if uv.x < 0.0 or uv.x > 1.0 or uv.y < 0.0 or uv.y > 1.0:
+		return 0.0  # off-screen features do not contribute (standard flare clamp-to-zero)
+	var fx := uv.x * float(w - 1)
+	var fy := uv.y * float(h - 1)
+	var x0 := int(floor(fx)); var y0 := int(floor(fy))
+	var x1 := clampi(x0 + 1, 0, w - 1); var y1 := clampi(y0 + 1, 0, h - 1)
+	x0 = clampi(x0, 0, w - 1); y0 = clampi(y0, 0, h - 1)
+	var tx := fx - floorf(fx); var ty := fy - floorf(fy)
+	var a := lerpf(m[y0 * w + x0], m[y0 * w + x1], tx)
+	var b := lerpf(m[y1 * w + x0], m[y1 * w + x1], tx)
+	return lerpf(a, b, ty)
+
+## One pass of a separable box blur over a flat float buffer. `horizontal` selects the axis; `radius` is
+## the half-width (window = 2*radius+1). Clamped at the edges. Returns a NEW buffer.
+static func _box_blur_1d(src: PackedFloat32Array, w: int, h: int, radius: int, horizontal: bool) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(w * h)
+	var norm := 1.0 / float(2 * radius + 1)
+	for y in h:
+		for x in w:
+			var acc := 0.0
+			for k in range(-radius, radius + 1):
+				var sx := x
+				var sy := y
+				if horizontal:
+					sx = clampi(x + k, 0, w - 1)
+				else:
+					sy = clampi(y + k, 0, h - 1)
+				acc += src[sy * w + sx]
+			out[y * w + x] = acc * norm
 	return out
 
 # ---------------------------------------------------------------------------------------------------
