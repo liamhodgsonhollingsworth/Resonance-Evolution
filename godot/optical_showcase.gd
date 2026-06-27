@@ -39,9 +39,12 @@ const SUN_DIR := Vector3(0.06, -0.16, 0.985)   # travels +Z (toward camera) + a 
 const SUN_COLOR := Color(1.0, 0.92, 0.70)
 # Where the bright sun disc sits in the world (far ahead down -Z, low on the horizon).
 const SUN_WORLD := Vector3(-3.0, 7.0, -70.0)
-# The camera stands in the clearing, low, looking toward the sun (down -Z, slightly up at the gap).
-const CAM_POS := Vector3(0.0, 1.7, 12.0)
-const CAM_LOOK := Vector3(-1.5, 6.0, -40.0)
+# The camera stands IN THE CLEARING (near the centre, inside the innermost ring), low, looking down -Z
+# through the canopy gap toward the sun. NOTE: z must stay small (< the inner ring radius of 5) or the
+# camera ends up buried in the BACK wall of trunks (z=+12 sat between the r=11.5 and r=15 back rings →
+# extreme trunk close-up). z≈3.5 keeps it in the open clearing with the enclosure ringing the periphery.
+const CAM_POS := Vector3(0.0, 1.6, 3.5)
+const CAM_LOOK := Vector3(-1.5, 5.5, -40.0)
 
 var runtime: GraphRuntime
 var renderer: GodotSceneRenderer
@@ -237,12 +240,12 @@ func effect_stack() -> Dictionary:
 	return {
 		"stack": [
 			{ "type": "god_rays", "params": {
-				"density": 0.95, "decay": 0.96, "weight": 0.65, "exposure": 0.85,
-				"threshold": 0.62, "samples": 64 } },
+				"density": 0.95, "decay": 0.965, "weight": 0.85, "exposure": 1.1,
+				"threshold": 0.58, "samples": 64 } },
 			{ "type": "lens_flare", "params": {
-				"ghosts": 4, "dispersal": 0.28, "halo_width": 0.42, "strength": 0.6,
-				"threshold": 0.72 } },
-			{ "type": "bloom", "params": { "threshold": 0.62, "intensity": 0.85, "radius": 7 } },
+				"ghosts": 4, "dispersal": 0.28, "halo_width": 0.42, "strength": 0.7,
+				"threshold": 0.70 } },
+			{ "type": "bloom", "params": { "threshold": 0.60, "intensity": 1.05, "radius": 8 } },
 		],
 	}
 
