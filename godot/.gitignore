@@ -9,3 +9,8 @@
 # Live channel runtime artifacts (arrangement state, generated glb, screenshots)
 /live/*
 !/live/.gitkeep
+# Supervised painterly evolver — human-paced generation/lineage/card state + rendered thumbnails.
+# GITIGNORED on purpose: host launchers `git reset --hard` on restart and would wipe accumulated
+# generations + Liam's pins (a load-bearing Wavelet lesson). User-interaction state never lives in a
+# git-tracked file. (Mirrors /live/* and the root state/ rule.)
+/state/evolver/
