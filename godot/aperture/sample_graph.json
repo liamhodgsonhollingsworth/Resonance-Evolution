@@ -1,0 +1,19 @@
+{
+	"name": "aperture-sample",
+	"nodes": [
+		{ "id": "wavelet", "type": "system", "label": "Wavelet", "pos": [40, 200] },
+		{ "id": "aperture", "type": "surface", "label": "Aperture", "pos": [340, 60] },
+		{ "id": "resonance", "type": "site", "label": "Resonance", "pos": [340, 200] },
+		{ "id": "engine", "type": "engine", "label": "Resonance-Evolution", "pos": [340, 340] },
+		{ "id": "godot_aperture", "type": "renderer", "label": "Godot Aperture", "pos": [640, 60] },
+		{ "id": "web_aperture", "type": "renderer", "label": "Web Aperture", "pos": [640, 340] }
+	],
+	"edges": [
+		{ "from": "wavelet", "to": "aperture" },
+		{ "from": "wavelet", "to": "resonance" },
+		{ "from": "wavelet", "to": "engine" },
+		{ "from": "aperture", "to": "godot_aperture" },
+		{ "from": "engine", "to": "godot_aperture" },
+		{ "from": "aperture", "to": "web_aperture" }
+	]
+}
