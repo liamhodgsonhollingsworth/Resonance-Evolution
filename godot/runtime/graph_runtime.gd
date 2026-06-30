@@ -26,6 +26,18 @@ var _external: Dictionary = {}
 # overflowing the GDScript call stack. Unused for a flat top-level graph.
 var depth: int = 0
 
+# Frame-relative fractal primitives (OPT-IN; both unset => classic flat behavior, nothing
+# changes). `definitions` (a Definitions store) lets a type resolve to its LEAF or, when a
+# frame descends, to its DECOMPOSITION. `descend_budget` is this v0 frame model's UNIFORM
+# descent depth (every subtree observed at the same grain): at budget 0 every node is a
+# primitive (its leaf); with budget > 0 a node whose type has a decomposition is replaced by
+# that decomposition, recursing with budget - 1 — fractal, no privileged universal bottom. A
+# richer frame (per-type / per-observer / per-region descent policy) is a later generalization;
+# `Definitions.descend` already takes a plain budget, so it stays a local change. See
+# `runtime/definitions.gd` and the law in CLAUDE.md.
+var definitions = null
+var descend_budget: int = 0
+
 func _init() -> void:
 	register("Const", PrimConst)
 	register("Math", PrimMath)
@@ -97,6 +109,12 @@ func load_arrangement(data: Dictionary) -> void:
 	arrangement = data
 
 func _instance(type_name: String) -> Primitive:
+	# A definition store, when attached, supersedes the built-in registry for leaf lookup —
+	# so types defined only in the store resolve, while the default registry stays untouched.
+	if definitions != null and definitions.has_leaf(type_name):
+		var lc = definitions.leaf_class(type_name)
+		if lc != null:
+			return lc.new()
 	var c = _registry.get(type_name)
 	if c == null:
 		return null
@@ -108,7 +126,7 @@ func set_external_inputs(ext: Dictionary) -> void:
 	_external = ext
 
 ## Resolve the declared semantic type of a primitive type's port (e.g. ("Math","a",true)
-## -> "number"). Drives Chip boundary-port typing and GraphEdit slot colours. Returns
+## -> "number"). Drives Chip boundary-port typing and GraphEdit slot colors. Returns
 ## "any" for unknown types/ports (and for Chip, whose ports live in instance params).
 func port_type(type_name: String, port_name: String, is_input: bool) -> String:
 	var prim := _instance(type_name)
@@ -145,7 +163,13 @@ func evaluate() -> Dictionary:
 			if String(w.get("to")) == node_id:
 				var src: Dictionary = outputs.get(String(w.get("from")), {})
 				inputs[String(w.get("in"))] = src.get(String(w.get("out")))
-		outputs[node_id] = prim.evaluate(inputs)
+		# Frame-relative descent: if this type has a decomposition and the frame still has
+		# descent budget, observe it DECOMPOSED (its arrangement) rather than as a leaf. The
+		# leaf still defines the type's I/O contract; the decomposition must honor it.
+		if descend_budget > 0 and definitions != null and definitions.has_decomposition(prim.prim_type):
+			outputs[node_id] = definitions.descend(prim.prim_type, inputs, descend_budget - 1)
+		else:
+			outputs[node_id] = prim.evaluate(inputs)
 	return outputs
 
 # Kahn topological sort over the wire DAG; cycle remnants are appended (never dropped).
