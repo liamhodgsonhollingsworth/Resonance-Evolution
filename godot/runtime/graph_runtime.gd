@@ -74,6 +74,19 @@ func _init() -> void:
 	# Camera3D — and the glTF exporter turns into a glTF camera node, so the same single-scene view
 	# is portable to three.js / <model-viewer> / Blender. The "single scene -> static view" keystone.
 	register("View", PrimView)
+	# --- The SUPERVISED PAINTERLY EVOLVER as an arrangement (GZ-EVOLVE.1) -----------------------------
+	# The human-in-loop evolver loop is itself a NODE SYSTEM, not new engine logic: four primitives wired
+	# as DATA. The genomes + the evolver's OWN params (the meta_genome) live entirely in node params, so
+	# the evolver evolves through use and a new gene/operator/button is additive (a library entry / an
+	# action id), never a foundation edit. See EVOLVER-LOOP.md.
+	#   EvolverPopulation — holds one generation of EvolverGenomes + the meta_genome, emits `population`.
+	#   Render2D          — genome → PNG thumbnail via EffectStackCpu over a fixed source, emits `rendered`.
+	#   ApertureSurface   — the human-in-loop fitness seam: push cards (X/Evolve/Save) + read back actions.
+	#   Breed             — KEEP/CROSSOVER/INJECT a decided generation into the next `population`.
+	register("EvolverPopulation", PrimEvolverPopulation)
+	register("Render2D", PrimRender2D)
+	register("ApertureSurface", PrimApertureSurface)
+	register("Breed", PrimBreed)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
