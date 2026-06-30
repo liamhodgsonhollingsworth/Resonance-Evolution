@@ -6,6 +6,27 @@ arrangements of already-loaded primitives, wired as data; never new code). Full 
 user-facing summary; the rest is implementation detail). This file is self-contained for dev.
 
 ## Done + verified
+**In-game chat seam — 3 SELECTABLE channels (GZ-3D.2, NEW 2026-06-30, verified).** The `connector`
+Context handler — communication with the outside world (`COMMUNICATION-ARCHITECTURE.md` §2.4) as an
+in-game chat seam whose far endpoint is a `channel` PARAM (DATA), not three hardcoded foundation paths.
+ONE handler, three modes selectable on one seam: **`in_world`** (an in-scene Message inbox: messages
+flow between Message nodes inside the running scene), **`dev_console`** (stdout + a console log: the dev
+typing chat into the engine), **`external_bridge`** (an external Connector to a Claude Code session,
+REUSING the existing `bridge/` arrangement-file mechanism — append a Message node to
+`live_dir/arrangement.json`, read it back). It is a DUMB DELEGATE over the new transport-neutral
+`runtime/comm_channel.gd` (the §2.4 narrow waist: one canonical envelope `{identity, routing, payload,
+interaction_pattern}` + the universal verbs connect/send/receive/close/describe) + the Message envelope —
+the connector reads a Message record from its implicit `message` input and publishes the sent/received
+envelope on its `sent`/`received`/`envelope` output ports. The SAME wired Message arrangement routes
+differently purely by the channel param ("same modules, different channel") with ZERO Message-node
+changes; an unconfigured/unknown channel emits a SURFACED diagnostic envelope, never a silent no-op.
+**Zero new primitive TYPES** (one new Context handler + one transport module; the foundation is
+unchanged). Test: `headless_comm_test.gd` (32/32) — same arrangement routes under all 3 channels, the
+§2.4 envelope crosses the seam, external_bridge round-trips a message through the bridge file, and an
+unconfigured channel fails loudly. `headless_context_test.gd` (31/31) + `headless_convo_test.gd` green
+(no regression). `event` was the last planned Context handler; `connector` now ships too — the edge-level
+`Channel` (capacity/backpressure) is the remaining COMMUNICATION-ARCHITECTURE follow-on.
+
 **End-to-end LIVE 3D ITERATION demo — verified by live effect (NEW 2026-06-30).** `live_demo.gd`
 + `live_demo.tscn` prove the whole hot-reload loop in ONE running process: write the arrangement
 JSON to disk → `LiveHost` content-hash watcher detects the change → re-wires the already-loaded
@@ -145,6 +166,8 @@ godot --headless --path godot -s res://headless_editor_test.gd
 godot --headless --path godot -s res://headless_portable_test.gd
 godot --headless --path godot -s res://headless_compose_test.gd
 godot --headless --path godot -s res://headless_primitive_test.gd
+# in-game chat seam — 3 selectable channels (connector Context handler over runtime/comm_channel.gd):
+godot --headless --path godot -s res://headless_comm_test.gd              # 32/32: in_world/dev_console/external_bridge route the SAME arrangement; bridge round-trip; loud-fail
 # View/Camera as DATA — the "single scene -> static view" keystone (View primitive + renderer camera
 # branch + glTF camera round-trip; render() and walkabout/gallery cameras unchanged via fallback):
 godot --headless --path godot -s res://headless_view_test.gd              # 26/26: descriptor + framing parity + fallback + glTF camera round-trip
