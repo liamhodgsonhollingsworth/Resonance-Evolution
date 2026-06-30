@@ -6,6 +6,33 @@ arrangements of already-loaded primitives, wired as data; never new code). Full 
 user-facing summary; the rest is implementation detail). This file is self-contained for dev.
 
 ## Done + verified
+**Godot Aperture — node-graph renderer for {nodes,edges} (GZ-3D.3, NEW 2026-06-30, verified).** A
+read-only IN-ENGINE renderer for the SAME system-neutral `{nodes, edges}` artifact the WEB Aperture
+shows — the Godot Aperture. A pure-DATA adapter `aperture/aperture_graph.gd` (`ApertureGraph`, no Godot
+type on the data path) normalizes an incoming graph into the canonical internal arrangement, accepting
+BOTH the RE-native `{nodes:[{id,type,params}], wires:[{from,out,to,in}]}` AND a generic `{nodes:[{id,
+type?/label?}], edges:[{from,to}|{source,target}]}` shape (field-name-tolerant: `edges` OR `wires`;
+`from/to`, `source/target`; optional `out/in` ports defaulting to a generic `out`/`in`). The field map
+is a configurable override (`ApertureGraph.default_field_map()`), so the as-yet-unfinalized peer file
+`big_projects_graph.json` renders with at most a tiny field-map tweak — nothing is hardcoded to one
+schema. `aperture/aperture_board.gd` (`ApertureBoard`, extends GraphEdit) is the dumb delegate: it
+loads a JSON graph, normalizes via the adapter, and draws each node as a labeled GraphNode (id/type/
+label) with its edges as wires, auto-laying-out unpositioned graphs and SHARING PortTypes + the
+slot-color scheme with `editor/graph_panel.gd` (the editable twin — reuse, not rebuild). Generic
+Aperture nodes render with generic `in`/`out` ports so ANY graph draws, not only graphs of registered
+primitives. `aperture/aperture_board.tscn` + `aperture_board_scene.gd` boot it windowed and support the
+`-- --shot` one-shot (render -> `godot/live/aperture_board.png`, quit) plus a `--graph <path>` arg.
+Bundled sample `aperture/sample_graph.json` (6 nodes / 6 edges) so it renders something meaningful out
+of the box. Tests: `headless_aperture_board_test.gd` (32/32, **RESULT: ALL PASS**, nonzero-exit-on-fail)
+proves the adapter headlessly — RE-native normalizes to the expected shape; generic `{nodes,edges}`
+from/to normalizes IDENTICALLY (same wires); `source/target` maps; malformed/empty/null/array inputs
+degrade to a valid empty board (no crash); a field-map override retargets a foreign schema; ports_for_node
+unions generic+explicit ports; edges to unknown nodes are dropped. The RENDER is proven by the windowed
+`--shot` PNG (committed proof: `godot/docs/aperture_board.png` — 6 labeled GraphNodes + 6 wires; `godot/
+live/*` is gitignored). `headless_editor_test.gd` (6/6) green = no GraphEdit regression. Run:
+`godot --headless --path godot -s res://headless_aperture_board_test.gd` and
+`godot --path godot res://aperture/aperture_board.tscn -- --shot`.
+
 **In-game chat seam — 3 SELECTABLE channels (GZ-3D.2, NEW 2026-06-30, verified).** The `connector`
 Context handler — communication with the outside world (`COMMUNICATION-ARCHITECTURE.md` §2.4) as an
 in-game chat seam whose far endpoint is a `channel` PARAM (DATA), not three hardcoded foundation paths.
@@ -168,6 +195,10 @@ godot --headless --path godot -s res://headless_compose_test.gd
 godot --headless --path godot -s res://headless_primitive_test.gd
 # in-game chat seam — 3 selectable channels (connector Context handler over runtime/comm_channel.gd):
 godot --headless --path godot -s res://headless_comm_test.gd              # 32/32: in_world/dev_console/external_bridge route the SAME arrangement; bridge round-trip; loud-fail
+# Godot Aperture — read-only node-graph renderer for the system-neutral {nodes,edges} artifact (GZ-3D.3):
+godot --headless --path godot -s res://headless_aperture_board_test.gd    # 32/32 RESULT: ALL PASS — adapter normalizes RE-native {nodes,wires} + generic {nodes,edges}(from/to, source/target) identically; malformed degrades gracefully
+godot --path godot res://aperture/aperture_board.tscn -- --shot           # windowed: render the bundled sample -> godot/live/aperture_board.png (committed proof: godot/docs/aperture_board.png)
+godot --path godot res://aperture/aperture_board.tscn -- --graph res://aperture/sample_graph.json  # render a chosen {nodes,edges} graph file
 # View/Camera as DATA — the "single scene -> static view" keystone (View primitive + renderer camera
 # branch + glTF camera round-trip; render() and walkabout/gallery cameras unchanged via fallback):
 godot --headless --path godot -s res://headless_view_test.gd              # 26/26: descriptor + framing parity + fallback + glTF camera round-trip
