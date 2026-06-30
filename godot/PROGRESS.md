@@ -6,6 +6,16 @@ arrangements of already-loaded primitives, wired as data; never new code). Full 
 user-facing summary; the rest is implementation detail). This file is self-contained for dev.
 
 ## Done + verified
+**End-to-end LIVE 3D ITERATION demo — verified by live effect (NEW 2026-06-30).** `live_demo.gd`
++ `live_demo.tscn` prove the whole hot-reload loop in ONE running process: write the arrangement
+JSON to disk → `LiveHost` content-hash watcher detects the change → re-wires the already-loaded
+primitives → `runtime.evaluate()` → `GodotSceneRenderer` rebuilds the live scene — NO restart, NO
+recompile. Three successive on-disk edits each render a visibly different scene (box → sphere
+turned+scaled → box+sphere+cylinder via a `Group`), a frame captured after each. Run:
+`Godot ... --path godot res://live_demo.tscn` → `godot/live/demo_step{1,2,3}.png`. Montage proof:
+`godot/docs/live_iteration_demo.png` (the only committed artifact; `godot/live/*` is gitignored).
+This is the GZ-3D.1 milestone: the live-iteration loop is demonstrably working.
+
 **Character Increment A — a FLAME-style genome on a wire, two style_modes (NEW 2026-06-25, verified).**
 The first character proof-slice (research: `notes/research/character_*_2026-06-25.md` in Wavelet). A
 character = a parameter VECTOR (FLAME-style identity βs + expression ψs) that resolves to a GLB **with
