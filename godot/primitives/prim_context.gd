@@ -11,12 +11,15 @@ extends PrimChip
 ## unaffected, and new disciplines are new handlers (new data), never foundation edits.
 ##
 ## params shape (extends Chip's { arrangement, ports }):
-##   "handler":    "dataflow"|"gate"|"modulate"|"abstract"|"proximity"|"observer"|"tick"|"sim"|"event"|"wfc"  (default "dataflow")
+##   "handler":    "dataflow"|"gate"|"modulate"|"abstract"|"proximity"|"observer"|"tick"|"sim"|"event"|"wfc"|"connector"  (default "dataflow")
 ##   "modulation": { "<inner node id>": { "<param>": <value>, ... }, ... }   (handler "modulate")
 ##   "radius":     <float>   (handler "proximity": the static interaction range; default 1.0)
 ##   "lod_radius": <float>   (handler "observer": the static near/far LOD distance; default 1.0)
 ##   "steps":      <int>     (handlers "tick"/"sim"/"event": ticks to advance when it fires; default 1)
 ##   "wfc":        { width, height, tiles, adjacency }   (handler "wfc": the static generation ruleset — see the wfc section)
+##   "channel":    "in_world"|"dev_console"|"external_bridge"  (handler "connector": which comm channel — see the connector section)
+##   "routing"/"identity"/"interaction_pattern":  static envelope fields (handler "connector"; §2.4)
+##   "live_dir":   <string>  (handler "connector", channel "external_bridge": the bridge file dir to reuse)
 ##
 ## Handlers:
 ##   dataflow  — synchronous pull, topo-ordered. Identical to a Chip. (The identity case.)
@@ -72,6 +75,20 @@ extends PrimChip
 ##               ticks and zero inner evaluations, so a downstream Log fires once PER event, never on the
 ##               idle frames between events. fire falsy/missing/unwired → quiescent (the rest state), so
 ##               an event scope idles until something actually fires it.
+##   connector — COMMUNICATION WITH THE OUTSIDE WORLD (§2.4): an in-game chat seam whose far endpoint
+##               is selected by the `channel` PARAM (DATA, not three hardcoded code paths). ONE handler,
+##               three SELECTABLE modes — `in_world` (an in-scene Message inbox: messages flow between
+##               Message nodes inside the running scene), `dev_console` (stdout + a console log: the dev
+##               typing chat into the engine), `external_bridge` (an external Connector to a Claude Code
+##               session, REUSING the existing bridge/ arrangement-file mechanism). It is a DUMB DELEGATE
+##               over CommChannel (runtime/comm_channel.gd) + the Message envelope: it reads a Message
+##               record from its implicit "message" input, sends it across the chosen channel as the
+##               canonical §2.4 envelope {identity, routing, payload, interaction_pattern}, and emits the
+##               sent/received envelope on its declared output ports. The SAME wired Message arrangement
+##               routes differently purely by the channel param — "the same modules behave differently per
+##               channel" — with ZERO change to the Message nodes. Negotiate-and-fail-loudly (§2.4, the ROS
+##               QoS lesson): an unconfigured/unknown channel emits a SURFACED diagnostic envelope, never a
+##               silent no-op. Adding a medium is one CommChannel arm, never a foundation edit.
 ##   wfc       — PROCEDURAL GENERATION (wave-function-collapse): the first GENERATOR handler. Unlike the
 ##               handlers above it has NO inner arrangement; it collapses a grid against a static tile-
 ##               adjacency ruleset (params.wfc) seeded by the implicit "seed" input and emits the
@@ -138,6 +155,13 @@ func input_ports() -> Array:
 			# an unwired WFC Context still generates deterministically rather than failing.
 			ports = ports.duplicate()
 			ports.append({ "name": "seed", "type": "number" })
+		"connector":
+			# The implicit "message" input carries the DYNAMIC payload to send across the seam — a Message
+			# record (the Message primitive's "reply" output is exactly this), wired in like any port. The
+			# channel + routing + interaction_pattern are STATIC params (same posture as wfc's ruleset). A
+			# missing message means "receive only" (the handler reads from the channel instead of sending).
+			ports = ports.duplicate()
+			ports.append({ "name": "message", "type": "message" })
 	return ports
 
 func evaluate(inputs: Dictionary) -> Dictionary:
@@ -164,6 +188,8 @@ func evaluate(inputs: Dictionary) -> Dictionary:
 			return _evaluate_abstract(inputs)
 		"wfc":
 			return _evaluate_wfc(inputs)
+		"connector":
+			return _evaluate_connector(inputs)
 		_:
 			# "dataflow" and any unknown handler degrade to a plain Chip (forward-compatible:
 			# an unrecognized future handler still runs as ordinary dataflow rather than failing).
@@ -547,6 +573,78 @@ func _canonical_inputs(inputs: Dictionary) -> String:
 	for k in keys:
 		parts.append("%s=%s" % [String(k), JSON.stringify(inputs[k])])
 	return "|".join(PackedStringArray(parts))
+
+# --- connector (in-game chat seam: 3 selectable channels over the §2.4 envelope) -------------------
+
+## The CONNECTOR handler — communication with the outside world (COMMUNICATION-ARCHITECTURE.md §2.4),
+## as an in-game chat seam with a SELECTABLE `channel` mode. This is a DUMB DELEGATE over CommChannel
+## (runtime/comm_channel.gd) + the Message envelope: the THREE modes (in_world / dev_console /
+## external_bridge) are ONE module reading the `channel` PARAM (DATA), never three hardcoded foundation
+## code paths. The SAME wired Message arrangement routes differently purely by the channel value — "the
+## same modules behave differently per channel" — with ZERO change to the Message nodes feeding it.
+##
+## DATA in -> DATA out: the dynamic payload is the implicit "message" input (a Message record — exactly
+## the Message primitive's "reply" output); the channel + routing + identity + interaction_pattern are
+## STATIC params. The handler SENDS the message across the chosen channel as the canonical §2.4 envelope
+## {identity, routing, payload, interaction_pattern} and publishes the result to the scope's DECLARED
+## output ports by name:
+##   "sent"      -> the envelope that crossed the seam (so a downstream node sees exactly what was sent);
+##   "received"  -> the latest envelope read back FROM the channel (the receive verb — how a reply
+##                  returns, e.g. the far Claude-Code endpoint's Message over external_bridge);
+##   "envelope"  -> alias of "sent" (a single-port convenience for a one-way send-only seam).
+## With NO "message" input wired, the seam is RECEIVE-ONLY: it reads from the channel and publishes
+## "received" (a console/inbox/bridge poll). A declared port outside {sent, received, envelope} gets null.
+##
+## NEGOTIATE-AND-FAIL-LOUDLY (§2.4, the ROS QoS lesson): an unconfigured / unknown / closed channel makes
+## CommChannel return a SURFACED diagnostic envelope ({ok:false, error, diagnostic}); that diagnostic is
+## published on the output ports verbatim, so a downstream Log shows exactly what refused and why — NEVER
+## a silent no-op. The channel-specific runtime config (the in-world inbox Array, the console log Array,
+## the external bridge live_dir) is read from params so the handler holds no foundation state.
+func _evaluate_connector(inputs: Dictionary) -> Dictionary:
+	var channel := String(params.get("channel", ""))
+	var config := _connector_config()
+	# The dynamic payload: a Message record arriving on the implicit "message" input. Null/unwired ->
+	# receive-only (read from the channel instead of sending).
+	var message = inputs.get("message")
+	var sent_env
+	var recv_env
+	if message != null:
+		sent_env = CommChannel.send(channel, message, config)
+		# A request_reply / round-trip seam also reads the reply back; one_way leaves received null.
+		if String(params.get("interaction_pattern", "one_way")) != "one_way":
+			recv_env = CommChannel.receive(channel, config)
+	else:
+		recv_env = CommChannel.receive(channel, config)
+	# Publish to the DECLARED output ports by name (same enumeration as _outputs_null / _evaluate_wfc).
+	var out := {}
+	for p in (params.get("ports", {}) as Dictionary).get("outputs", []):
+		var nm := String(p.get("name"))
+		match nm:
+			"sent", "envelope":
+				out[nm] = sent_env
+			"received":
+				out[nm] = recv_env
+			_:
+				out[nm] = null
+	return out
+
+## Assemble the channel config dict CommChannel reads: the static envelope fields (routing/identity/
+## interaction_pattern) plus the channel-specific runtime config (the in-world inbox, the console log,
+## the external bridge live_dir) — all carried in params so the handler holds no foundation state. The
+## inbox / console_log are passed BY REFERENCE (GDScript Arrays are references), so send/receive mutate
+## the same in-scene buffer the rest of the arrangement shares — the in-world chat surface.
+func _connector_config() -> Dictionary:
+	var config := {
+		"routing": params.get("routing", ""),
+		"identity": params.get("identity", ""),
+		"interaction_pattern": params.get("interaction_pattern", "one_way"),
+		"live_dir": params.get("live_dir", ""),
+	}
+	if params.get("inbox") is Array:
+		config["inbox"] = params.get("inbox")
+	if params.get("console_log") is Array:
+		config["console_log"] = params.get("console_log")
+	return config
 
 # --- wfc (wave-function-collapse procedural generation: a deterministic generator handler) ---------
 
