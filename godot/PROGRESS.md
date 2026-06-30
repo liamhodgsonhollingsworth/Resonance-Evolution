@@ -6,6 +6,40 @@ arrangements of already-loaded primitives, wired as data; never new code). Full 
 user-facing summary; the rest is implementation detail). This file is self-contained for dev.
 
 ## Done + verified
+**Supervised painterly evolver loop — Aperture human-in-loop fitness (GZ-EVOLVE.1, NEW 2026-06-30,
+verified).** The engine's supervised-evolver loop closed as a NODE SYSTEM, with the Aperture as the
+human-in-loop fitness surface, breeding PAINTERLY LOOKS first. Full contract: `EVOLVER-LOOP.md`. The
+loop is FOUR new primitives wired as DATA — `EvolverPopulation` (genome store: a generation of
+lineage-bearing genomes + the evolver's own `meta_genome`, all in `params`) → `Render2D` (genome → PNG
+thumbnail via `EffectStackCpu.apply` over a fixed source — REUSED, no pixel math rebuilt) →
+`ApertureSurface` (the fitness seam: `op=push` records cards with the **X / Evolve / Save** buttons via
+`aperture_push.py --action evolve:Evolve --action save:Save`; `op=readback` reads each card's decision
+via `aperture_feedback.py`; `mode=live` hits the real Aperture, `mode=mock` is the headless dry-run) →
+`Breed` (a decided generation → the next `population` via the pure `EvolverBreed` algebra). The
+action grammar maps **Evolve→KEEP** (survive + breed), **Save→PIN** (frozen archive + breed; pinned =
+the crossover pool), **X/skip→CULL** (drop); next gen = KEEP survivors + CROSSOVER pinned pairs +
+INJECT 1–2 fresh mutated genomes (the genome's own `mutate`/`crossover`, REUSED), sized to
+`meta_genome.population_size`. Lineage is **append-only** (`EvolverGenome` records `id`/`generation`/
+`parent_ids`/`origin`; a source is never mutated). The loop is **human-paced + persistent**: all
+generation/lineage/card state lives under a **GITIGNORED** dir (`godot/state/evolver/` in `.gitignore`;
+test/CLI default `user://evolver/painterly/`) — never a tracked file (host `git reset --hard` would wipe
+Liam's pins; load-bearing lesson). `EvolverTick` (CLI `evolver_tick_cli.gd`) is an **idempotent**,
+resumable one-step tick: it advances only when the generation is fully decided, else a no-op.
+**META-EVOLUTION SEAM provided (not built):** the evolver's params live in DATA as `meta_genome`,
+merged at the single read point `PrimEvolverPopulation.meta_genome()` and ridden by every descriptor, so
+a future driver that mutates them is picked up with zero code change — the policy itself is a sequenced
+follow-on. **EXTENSIBILITY:** a new gene = an `EFFECT_TYPES` entry; a new operator = a `breed` branch; a
+new fitness action = a `meta_genome.actions` `{id,label}` + a `disposition_for` branch — all additive.
+Test: `headless_evolver_test.gd` (**RESULT: ALL PASS**, 42 assertions, nonzero exit on fail) proves the
+FULL data-path cycle headlessly with **mock feedback + a live-inbox guard — it never touches Liam's live
+Aperture**: seed → render to valid non-empty PNGs → mock the three actions → breed → next gen has the
+right size with KEEP/CROSSOVER/INJECT applied → every child renderable → lineage append-only → state
+persists under the gitignored dir → re-run resumes (idempotent). No regression: `headless_effect_test`,
+`headless_effect_evolve_test`, `headless_demo` still green. **The live top-row Aperture UI + the
+X/Evolve/Save button rendering is the Aperture session's separate work** — this is the engine-side data
+path (push via `--action`/readback via feedback) + the breeding, built + verified. Run:
+`godot --headless --path godot -s res://headless_evolver_test.gd`.
+
 **Godot Aperture — node-graph renderer for {nodes,edges} (GZ-3D.3, NEW 2026-06-30, verified).** A
 read-only IN-ENGINE renderer for the SAME system-neutral `{nodes, edges}` artifact the WEB Aperture
 shows — the Godot Aperture. A pure-DATA adapter `aperture/aperture_graph.gd` (`ApertureGraph`, no Godot
@@ -195,6 +229,10 @@ godot --headless --path godot -s res://headless_compose_test.gd
 godot --headless --path godot -s res://headless_primitive_test.gd
 # in-game chat seam — 3 selectable channels (connector Context handler over runtime/comm_channel.gd):
 godot --headless --path godot -s res://headless_comm_test.gd              # 32/32: in_world/dev_console/external_bridge route the SAME arrangement; bridge round-trip; loud-fail
+# supervised painterly evolver loop — Aperture human-in-loop fitness (GZ-EVOLVE.1; full data-path cycle, mock-only, never touches the live Aperture):
+godot --headless --path godot -s res://headless_evolver_test.gd           # RESULT: ALL PASS (42 assertions) — seed->render PNG->mock evolve/save/skip->breed (KEEP/CROSSOVER/INJECT)->next gen; lineage append-only; state persists gitignored; idempotent re-run; live-inbox guard
+godot --headless --path godot -s res://evolver_tick_cli.gd -- --mode mock --state-dir user://evolver/painterly --feedback <fake.json>  # one human-paced tick (mock dry-run)
+godot --headless --path godot -s res://evolver_tick_cli.gd -- --mode live --state-dir godot/state/evolver/painterly               # LIVE: pushes real cards + polls real decisions
 # Godot Aperture — read-only node-graph renderer for the system-neutral {nodes,edges} artifact (GZ-3D.3):
 godot --headless --path godot -s res://headless_aperture_board_test.gd    # 32/32 RESULT: ALL PASS — adapter normalizes RE-native {nodes,wires} + generic {nodes,edges}(from/to, source/target) identically; malformed degrades gracefully
 godot --path godot res://aperture/aperture_board.tscn -- --shot           # windowed: render the bundled sample -> godot/live/aperture_board.png (committed proof: godot/docs/aperture_board.png)
