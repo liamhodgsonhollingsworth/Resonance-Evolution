@@ -1,0 +1,158 @@
+{
+	"coarsen": 1.0,
+	"detail_knob": 0.85,
+	"effect_stack": [
+		{
+			"params": {
+				"radius": 3
+			},
+			"type": "kuwahara"
+		},
+		{
+			"params": {
+				"strength": 0.9,
+				"threshold": 0.08
+			},
+			"type": "edge_darken"
+		},
+		{
+			"params": {
+				"levels": 8
+			},
+			"type": "posterize"
+		},
+		{
+			"params": {
+				"amount": 0.12,
+				"scale": 6.0,
+				"seed": 7
+			},
+			"type": "paper_grain"
+		}
+	],
+	"falloff": {
+		"center": [
+			0.5,
+			0.45
+		],
+		"curve": 2.0,
+		"edge": 0.1,
+		"radius": 0.85,
+		"type": "radial"
+	},
+	"paint_width": 320,
+	"scene": [
+		{
+			"params": {
+				"depth": 0.6,
+				"height": 3.0,
+				"width": 3.0
+			},
+			"part": "arch",
+			"pos": [
+				0.0,
+				0.0,
+				-1.5
+			]
+		},
+		{
+			"params": {
+				"steps": 6,
+				"total_depth": 2.0,
+				"total_height": 1.2,
+				"width": 1.6
+			},
+			"part": "stairs",
+			"pos": [
+				0.0,
+				0.0,
+				0.6
+			]
+		},
+		{
+			"params": {
+				"height": 2.4,
+				"radius": 0.35
+			},
+			"part": "cylinder",
+			"pos": [
+				-2.2,
+				1.2,
+				-1.5
+			]
+		},
+		{
+			"params": {
+				"height": 2.4,
+				"radius": 0.35
+			},
+			"part": "cylinder",
+			"pos": [
+				2.2,
+				1.2,
+				-1.5
+			]
+		},
+		{
+			"params": {
+				"radius": 0.6
+			},
+			"part": "sphere",
+			"pos": [
+				-2.2,
+				2.7,
+				-1.5
+			]
+		},
+		{
+			"params": {
+				"inner_radius": 0.25,
+				"outer_radius": 0.55
+			},
+			"part": "torus",
+			"pos": [
+				2.2,
+				2.7,
+				-1.5
+			]
+		},
+		{
+			"params": {
+				"height": 1.2,
+				"radius": 0.7
+			},
+			"part": "cone",
+			"pos": [
+				0.0,
+				3.2,
+				-1.5
+			]
+		},
+		{
+			"params": {
+				"depth": 8.0,
+				"height": 0.2,
+				"width": 8.0
+			},
+			"part": "box",
+			"pos": [
+				0.0,
+				-0.1,
+				0.0
+			]
+		}
+	],
+	"view": {
+		"look_at": [
+			0.0,
+			0.8,
+			0.0
+		],
+		"position": [
+			4.5,
+			3.5,
+			6.5
+		],
+		"yfov": 55.0
+	}
+}
