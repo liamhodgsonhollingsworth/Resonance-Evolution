@@ -6,6 +6,29 @@ arrangements of already-loaded primitives, wired as data; never new code). Full 
 user-facing summary; the rest is implementation detail). This file is self-contained for dev.
 
 ## Done + verified
+**Openable painterly example — a single detail-knob with a generic falloff (GZ-3D / GZ-RENDER, NEW
+2026-07-01, verified).** An OPENABLE example scene (`godot/examples/painterly_scene.tscn` + `.gd`) that
+COMPOSES a small 3D scene from CATALOG PARTS (arch + stairs + pillars + sphere/torus/cone + ground, via
+`PartsCatalog.part_node` → Const→Transform→Group, all merged systems reused), PAINTS it with a painterly
+effect stack (`EffectStackCpu`, reused verbatim), and — the new spec
+(project-generic-detail-falloff-2026-07-01) — VARIES the brush detail across the frame by a SINGLE
+detail-knob × a generic FALLOFF CURVE. Two thin new renderer-neutral modules, no foundation edit:
+`renderers/detail_field.gd` (`DetailField`) builds a per-pixel budget field `d(x,y)=knob×falloff(x,y)`
+from ONE `detail_knob` slider and a DATA falloff curve (`radial` / `vertical` / `horizontal` / `uniform`,
+unknown→uniform); `renderers/painterly_falloff.gd` (`PainterlyFalloff`) renders the stack fine AND coarse
+and blends per pixel by the field, so strokes are fine/dense where `d≈1` and coarse where `d≈0` — the
+field is the durable Truncate/foveation seam (later wires to camera-distance/gaze unchanged), the two-pass
+blend the simple first algorithm behind it. It is EASY TO OPEN + ITERATE: it HOT-RELOADS from
+`godot/examples/painterly_params.json` (the live_demo watcher pattern) — edit the knob, the falloff curve,
+the scene parts, or the effect stack and SAVE → the painted frame re-renders live, no restart. **Open:**
+`<Godot> --path godot res://examples/painterly_scene.tscn` (live) or `... -- --shot` (proof PNG →
+`godot/docs/painterly_example.png`; raw + field debug PNGs to gitignored `live/`). Test:
+`headless_detail_falloff_test.gd` (**RESULT: ALL PASS**, 16 assertions) — uniform==knob; radial peaks at
+center + falls to the edge floor; the knob linearly scales the whole field; vertical/horizontal ramps;
+unknown curve degrades to uniform; the painted high-detail region DIFFERS from an all-coarse paint (Δ=0.24
+— the field is load-bearing); knob=0 collapses to the coarse pass; coarsen pushes Kuwahara radius up +
+posterize levels down. Run: `godot --headless --path godot -s res://headless_detail_falloff_test.gd`.
+
 **Basic-parts 3D shape library + catalog (GZ-3D.3, NEW 2026-07-01, verified).** A library of basic
 building-block 3D parts, built by EXPANDING the existing asset-free primitive seam — NOT a new
 foundation. `renderers/godot_scene_renderer.gd` `_primitive_mesh(shape, params)` now covers a
