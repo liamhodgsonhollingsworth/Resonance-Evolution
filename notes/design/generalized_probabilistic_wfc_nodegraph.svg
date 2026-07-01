@@ -1,0 +1,212 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 760" font-family="'Segoe UI', system-ui, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#3b4a5a"/>
+    </marker>
+    <marker id="arrowFb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#c2410c"/>
+    </marker>
+    <marker id="arrowHard" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#6b21a8"/>
+    </marker>
+    <style>
+      .node { rx: 10; ry: 10; stroke-width: 1.6; }
+      .title { font-size: 15px; font-weight: 700; fill: #0f1720; }
+      .sub { font-size: 11.5px; fill: #35424f; }
+      .mono { font-family: 'Consolas','SF Mono',monospace; font-size: 11px; fill: #1f2d3a; }
+      .lbl { font-size: 11px; fill: #3b4a5a; }
+      .lblFb { font-size: 11px; fill: #c2410c; font-weight: 600; }
+      .lblHard { font-size: 11px; fill: #6b21a8; font-weight: 600; }
+      .band { font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+      .caption { font-size: 12px; fill: #35424f; }
+      .h1 { font-size: 22px; font-weight: 800; fill: #0f1720; }
+      .h2 { font-size: 13px; fill: #55636f; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1180" height="760" fill="#f7f9fb"/>
+
+  <!-- Title -->
+  <text x="34" y="42" class="h1">Generalized Probabilistic WFC — node graph</text>
+  <text x="34" y="64" class="h2">Base case (all weights = 1, static) is the degenerate sub-graph: the weight oracle collapses to a constant. Same handler, extra DATA.</text>
+
+  <!-- ============ swimlane bands ============ -->
+  <text x="34" y="112" class="band" fill="#0e7490">TILE ALPHABET</text>
+  <text x="330" y="112" class="band" fill="#7c2d12">WEIGHT ORACLE  W(tile, cell, ctx)</text>
+  <text x="812" y="112" class="band" fill="#155e34">COLLAPSE LOOP</text>
+
+  <!-- ================= TILE ALPHABET column ================= -->
+  <!-- Tile nodes -->
+  <g>
+    <rect class="node" x="34" y="132" width="230" height="70" fill="#e0f2f7" stroke="#0e7490"/>
+    <text x="49" y="156" class="title">Tile node · A</text>
+    <text x="49" y="176" class="sub">side-labels · base weight 1.0</text>
+    <text x="49" y="193" class="mono">{ name:"A", weight:1.0 }</text>
+  </g>
+  <g>
+    <rect class="node" x="34" y="214" width="230" height="70" fill="#e0f2f7" stroke="#0e7490"/>
+    <text x="49" y="238" class="title">Tile node · B</text>
+    <text x="49" y="258" class="sub">side-labels · base weight 1.0</text>
+    <text x="49" y="275" class="mono">{ name:"B", weight:1.0 }</text>
+  </g>
+
+  <!-- Adjacency (hard constraint) -->
+  <g>
+    <rect class="node" x="34" y="320" width="230" height="86" fill="#efe6f7" stroke="#6b21a8"/>
+    <text x="49" y="344" class="title">Adjacency ruleset</text>
+    <text x="49" y="363" class="sub">HARD constraint · per-direction</text>
+    <text x="49" y="380" class="sub">allow-lists (auto-mirrored)</text>
+    <text x="49" y="398" class="mono">right:{ A:[B], B:[A] }</text>
+  </g>
+
+  <!-- ================= WEIGHT ORACLE column ================= -->
+  <!-- default weight -->
+  <g>
+    <rect class="node" x="330" y="132" width="240" height="66" fill="#fdeee0" stroke="#c2410c"/>
+    <text x="345" y="156" class="title">T0 · base weight</text>
+    <text x="345" y="176" class="sub">constant lookup (today's code)</text>
+    <text x="345" y="193" class="mono">W = tiles[t].weight</text>
+  </g>
+  <!-- conditional rule -->
+  <g>
+    <rect class="node" x="330" y="212" width="240" height="82" fill="#fde8cf" stroke="#c2410c"/>
+    <text x="345" y="236" class="title">T1 · conditional weight</text>
+    <text x="345" y="255" class="sub">bias by neighbor-in-direction</text>
+    <text x="345" y="273" class="mono">P(A | right-of B) = 5.0</text>
+    <text x="345" y="289" class="sub">static — no counters</text>
+  </g>
+
+  <!-- ---- T2 evolving: Counter -> Math(weight_expr) ---- -->
+  <!-- Counter node -->
+  <g>
+    <rect class="node" x="330" y="330" width="200" height="92" fill="#fff3d6" stroke="#b45309"/>
+    <text x="345" y="354" class="title">Counter node</text>
+    <text x="345" y="373" class="sub">State-backed tally · O(1)/commit</text>
+    <text x="345" y="391" class="mono">pair:A:B  (adjacent_pair)</text>
+    <text x="345" y="409" class="sub">read-only to oracle</text>
+  </g>
+  <!-- Math node (weight_expr) -->
+  <g>
+    <rect class="node" x="330" y="452" width="240" height="112" fill="#fde8cf" stroke="#c2410c"/>
+    <text x="345" y="476" class="title">T2 · weight_expr (Math)</text>
+    <text x="345" y="495" class="sub">closed op set · pure fold</text>
+    <text x="345" y="513" class="mono">linear:  1 + k·n     (cluster)</text>
+    <text x="345" y="530" class="mono">inverse: 1/(1+k·n)  (spread)</text>
+    <text x="345" y="547" class="mono">quota:   max(0,T−n) (soft cap)</text>
+  </g>
+
+  <!-- oracle merge node -->
+  <g>
+    <rect class="node" x="606" y="300" width="150" height="150" fill="#7c2d12" stroke="#7c2d12"/>
+    <text x="681" y="352" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">weight</text>
+    <text x="681" y="372" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">oracle</text>
+    <text x="681" y="394" text-anchor="middle" font-size="11" fill="#fde8cf">W(t,cell,ctx)</text>
+    <text x="681" y="416" text-anchor="middle" font-size="10.5" fill="#fbcfa0">picks T0/T1/T2</text>
+    <text x="681" y="431" text-anchor="middle" font-size="10.5" fill="#fbcfa0">per (tile,cell)</text>
+  </g>
+
+  <!-- ================= COLLAPSE LOOP column ================= -->
+  <!-- weighted entropy (observe) -->
+  <g>
+    <rect class="node" x="812" y="150" width="252" height="92" fill="#d9f0e2" stroke="#155e34"/>
+    <text x="827" y="174" class="title">OBSERVE · weighted entropy</text>
+    <text x="827" y="193" class="sub">pick min-H cell (Shannon over W)</text>
+    <text x="827" y="211" class="mono">H = −Σ pₜ·log pₜ</text>
+    <text x="827" y="228" class="sub">uniform ⇒ argmin = min domain size</text>
+  </g>
+
+  <!-- weighted collapse (the single existing draw site) -->
+  <g>
+    <rect class="node" x="812" y="300" width="252" height="150" fill="#155e34" stroke="#155e34"/>
+    <text x="938" y="330" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">COLLAPSE</text>
+    <text x="938" y="350" text-anchor="middle" font-size="12" fill="#cfeeda">weighted seeded draw</text>
+    <text x="938" y="372" text-anchor="middle" class="mono" style="fill:#cfeeda">_wfc_weighted_pick</text>
+    <text x="938" y="394" text-anchor="middle" font-size="10.5" fill="#a9dcbd">one seeded RNG · fixed order</text>
+    <text x="938" y="412" text-anchor="middle" font-size="10.5" fill="#a9dcbd">domain sorted by name</text>
+    <text x="938" y="432" text-anchor="middle" font-size="10.5" fill="#a9dcbd">→ same (rules,seed) = same grid</text>
+  </g>
+
+  <!-- propagate -->
+  <g>
+    <rect class="node" x="812" y="500" width="252" height="78" fill="#efe6f7" stroke="#6b21a8"/>
+    <text x="827" y="524" class="title">PROPAGATE · AC-3</text>
+    <text x="827" y="543" class="sub">hard adjacency only (weights absent)</text>
+    <text x="827" y="561" class="sub">wiped domain ⇒ fail-soft / backtrack</text>
+  </g>
+
+  <!-- committed grid + counter update -->
+  <g>
+    <rect class="node" x="812" y="628" width="252" height="96" fill="#d9f0e2" stroke="#155e34"/>
+    <text x="827" y="652" class="title">COMMIT cell → grid</text>
+    <text x="827" y="671" class="sub">update generation-state counters</text>
+    <text x="827" y="689" class="mono">n(pair:A:B) += 1</text>
+    <text x="827" y="706" class="sub">emits: grid · contradiction · starved</text>
+  </g>
+
+  <!-- ================= WIRES ================= -->
+  <!-- tiles -> oracle T0 -->
+  <path d="M264 170 L322 165" fill="none" stroke="#3b4a5a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M264 249 L322 250" fill="none" stroke="#3b4a5a" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- T0 / T1 -> oracle -->
+  <path d="M570 165 C592 180 596 250 604 320" fill="none" stroke="#3b4a5a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M570 253 C592 270 596 300 604 340" fill="none" stroke="#3b4a5a" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- Counter -> Math (weight_expr) -->
+  <path d="M430 422 L430 448" fill="none" stroke="#c2410c" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="438" y="440" class="lbl">n</text>
+
+  <!-- Math weight_expr -> oracle -->
+  <path d="M570 500 C595 470 598 440 604 420" fill="none" stroke="#3b4a5a" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- oracle -> observe (weighted entropy) -->
+  <path d="M700 300 C740 250 770 210 808 200" fill="none" stroke="#3b4a5a" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="712" y="252" class="lbl">weights</text>
+  <!-- oracle -> collapse -->
+  <path d="M756 375 L808 375" fill="none" stroke="#3b4a5a" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="762" y="367" class="lbl">weights</text>
+
+  <!-- observe -> collapse -->
+  <path d="M938 242 L938 298" fill="none" stroke="#3b4a5a" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="946" y="274" class="lbl">chosen cell</text>
+
+  <!-- collapse -> propagate -->
+  <path d="M938 450 L938 498" fill="none" stroke="#3b4a5a" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <!-- propagate -> commit -->
+  <path d="M938 578 L938 626" fill="none" stroke="#3b4a5a" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- adjacency (hard) -> propagate -->
+  <path d="M264 380 C520 430 560 560 808 535" fill="none" stroke="#6b21a8" stroke-width="1.8" stroke-dasharray="2 4" marker-end="url(#arrowHard)"/>
+  <text x="470" y="470" class="lblHard">hard constraint (legality, not weight)</text>
+
+  <!-- ===== THE FEEDBACK LOOP: commit counters -> Counter node ===== -->
+  <path d="M812 676 C560 720 300 640 340 424" fill="none" stroke="#c2410c" stroke-width="2.4" stroke-dasharray="7 4" marker-end="url(#arrowFb)"/>
+  <text x="430" y="700" class="lblFb">EVOLVING DISTRIBUTION — committed counts feed back into the weight function</text>
+
+  <!-- observe->collapse->propagate->commit loop back to observe -->
+  <path d="M1064 660 C1120 600 1120 260 1066 196" fill="none" stroke="#155e34" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <text x="1096" y="430" class="lbl" transform="rotate(90 1096 430)">next cell (loop until grid filled)</text>
+
+  <!-- legend -->
+  <g>
+    <rect x="34" y="470" width="256" height="176" rx="8" fill="#ffffff" stroke="#c7d0d9"/>
+    <text x="48" y="493" class="title" font-size="13">Legend</text>
+    <rect x="48" y="506" width="20" height="12" rx="3" fill="#e0f2f7" stroke="#0e7490"/>
+    <text x="76" y="516" class="caption">tile / alphabet node</text>
+    <rect x="48" y="526" width="20" height="12" rx="3" fill="#fde8cf" stroke="#c2410c"/>
+    <text x="76" y="536" class="caption">weight rule (T0 / T1 / T2)</text>
+    <rect x="48" y="546" width="20" height="12" rx="3" fill="#fff3d6" stroke="#b45309"/>
+    <text x="76" y="556" class="caption">generation-state counter (State)</text>
+    <rect x="48" y="566" width="20" height="12" rx="3" fill="#d9f0e2" stroke="#155e34"/>
+    <text x="76" y="576" class="caption">collapse-loop stage</text>
+    <rect x="48" y="586" width="20" height="12" rx="3" fill="#efe6f7" stroke="#6b21a8"/>
+    <text x="76" y="596" class="caption">hard adjacency constraint</text>
+    <line x1="48" y1="612" x2="72" y2="612" stroke="#c2410c" stroke-width="2.4" stroke-dasharray="7 4"/>
+    <text x="76" y="616" class="caption">evolving feedback (T2 only)</text>
+    <line x1="48" y1="630" x2="72" y2="630" stroke="#155e34" stroke-width="1.8" stroke-dasharray="5 4"/>
+    <text x="76" y="634" class="caption">observe→collapse loop</text>
+  </g>
+
+  <!-- base-case note -->
+  <text x="606" y="738" class="caption" font-style="italic">Base case: remove the Counter + weight_expr + feedback wire (dashed orange). The oracle degrades to T0 constant lookup → identical to today's deterministic handler.</text>
+</svg>
