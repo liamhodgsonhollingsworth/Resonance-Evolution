@@ -100,12 +100,19 @@ func _push(rendered_desc, mode: String) -> Dictionary:
 func _do_push(mode: String, title: String, subtitle: String, image_path: String,
 		actions: Array, genome_id: String, generation: int) -> String:
 	if mode == "live":
-		var args := [APERTURE_PUSH, "--source", SOURCE_TAG, "--kind", "artifact",
-			"--title", title, "--subtitle", subtitle]
-		# A local PNG path → file:// URL so the surface can render the thumbnail.
-		var abs_img := ProjectSettings.globalize_path(image_path) if image_path.begins_with("user://") or image_path.begins_with("res://") else image_path
-		if abs_img != "":
-			args.append("--image-url"); args.append(_file_url(abs_img))
+		# The Aperture routes a card to the pinned #aperture-evolver-row (with its Evolve/Save/✕ fitness
+		# buttons) iff kind == "evolver_candidate"; cards sharing --generation lay side-by-side as that
+		# generation's row (the deployed aperture.js contract). --generation writes a TOP-LEVEL
+		# `generation` field the surface reads (aperture_push.py --generation, added 2026-07-01).
+		var args := [APERTURE_PUSH, "--source", SOURCE_TAG, "--kind", "evolver_candidate",
+			"--generation", str(generation), "--title", title, "--subtitle", subtitle]
+		# Image URL: an http(s):// URL is served to the browser AS-IS (the live surface needs a
+		# web-reachable image — a raw GitHub URL for a committed thumbnail, or any http host). A local
+		# res://user:// path is file://-wrapped (works for a same-host preview, but the browser cannot
+		# load file:// from the served board — prefer an http(s) url for the real live push).
+		var img_url := _resolve_image_url(image_path)
+		if img_url != "":
+			args.append("--image-url"); args.append(img_url)
 		for a in actions:
 			args.append("--action"); args.append("%s:%s" % [String(a.get("id")), String(a.get("label"))])
 		var out := []
@@ -234,6 +241,23 @@ func _stack_caption(genome: Dictionary) -> String:
 		if typeof(l) == TYPE_DICTIONARY:
 			names.append(String(l.get("type", "?")))
 	return " → ".join(names) if names.size() > 0 else "(empty look)"
+
+## Resolve the image reference to give the Aperture. An http(s):// value is a web-reachable URL and is
+## passed through unchanged (the live board can only render web images — a raw GitHub URL for a committed
+## thumbnail is the canonical live source). A local res://user:// path is file://-wrapped. If
+## params.image_url_base is set (e.g. a raw.githubusercontent.com/.../<branch>/<dir>/ prefix) it is
+## joined with the thumbnail's basename so a driver can map each rendered PNG to its committed raw URL.
+func _resolve_image_url(image_path: String) -> String:
+	if image_path == "":
+		return ""
+	if image_path.begins_with("http://") or image_path.begins_with("https://"):
+		return image_path
+	var base := String(params.get("image_url_base", ""))
+	if base != "":
+		var fname := image_path.get_file()
+		return base.rstrip("/") + "/" + fname
+	var abs_img := ProjectSettings.globalize_path(image_path) if image_path.begins_with("user://") or image_path.begins_with("res://") else image_path
+	return _file_url(abs_img)
 
 func _file_url(abs_path: String) -> String:
 	var p := abs_path.replace("\\", "/")

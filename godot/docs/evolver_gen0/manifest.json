@@ -1,0 +1,43 @@
+{
+	"candidates": [
+		{
+			"caption": "posterize -> passthrough -> edge_darken",
+			"file": "0.png",
+			"genome_id": "gen_392853_1",
+			"index": 0,
+			"ok": true,
+			"origin": "seed",
+			"spread": 0.931818179786205
+		},
+		{
+			"caption": "generalized_kuwahara -> kuwahara -> kuwahara",
+			"file": "1.png",
+			"genome_id": "gen_4000073_2",
+			"index": 1,
+			"ok": true,
+			"origin": "seed",
+			"spread": 0.934159403045972
+		},
+		{
+			"caption": "paper_grain -> kuwahara -> normal_map",
+			"file": "2.png",
+			"genome_id": "gen_39389350_4",
+			"index": 2,
+			"ok": true,
+			"origin": "seed",
+			"spread": 0.272361973921458
+		},
+		{
+			"caption": "temporal_stability -> kuwahara -> kuwahara",
+			"file": "3.png",
+			"genome_id": "gen_83252116_5",
+			"index": 3,
+			"ok": true,
+			"origin": "seed",
+			"spread": 0.934579848001401
+		}
+	],
+	"generation": 0,
+	"seed": 1337,
+	"size": 512
+}

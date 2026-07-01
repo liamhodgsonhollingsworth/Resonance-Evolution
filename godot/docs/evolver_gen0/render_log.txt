@@ -1,0 +1,7 @@
+Godot Engine v4.6.3.stable.official.7d41c59c4 - https://godotengine.org
+
+[render_gen0] 0.png  id=gen_392853_1  ok=true  spread=0.932  look=posterize -> passthrough -> edge_darken
+[render_gen0] 1.png  id=gen_4000073_2  ok=true  spread=0.934  look=generalized_kuwahara -> kuwahara -> kuwahara
+[render_gen0] 2.png  id=gen_39389350_4  ok=true  spread=0.272  look=paper_grain -> kuwahara -> normal_map
+[render_gen0] 3.png  id=gen_83252116_5  ok=true  spread=0.935  look=temporal_stability -> kuwahara -> kuwahara
+[render_gen0] all_ok=true  out=G:/Wavelet/repos/Resonance-Evolution/.worktrees/evolver-gen0/godot/docs/evolver_gen0
