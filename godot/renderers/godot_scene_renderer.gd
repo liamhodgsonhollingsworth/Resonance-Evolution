@@ -234,12 +234,13 @@ static func build_node(desc: Dictionary) -> Node3D:
 					_apply_morph_weights(cloaded, mesh.get("morph_weights", {}))
 					node.add_child(cloaded)
 		elif src == "primitive":
-			# Engine-built primitive mesh (box/sphere/cylinder): a portable, ASSET-FREE mesh
-			# source. It exports to glTF and loads in three.js the same as any other mesh, so an
-			# evolver-produced primitive scene stays cross-renderer portable.
+			# Engine-built primitive mesh (the basic-parts vocabulary): a portable, ASSET-FREE
+			# mesh source. It exports to glTF and loads in three.js the same as any other mesh, so
+			# an evolver-/procgen-/parts-catalog-produced primitive scene stays cross-renderer
+			# portable. `params` (optional) tunes the shape's dimensions — DATA only, no code path.
 			var mi := MeshInstance3D.new()
 			mi.name = "mesh"
-			mi.mesh = _primitive_mesh(String(mesh.get("shape", "box")))
+			mi.mesh = _primitive_mesh(String(mesh.get("shape", "box")), mesh.get("params", {}))
 			node.add_child(mi)
 	return node
 
@@ -273,14 +274,241 @@ static func _find_mesh_instances(node: Node) -> Array:
 		out.append_array(_find_mesh_instances(c))
 	return out
 
-static func _primitive_mesh(shape: String) -> Mesh:
+# --- the basic-parts primitive vocabulary -------------------------------------------------
+# One renderer-neutral shape name (+ optional params dict) → a concrete Godot Mesh. Every shape
+# here builds a non-empty mesh, exports to a spec-valid GLB (via GltfExporter → append_from_scene),
+# and loads in three.js — so a `mesh:{source:"primitive", shape, params}` scene_node is portable
+# across renderers with NO foundation edit (the shape name + params are the only new DATA). The
+# authoritative, discoverable list of shapes + their params/defaults lives in
+# `godot/assets/parts/catalog.json` (renderer-neutral) — this builder is its Godot realization.
+#
+# Built-in PrimitiveMesh subclasses cover box/sphere/cylinder/cone/torus/plane/capsule/prism;
+# the rest (wedge, pyramid, tube, stairs, arch) are built as ArrayMesh from surface arrays here.
+static func _primitive_mesh(shape: String, params = {}) -> Mesh:
+	var p: Dictionary = params if typeof(params) == TYPE_DICTIONARY else {}
 	match shape:
+		"box", "cube":
+			var m := BoxMesh.new()
+			m.size = Vector3(_pf(p, "width", 1.0), _pf(p, "height", 1.0), _pf(p, "depth", 1.0))
+			return m
 		"sphere":
-			return SphereMesh.new()
+			var m := SphereMesh.new()
+			var r := _pf(p, "radius", 0.5)
+			m.radius = r
+			m.height = _pf(p, "height", r * 2.0)
+			m.radial_segments = int(_pf(p, "radial_segments", 32))
+			m.rings = int(_pf(p, "rings", 16))
+			return m
 		"cylinder":
-			return CylinderMesh.new()
+			var m := CylinderMesh.new()
+			var r := _pf(p, "radius", 0.5)
+			m.top_radius = _pf(p, "top_radius", r)
+			m.bottom_radius = _pf(p, "bottom_radius", r)
+			m.height = _pf(p, "height", 1.0)
+			m.radial_segments = int(_pf(p, "radial_segments", 32))
+			return m
+		"cone":
+			# A cylinder with a zero top radius = a cone (its own catalog entry for discoverability).
+			var m := CylinderMesh.new()
+			m.top_radius = _pf(p, "top_radius", 0.0)
+			m.bottom_radius = _pf(p, "radius", 0.5)
+			m.height = _pf(p, "height", 1.0)
+			m.radial_segments = int(_pf(p, "radial_segments", 32))
+			return m
+		"tube", "ring", "pipe":
+			# Hollow cylinder (annular tube): built here from surface arrays (no built-in).
+			return _tube_mesh(
+				_pf(p, "outer_radius", 0.5), _pf(p, "inner_radius", 0.3),
+				_pf(p, "height", 1.0), int(_pf(p, "radial_segments", 32)))
+		"torus":
+			var m := TorusMesh.new()
+			m.inner_radius = _pf(p, "inner_radius", 0.3)
+			m.outer_radius = _pf(p, "outer_radius", 0.5)
+			m.rings = int(_pf(p, "rings", 32))
+			m.ring_segments = int(_pf(p, "ring_segments", 16))
+			return m
+		"plane", "quad":
+			var m := PlaneMesh.new()
+			m.size = Vector2(_pf(p, "width", 1.0), _pf(p, "depth", 1.0))
+			m.subdivide_width = int(_pf(p, "subdivide_width", 0))
+			m.subdivide_depth = int(_pf(p, "subdivide_depth", 0))
+			return m
+		"capsule":
+			var m := CapsuleMesh.new()
+			m.radius = _pf(p, "radius", 0.3)
+			m.height = _pf(p, "height", 1.0)
+			m.radial_segments = int(_pf(p, "radial_segments", 32))
+			m.rings = int(_pf(p, "rings", 8))
+			return m
+		"prism":
+			# Triangular prism (built-in PrismMesh): a ramp/wedge whose slope is set by left_to_right.
+			var m := PrismMesh.new()
+			m.size = Vector3(_pf(p, "width", 1.0), _pf(p, "height", 1.0), _pf(p, "depth", 1.0))
+			m.left_to_right = _pf(p, "left_to_right", 0.5)
+			return m
+		"wedge", "ramp":
+			# Right-angle ramp (triangular cross-section, flat back) — the canonical building block
+			# for slopes/roofs. Built from surface arrays so the hypotenuse + both caps are solid.
+			return _wedge_mesh(_pf(p, "width", 1.0), _pf(p, "height", 1.0), _pf(p, "depth", 1.0))
+		"pyramid":
+			# Square-based pyramid (4 triangular faces + a base).
+			return _pyramid_mesh(
+				_pf(p, "width", 1.0), _pf(p, "height", 1.0), _pf(p, "depth", 1.0))
+		"stairs":
+			# A composite building block: N equal steps rising +Y and advancing +Z. One ArrayMesh.
+			return _stairs_mesh(
+				_pf(p, "width", 1.0), _pf(p, "total_height", 1.0),
+				_pf(p, "total_depth", 1.0), int(_pf(p, "steps", 4)))
+		"arch":
+			# A composite building block: two piers + a semicircular arch of voussoirs over the gap.
+			return _arch_mesh(
+				_pf(p, "width", 2.0), _pf(p, "height", 2.0), _pf(p, "depth", 0.5),
+				_pf(p, "thickness", 0.4), int(_pf(p, "segments", 12)))
 		_:
 			return BoxMesh.new()
+
+# Read a float param with a fallback (tolerates int/float/string-number DATA).
+static func _pf(p: Dictionary, key: String, fallback: float) -> float:
+	if p.has(key) and p[key] != null:
+		return float(p[key])
+	return fallback
+
+# --- ArrayMesh builders for the shapes with no built-in PrimitiveMesh equivalent -----------
+# Each returns a solid, closed, correctly-wound (CCW front-face) ArrayMesh centered sensibly on
+# the origin. They emit POSITION + NORMAL (no UVs) — enough for a spec-valid GLB that renders +
+# validates + loads in three.js, matching the asset-free intent of the primitive seam.
+
+# A single flat triangle (a, b, c) with a computed face normal.
+static func _tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3) -> void:
+	var n := (b - a).cross(c - a)
+	if n.length() > 0.0:
+		n = n.normalized()
+	st.set_normal(n); st.add_vertex(a)
+	st.set_normal(n); st.add_vertex(b)
+	st.set_normal(n); st.add_vertex(c)
+
+# A planar quad (a,b,c,d, CCW) as two triangles sharing one face normal.
+static func _quad_face(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3) -> void:
+	_tri(st, a, b, c)
+	_tri(st, a, c, d)
+
+# Hollow cylinder (annular tube): outer + inner walls, and top/bottom annular rings. Centered on Y.
+static func _tube_mesh(outer_r: float, inner_r: float, height: float, seg: int) -> Mesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	seg = max(3, seg)
+	if inner_r >= outer_r:
+		inner_r = outer_r * 0.6
+	var hy := height * 0.5
+	for i in seg:
+		var a0 := TAU * float(i) / float(seg)
+		var a1 := TAU * float(i + 1) / float(seg)
+		var co0 := Vector3(cos(a0) * outer_r, 0, sin(a0) * outer_r)
+		var co1 := Vector3(cos(a1) * outer_r, 0, sin(a1) * outer_r)
+		var ci0 := Vector3(cos(a0) * inner_r, 0, sin(a0) * inner_r)
+		var ci1 := Vector3(cos(a1) * inner_r, 0, sin(a1) * inner_r)
+		var up := Vector3(0, hy, 0)
+		var dn := Vector3(0, -hy, 0)
+		_quad_face(st, co0 + dn, co1 + dn, co1 + up, co0 + up) # outer wall (faces out)
+		_quad_face(st, ci1 + dn, ci0 + dn, ci0 + up, ci1 + up) # inner wall (faces in)
+		_quad_face(st, co0 + up, co1 + up, ci1 + up, ci0 + up) # top ring
+		_quad_face(st, ci0 + dn, ci1 + dn, co1 + dn, co0 + dn) # bottom ring
+	return st.commit()
+
+# Right-angle wedge: a box footprint (width×depth) whose top slopes from full height at -Z to 0 at +Z.
+static func _wedge_mesh(width: float, height: float, depth: float) -> Mesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var hw := width * 0.5
+	var hd := depth * 0.5
+	var b0 := Vector3(-hw, 0, -hd) # back-left base
+	var b1 := Vector3(hw, 0, -hd)  # back-right base
+	var f0 := Vector3(-hw, 0, hd)  # front-left base
+	var f1 := Vector3(hw, 0, hd)   # front-right base
+	var t0 := Vector3(-hw, height, -hd) # back-left top
+	var t1 := Vector3(hw, height, -hd)  # back-right top
+	_quad_face(st, f0, f1, b1, b0)   # bottom (faces -Y)
+	_quad_face(st, b0, b1, t1, t0)   # back vertical wall (faces -Z)
+	_quad_face(st, f0, t0, t1, f1)   # sloped top (hypotenuse)
+	_tri(st, f0, b0, t0)             # left triangular cap
+	_tri(st, f1, t1, b1)             # right triangular cap
+	return st.commit()
+
+# Square-based pyramid: 4 triangular sides meeting at an apex over a rectangular base.
+static func _pyramid_mesh(width: float, height: float, depth: float) -> Mesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var hw := width * 0.5
+	var hd := depth * 0.5
+	var a := Vector3(-hw, 0, -hd)
+	var b := Vector3(hw, 0, -hd)
+	var c := Vector3(hw, 0, hd)
+	var d := Vector3(-hw, 0, hd)
+	var apex := Vector3(0, height, 0)
+	_quad_face(st, a, d, c, b)  # base (faces -Y)
+	_tri(st, d, a, apex)        # -X side
+	_tri(st, c, d, apex)        # +Z side
+	_tri(st, b, c, apex)        # +X side
+	_tri(st, a, b, apex)        # -Z side
+	return st.commit()
+
+# Staircase: `steps` equal boxes rising +Y and advancing +Z, filling total_height × total_depth.
+static func _stairs_mesh(width: float, total_height: float, total_depth: float, steps: int) -> Mesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	steps = max(1, steps)
+	var hw := width * 0.5
+	var rise := total_height / float(steps)
+	var run := total_depth / float(steps)
+	for i in steps:
+		var y1 := rise * float(i + 1)
+		var z0 := run * float(i)
+		_append_box(st, Vector3(-hw, 0.0, z0), Vector3(hw, y1, total_depth))
+	return st.commit()
+
+# Semicircular arch: two rectangular piers + a ring of trapezoidal voussoirs bridging the span.
+static func _arch_mesh(width: float, height: float, depth: float, thickness: float, segments: int) -> Mesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	segments = max(3, segments)
+	var hd := depth * 0.5
+	var radius := width * 0.5
+	var pier_h: float = max(0.0, height - radius)
+	var pier_w := thickness
+	if pier_h > 0.0:
+		_append_box(st, Vector3(-radius, 0, -hd), Vector3(-radius + pier_w, pier_h, hd))
+		_append_box(st, Vector3(radius - pier_w, 0, -hd), Vector3(radius, pier_h, hd))
+	for i in segments:
+		var a0 := PI - PI * float(i) / float(segments)
+		var a1 := PI - PI * float(i + 1) / float(segments)
+		var inner0 := Vector3(cos(a0) * radius, pier_h + sin(a0) * radius, 0)
+		var inner1 := Vector3(cos(a1) * radius, pier_h + sin(a1) * radius, 0)
+		var outer0 := Vector3(cos(a0) * (radius + thickness), pier_h + sin(a0) * (radius + thickness), 0)
+		var outer1 := Vector3(cos(a1) * (radius + thickness), pier_h + sin(a1) * (radius + thickness), 0)
+		var f := Vector3(0, 0, hd)
+		var bk := Vector3(0, 0, -hd)
+		_quad_face(st, inner0 + f, inner1 + f, outer1 + f, outer0 + f)  # front face
+		_quad_face(st, outer0 + bk, outer1 + bk, inner1 + bk, inner0 + bk) # back face
+		_quad_face(st, inner0 + bk, inner1 + bk, inner1 + f, inner0 + f) # intrados (inner)
+		_quad_face(st, outer0 + f, outer1 + f, outer1 + bk, outer0 + bk) # extrados (outer)
+	return st.commit()
+
+# Append an axis-aligned box spanning [mn, mx] (6 outward-facing quads) to a SurfaceTool.
+static func _append_box(st: SurfaceTool, mn: Vector3, mx: Vector3) -> void:
+	var a := Vector3(mn.x, mn.y, mn.z)
+	var b := Vector3(mx.x, mn.y, mn.z)
+	var c := Vector3(mx.x, mn.y, mx.z)
+	var d := Vector3(mn.x, mn.y, mx.z)
+	var e := Vector3(mn.x, mx.y, mn.z)
+	var f := Vector3(mx.x, mx.y, mn.z)
+	var g := Vector3(mx.x, mx.y, mx.z)
+	var h := Vector3(mn.x, mx.y, mx.z)
+	_quad_face(st, a, d, c, b)  # bottom (-Y)
+	_quad_face(st, e, f, g, h)  # top (+Y)
+	_quad_face(st, a, b, f, e)  # -Z
+	_quad_face(st, d, h, g, c)  # +Z
+	_quad_face(st, a, e, h, d)  # -X
+	_quad_face(st, b, c, g, f)  # +X
 
 # NOTE (portability boundary): `path` is a res:// / user:// / absolute pointer in GODOT's
 # namespace. The descriptor itself stays portable, but a non-Godot delegate (e.g. three.js)
@@ -315,7 +543,10 @@ static func mesh_key(mesh) -> String:
 		# apply_trs's sibling _apply_morph_weights. (Re-resolving the genome writes a NEW glb path.)
 		return "character:" + String(mesh.get("glb", mesh.get("path", "")))
 	if src == "primitive":
-		return "prim:" + String(mesh.get("shape", ""))
+		# Key on shape AND params so a hotload that tunes a dimension (e.g. cone radius) RE-WIRES a
+		# fresh mesh instead of reusing the old geometry. Params are a small dict of scalars → a
+		# stable JSON string is a cheap, order-independent (Godot sorts dict keys) identity.
+		return "prim:" + String(mesh.get("shape", "")) + ":" + JSON.stringify(mesh.get("params", {}))
 	return JSON.stringify(mesh)
 
 static func _vec3(a, fallback: Vector3) -> Vector3:
