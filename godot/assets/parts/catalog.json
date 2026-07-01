@@ -1,0 +1,155 @@
+{
+  "$schema": "resonance-evolution/parts-catalog@1",
+  "version": 1,
+  "description": "Basic 3D building-block parts (GZ-3D.3). Renderer-NEUTRAL DATA: each part is a `mesh:{source:'primitive', shape, params}` scene_node — asset-free, portable across renderers (Godot + three.js via GLB). To drop a part in a scene, wire a Model/primitive node with the part's `shape` and (optionally) override its `params`; unset params fall back to the defaults below. This catalog is the vocabulary the evolver / procgen / the Lathe draw from.",
+  "units": "meters",
+  "space": "glTF canonical (+Y up, meters, radians)",
+  "parts": [
+    {
+      "name": "box",
+      "shape": "box",
+      "aliases": ["cube"],
+      "description": "Axis-aligned rectangular box — the fundamental cuboid building block.",
+      "params": {
+        "width":  {"default": 1.0, "min": 0.01, "max": 100.0},
+        "height": {"default": 1.0, "min": 0.01, "max": 100.0},
+        "depth":  {"default": 1.0, "min": 0.01, "max": 100.0}
+      }
+    },
+    {
+      "name": "sphere",
+      "shape": "sphere",
+      "description": "UV sphere — round ball / dome primitive.",
+      "params": {
+        "radius":          {"default": 0.5,  "min": 0.01, "max": 100.0},
+        "height":          {"default": 1.0,  "min": 0.01, "max": 200.0, "note": "full Y extent; defaults to 2*radius"},
+        "radial_segments": {"default": 32,   "min": 3,    "max": 128, "int": true},
+        "rings":           {"default": 16,   "min": 2,    "max": 128, "int": true}
+      }
+    },
+    {
+      "name": "cylinder",
+      "shape": "cylinder",
+      "description": "Straight cylinder — pillar / rod / disc (set height low). top/bottom radius tunable for a frustum.",
+      "params": {
+        "radius":          {"default": 0.5, "min": 0.01, "max": 100.0, "note": "used for both caps unless overridden"},
+        "top_radius":      {"default": 0.5, "min": 0.0,  "max": 100.0},
+        "bottom_radius":   {"default": 0.5, "min": 0.0,  "max": 100.0},
+        "height":          {"default": 1.0, "min": 0.01, "max": 200.0},
+        "radial_segments": {"default": 32,  "min": 3,    "max": 128, "int": true}
+      }
+    },
+    {
+      "name": "cone",
+      "shape": "cone",
+      "description": "Cone — a cylinder with a zero-radius top; roof / spike / tree-canopy block.",
+      "params": {
+        "radius":          {"default": 0.5, "min": 0.01, "max": 100.0, "note": "base radius"},
+        "top_radius":      {"default": 0.0, "min": 0.0,  "max": 100.0, "note": ">0 makes a truncated cone (frustum)"},
+        "height":          {"default": 1.0, "min": 0.01, "max": 200.0},
+        "radial_segments": {"default": 32,  "min": 3,    "max": 128, "int": true}
+      }
+    },
+    {
+      "name": "torus",
+      "shape": "torus",
+      "description": "Torus (donut / ring) — closed loop, wheel, halo.",
+      "params": {
+        "inner_radius":  {"default": 0.3, "min": 0.0,  "max": 100.0},
+        "outer_radius":  {"default": 0.5, "min": 0.01, "max": 100.0},
+        "rings":         {"default": 32,  "min": 3,    "max": 128, "int": true},
+        "ring_segments": {"default": 16,  "min": 3,    "max": 128, "int": true}
+      }
+    },
+    {
+      "name": "plane",
+      "shape": "plane",
+      "aliases": ["quad"],
+      "description": "Flat XZ plane / quad — floor, wall panel, billboard backing.",
+      "params": {
+        "width":            {"default": 1.0, "min": 0.01, "max": 1000.0},
+        "depth":            {"default": 1.0, "min": 0.01, "max": 1000.0},
+        "subdivide_width":  {"default": 0,   "min": 0,    "max": 256, "int": true},
+        "subdivide_depth":  {"default": 0,   "min": 0,    "max": 256, "int": true}
+      }
+    },
+    {
+      "name": "capsule",
+      "shape": "capsule",
+      "description": "Capsule (stadium / pill) — rounded-end cylinder; limb, projectile, character body block.",
+      "params": {
+        "radius":          {"default": 0.3, "min": 0.01, "max": 100.0},
+        "height":          {"default": 1.0, "min": 0.01, "max": 200.0, "note": "total height incl. the two hemispherical caps"},
+        "radial_segments": {"default": 32,  "min": 3,    "max": 128, "int": true},
+        "rings":           {"default": 8,   "min": 1,    "max": 64,  "int": true}
+      }
+    },
+    {
+      "name": "prism",
+      "shape": "prism",
+      "description": "Triangular prism (built-in) — a wedge whose apex slides along X via left_to_right (0..1); roof ridge, doorstop.",
+      "params": {
+        "width":         {"default": 1.0, "min": 0.01, "max": 100.0},
+        "height":        {"default": 1.0, "min": 0.01, "max": 100.0},
+        "depth":         {"default": 1.0, "min": 0.01, "max": 100.0},
+        "left_to_right": {"default": 0.5, "min": 0.0,  "max": 1.0, "note": "0=apex at left edge, 0.5=centered, 1=right edge"}
+      }
+    },
+    {
+      "name": "wedge",
+      "shape": "wedge",
+      "aliases": ["ramp"],
+      "description": "Right-angle ramp — full height at the -Z (back) edge sloping to 0 at +Z; slopes, roofs, terrain steps.",
+      "params": {
+        "width":  {"default": 1.0, "min": 0.01, "max": 100.0},
+        "height": {"default": 1.0, "min": 0.01, "max": 100.0},
+        "depth":  {"default": 1.0, "min": 0.01, "max": 100.0}
+      }
+    },
+    {
+      "name": "pyramid",
+      "shape": "pyramid",
+      "description": "Square-based pyramid — 4 triangular faces to an apex over a rectangular base; spire, monument, tree.",
+      "params": {
+        "width":  {"default": 1.0, "min": 0.01, "max": 100.0},
+        "height": {"default": 1.0, "min": 0.01, "max": 200.0},
+        "depth":  {"default": 1.0, "min": 0.01, "max": 100.0}
+      }
+    },
+    {
+      "name": "tube",
+      "shape": "tube",
+      "aliases": ["ring", "pipe"],
+      "description": "Hollow cylinder (annular tube / pipe) — outer + inner walls with capped ends; pipe, well, ring gear.",
+      "params": {
+        "outer_radius":    {"default": 0.5, "min": 0.02, "max": 100.0},
+        "inner_radius":    {"default": 0.3, "min": 0.0,  "max": 100.0, "note": "clamped below outer_radius"},
+        "height":          {"default": 1.0, "min": 0.01, "max": 200.0},
+        "radial_segments": {"default": 32,  "min": 3,    "max": 128, "int": true}
+      }
+    },
+    {
+      "name": "stairs",
+      "shape": "stairs",
+      "description": "Composite staircase — N equal boxes rising +Y and advancing +Z to fill total_height x total_depth.",
+      "params": {
+        "width":        {"default": 1.0, "min": 0.01, "max": 100.0},
+        "total_height": {"default": 1.0, "min": 0.01, "max": 100.0},
+        "total_depth":  {"default": 1.0, "min": 0.01, "max": 100.0},
+        "steps":        {"default": 4,   "min": 1,    "max": 64, "int": true}
+      }
+    },
+    {
+      "name": "arch",
+      "shape": "arch",
+      "description": "Composite semicircular arch — two piers + a ring of voussoirs bridging the span; gateway, bridge span, window frame.",
+      "params": {
+        "width":     {"default": 2.0, "min": 0.1,  "max": 100.0, "note": "clear span; the semicircle radius is width/2"},
+        "height":    {"default": 2.0, "min": 0.1,  "max": 100.0, "note": "total height to the crown; piers = height - radius"},
+        "depth":     {"default": 0.5, "min": 0.01, "max": 100.0},
+        "thickness": {"default": 0.4, "min": 0.02, "max": 20.0, "note": "radial thickness of the arch ring + pier width"},
+        "segments":  {"default": 12,  "min": 3,    "max": 64, "int": true}
+      }
+    }
+  ]
+}

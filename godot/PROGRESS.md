@@ -6,6 +6,34 @@ arrangements of already-loaded primitives, wired as data; never new code). Full 
 user-facing summary; the rest is implementation detail). This file is self-contained for dev.
 
 ## Done + verified
+**Basic-parts 3D shape library + catalog (GZ-3D.3, NEW 2026-07-01, verified).** A library of basic
+building-block 3D parts, built by EXPANDING the existing asset-free primitive seam — NOT a new
+foundation. `renderers/godot_scene_renderer.gd` `_primitive_mesh(shape, params)` now covers a
+**13-shape vocabulary**: box, sphere, cylinder, cone, torus, plane/quad, capsule, prism, wedge/ramp,
+pyramid, tube/ring (hollow cylinder), and two composite blocks **stairs** + **arch**. Built-in
+`PrimitiveMesh` subclasses cover box/sphere/cylinder/cone/torus/plane/capsule/prism; wedge, pyramid,
+tube, stairs, arch are built as `ArrayMesh` from surface arrays (`SurfaceTool`, POSITION+NORMAL,
+solid + closed + CCW-wound). Each shape takes an OPTIONAL `params` dict (dimensions/segments) that
+rides as pure DATA on the `mesh:{source:"primitive", shape, params}` scene_node — renderer-neutral,
+zero foundation edit; `mesh_key` now keys on shape+params so a hotload that tunes a dimension re-wires.
+A renderer-neutral **parts catalog manifest** `godot/assets/parts/catalog.json` lists every part: its
+`shape`, tunable params (default + min/max), aliases, and a one-line description — the DISCOVERABLE,
+node-WIREABLE vocabulary the evolver / procgen / the Lathe draw from (node-wiring simplicity law: a
+part = drop a Model/primitive node with this shape, wire it). A tiny helper `assets/parts/parts_catalog.gd`
+(`PartsCatalog`) loads the manifest and emits a `scene_node` for a part BY NAME in one call
+(`PartsCatalog.part_node("arch", {height:3}, [x,0,0])`), with `shapes()`/`defaults_for()`/`shape_for()`
+for discovery. Test: `headless_parts_test.gd` (**RESULT: ALL PASS**, 70 assertions, nonzero exit on
+fail) — catalog parses + lists 13 parts; every catalog shape builds a non-empty mesh, the one-call
+helper emits a valid scene_node the delegate builds to exactly one mesh instance, and each part exports
+to a GLB that re-imports with a mesh; params flow through (bigger box → bigger AABB; stairs steps 8>4
+verts); unknown part name degrades to `{}`; legacy box/sphere/cylinder still build (no regression).
+Cross-renderer: a MULTI-PART GLB of all 13 parts (`live/parts.glb`) passes the **Khronos validator
+(errors=0, warnings=0)** and **three.js `GLTFLoader` agrees exactly** (meshes=13, vertices=4005 —
+PARITY OK). No regression: `headless_primitive_test` still **RESULT: ALL PASS**. Run:
+`godot --headless --path godot -s res://headless_parts_test.gd`,
+`node godot/oracle/validate_glb.mjs godot/live/parts.glb`,
+`node godot/oracle/three_parity.mjs godot/live/parts.glb godot/live/parts.counts.json`.
+
 **Supervised painterly evolver loop — Aperture human-in-loop fitness (GZ-EVOLVE.1, NEW 2026-06-30,
 verified).** The engine's supervised-evolver loop closed as a NODE SYSTEM, with the Aperture as the
 human-in-loop fitness surface, breeding PAINTERLY LOOKS first. Full contract: `EVOLVER-LOOP.md`. The
@@ -227,6 +255,10 @@ godot --headless --path godot -s res://headless_editor_test.gd
 godot --headless --path godot -s res://headless_portable_test.gd
 godot --headless --path godot -s res://headless_compose_test.gd
 godot --headless --path godot -s res://headless_primitive_test.gd
+# basic-parts 3D shape library + catalog (GZ-3D.3): 13-shape vocabulary + assets/parts/catalog.json + PartsCatalog helper:
+godot --headless --path godot -s res://headless_parts_test.gd            # RESULT: ALL PASS (70 assertions) — every catalog part builds + exports + re-imports; params flow as DATA; unknown->{}; no regression
+node godot/oracle/validate_glb.mjs godot/live/parts.glb                  # all 13 parts in one GLB — Khronos validator: errors=0
+node godot/oracle/three_parity.mjs godot/live/parts.glb godot/live/parts.counts.json  # three.js agrees: meshes=13 vertices=4005 (PARITY OK)
 # in-game chat seam — 3 selectable channels (connector Context handler over runtime/comm_channel.gd):
 godot --headless --path godot -s res://headless_comm_test.gd              # 32/32: in_world/dev_console/external_bridge route the SAME arrangement; bridge round-trip; loud-fail
 # supervised painterly evolver loop — Aperture human-in-loop fitness (GZ-EVOLVE.1; full data-path cycle, mock-only, never touches the live Aperture):
