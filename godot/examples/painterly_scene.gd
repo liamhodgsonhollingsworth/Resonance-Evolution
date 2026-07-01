@@ -76,6 +76,9 @@ func _reload() -> void:
 	_busy = true
 	_params_mtime = _mtime(PARAMS_PATH)
 	var cfg := _load_params()
+	# 0) Rebuild the SKY module from the params' `sky` block so a sky/cloud edit re-renders live, in
+	#    parallel with (and independent of) the scene + the painterly renderer.
+	_build_env(_sub, cfg)
 	# 1) Assemble the renderer-neutral arrangement (catalog parts → Group + a View), evaluate to DATA,
 	#    and let the GodotSceneRenderer delegate build the live 3D scene inside the SubViewport.
 	runtime.load_arrangement(_arrangement(cfg))
@@ -95,14 +98,21 @@ func _paint_when_ready(cfg: Dictionary) -> void:
 	# per-pixel neighbourhood math in GDScript (Kuwahara is O(pixels × radius²)) — a full-res 768×512 pass
 	# is minutes; the painted look is a low-frequency effect, so a ~paint_width-wide frame is both fast and
 	# visually identical once shown at window scale. `paint_width` is a tunable in the params file.
-	var paint_w := int(cfg.get("paint_width", 320))
+	# Paint at a MUCH higher resolution than before (640 vs 320) so the painterly look reads as crisp
+	# brushwork, not square pixel blocks — the old 320px frame upscaled to the window WAS the pixelation.
+	# Kuwahara is O(pixels × radius²); 640px is ~4× the pixels of 320 but still a fast background paint.
+	var paint_w := int(cfg.get("paint_width", 640))
 	if raw.get_width() > paint_w:
 		var ph := int(round(float(paint_w) * float(raw.get_height()) / float(raw.get_width())))
 		raw.resize(paint_w, ph, Image.INTERPOLATE_BILINEAR)
 	raw.convert(Image.FORMAT_RGBAF)
 	# 3) THE SPEC: paint the frame with the effect stack, VARYING the brush detail by the single
 	#    detail-knob × the generic falloff curve. This is the whole point of the example.
-	var stack := { "stack": cfg.get("effect_stack", _default_stack()) }
+	# Scale the brush KERNEL to the paint resolution so "coarse" means LARGER BRUSH STROKES, not bigger
+	# blocks: a Kuwahara radius authored for ~320px is doubled at 640px, keeping the stroke's on-screen
+	# size constant as resolution rises (the crisp-painterly, not pixelated, requirement).
+	var stroke_scale := clampf(float(paint_w) / 320.0, 1.0, 4.0)
+	var stack := { "stack": _scale_stroke(cfg.get("effect_stack", _default_stack()), stroke_scale) }
 	var knob := float(cfg.get("detail_knob", 0.85))
 	var falloff: Dictionary = cfg.get("falloff", { "type": "radial" })
 	var coarsen := float(cfg.get("coarsen", 1.0))
@@ -192,13 +202,42 @@ func _default_scene() -> Array:
 	]
 
 func _default_stack() -> Array:
-	# A painterly stack: Kuwahara flatten (oil-brush) → edge pooling → posterize → paper grain.
+	# A painterly stack: Kuwahara flatten (oil-brush) → edge pooling → posterize → paper grain. Radii are
+	# authored for ~320px and scaled up to the actual paint resolution by _scale_stroke (crisp strokes).
+	# posterize levels kept HIGH (14) so near-flat regions (sky, ground) do NOT band into visible blocks —
+	# posterize banding on low-detail areas was a second source of the "pixelated" look; more levels =
+	# smooth tonal ramps there while the Kuwahara still gives the brush-flattened oil look on the shapes.
 	return [
 		{ "type": "kuwahara",    "params": { "radius": 3 } },
-		{ "type": "edge_darken", "params": { "strength": 0.9, "threshold": 0.08 } },
-		{ "type": "posterize",   "params": { "levels": 8 } },
-		{ "type": "paper_grain", "params": { "amount": 0.12, "scale": 6.0, "seed": 7 } },
+		{ "type": "edge_darken", "params": { "strength": 0.85, "threshold": 0.10 } },
+		{ "type": "posterize",   "params": { "levels": 14 } },
+		{ "type": "paper_grain", "params": { "amount": 0.07, "scale": 5.0, "seed": 7 } },
 	]
+
+## Scale the brush-KERNEL params of an effect stack to the paint resolution so a stroke keeps a constant
+## ON-SCREEN size as resolution rises: a Kuwahara/generalized-Kuwahara `radius` authored for ~320px is
+## multiplied by `factor` (paint_width / 320). This is what makes the higher-res paint read as crisp
+## brushwork instead of tiny strokes — "coarse" then genuinely means a WIDER BRUSH, not a bigger pixel.
+## NOTE: `paper_grain.scale` (the noise CELL size) is deliberately NOT scaled up — enlarging the grain
+## cells is exactly what turned FLAT regions (sky, ground) into visible square blocks. Keeping the grain
+## cell small means the paper texture stays a fine tooth over the whole frame, not a checkerboard on flats.
+## Pure DATA→DATA; effects with no kernel size pass through unchanged.
+func _scale_stroke(stack: Array, factor: float) -> Array:
+	if factor <= 1.001:
+		return stack.duplicate(true)
+	var out := []
+	for layer in stack:
+		if typeof(layer) != TYPE_DICTIONARY:
+			continue
+		var t := String(layer.get("type", "passthrough"))
+		var p: Dictionary = (layer.get("params", {}) as Dictionary).duplicate(true)
+		match t:
+			"kuwahara", "generalized_kuwahara":
+				p["radius"] = int(round(float(p.get("radius", 3)) * factor))
+			_:
+				pass  # paper_grain.scale intentionally left at its authored (fine) cell size — see above
+		out.append({ "type": t, "params": p })
+	return out
 
 ## The full default params config, also WRITTEN to disk on first run so Liam has an editable seed file.
 func _default_params() -> Dictionary:
@@ -206,10 +245,15 @@ func _default_params() -> Dictionary:
 		"detail_knob": 0.85,
 		"falloff": { "type": "radial", "center": [0.5, 0.45], "radius": 0.85, "edge": 0.1, "curve": 2.0 },
 		"coarsen": 1.0,
-		"paint_width": 320,
+		"paint_width": 640,
 		"scene": _default_scene(),
 		"effect_stack": _default_stack(),
-		"view": { "position": [4.5, 3.5, 6.5], "look_at": [0.0, 0.8, 0.0], "yfov": 55.0 },
+		# The SKY is its OWN wired module (renderers/sky.gd + renderers/clouds.gd) with its OWN params, so
+		# Liam iterates the sky + clouds in PARALLEL with the scene + the painterly renderer. Every key here
+		# hot-reloads: edit a color / the sun angle / cloud coverage and only the environment re-renders.
+		"sky": PainterlySky.default_descriptor(),
+		# Aim a little higher (look_at y=1.6) so the always-on sky + clouds read clearly in the top of frame.
+		"view": { "position": [4.5, 3.8, 6.8], "look_at": [0.0, 1.6, 0.0], "yfov": 55.0 },
 	}
 
 func _load_params() -> Dictionary:
@@ -228,36 +272,44 @@ func _load_params() -> Dictionary:
 # ── window / offscreen viewport / environment ──────────────────────────────────────────────────────
 
 func _build_ui() -> void:
-	# The offscreen 3D render target we paint from.
+	# The offscreen 3D render target we paint from. Rendered at HIGH resolution with MSAA so the geometry
+	# feeding the paint is crisp + anti-aliased (jagged geometry edges were half the "pixelated" look).
 	_sub = SubViewport.new()
-	_sub.size = Vector2i(768, 512)
+	_sub.size = Vector2i(1280, 854)                                  # ~1.6x the old 768×512: crisp base frame
+	_sub.msaa_3d = Viewport.MSAA_4X                                  # 4× MSAA → no stair-step geometry edges
 	_sub.transparent_bg = false
 	_sub.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(_sub)
-	_build_env(_sub)
-	# The on-window canvas that shows the PAINTED frame (so live edits are visible immediately).
+	# The sky/sun are their OWN wired module (renderers/sky.gd) mounted here, so they iterate in parallel
+	# with the scene + the painterly renderer. _build_env reads the `sky` block of the params on reload.
+	_build_env(_sub, _load_params())
+	# The on-window canvas that shows the PAINTED frame (so live edits are visible immediately). LINEAR
+	# texture filtering so the painted frame is smoothed (not nearest-neighbour-blocked) when the window
+	# scales it — combined with the much higher paint_width this removes the square-pixel look entirely.
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	_canvas = TextureRect.new()
 	_canvas.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_canvas.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_canvas.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_canvas.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR       # smooth upscale, no blocky pixels
 	layer.add_child(_canvas)
 
-func _build_env(into: Node) -> void:
-	var light := DirectionalLight3D.new()
-	light.rotation_degrees = Vector3(-50, -40, 0)
-	light.light_energy = 1.1
-	into.add_child(light)
+## Build the environment for the render viewport from the `sky` block of the params. The SKY is a SEPARATE
+## wired module (PainterlySky.build → an Environment + a sun DirectionalLight3D driven from the same sky
+## descriptor); it replaces the old flat BG_COLOR backdrop with a procedural sky + clouds that Liam tunes
+## independently via `sky` in painterly_params.json. Rebuilt on every reload so a sky edit re-renders live.
+func _build_env(into: Node, cfg: Dictionary = {}) -> void:
+	# Clear any previous env/sun so a hot-reload of the sky block RE-BUILDS (not stacks) the environment.
+	for c in into.get_children():
+		if c is WorldEnvironment or c is DirectionalLight3D:
+			c.queue_free()
+	var sky_desc: Dictionary = cfg.get("sky", PainterlySky.default_descriptor())
+	var built := PainterlySky.build(sky_desc)
 	var env_node := WorldEnvironment.new()
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.20, 0.28, 0.42)              # a sky-ish backdrop so the paint has ground
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.55, 0.55, 0.62)
-	env.ambient_light_energy = 0.7
-	env_node.environment = env
+	env_node.environment = built["environment"]
 	into.add_child(env_node)
+	into.add_child(built["sun"])
 
 func _shot_requested() -> bool:
 	return "--shot" in OS.get_cmdline_user_args() or "--shot" in OS.get_cmdline_args()
