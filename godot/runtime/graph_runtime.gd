@@ -87,6 +87,15 @@ func _init() -> void:
 	register("Render2D", PrimRender2D)
 	register("ApertureSurface", PrimApertureSurface)
 	register("Breed", PrimBreed)
+	# --- The PROJECTION-MAPPING family (projection-sim foundation) ------------------------------------
+	# A simulated projector + camera-feedback calibration, all as DATA (the shared substrate the
+	# drum-teaching / laser / projection-audio-sync arcs inherit). CPU math seam: runtime/projection_math.gd.
+	register("Projector", PrimProjector)
+	register("ProjectionSurface", PrimProjectionSurface)
+	register("CalibrationPattern", PrimCalibrationPattern)
+	register("ProjectionMap", PrimProjectionMap)
+	register("ProjectionObserve", PrimProjectionObserve)
+	register("ProjectionCalibration", PrimProjectionCalibration)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class

@@ -6,6 +6,32 @@ arrangements of already-loaded primitives, wired as data; never new code). Full 
 user-facing summary; the rest is implementation detail). This file is self-contained for dev.
 
 ## Done + verified
+**Projection-mapping simulation foundation — projector-as-data + camera-feedback calibration
+(NEW 2026-07-02, verified).** The shared substrate the drum-teaching / laser / projection-audio-sync
+arcs inherit: SIX new primitives (own files, one-line registrations) — `Projector` (pose/fov-or-
+throw-ratio/resolution/aspect as DATA; content = a wired `pattern` warped by a wired `map`),
+`ProjectionSurface` (plane OR cylindrical-section screen; emits the analytic `surface` descriptor
+AND its scene_node visual twin at the same pose), `CalibrationPattern` (fiducial grid),
+`ProjectionMap` (the reusable 2D-homography warp node the loop writes), `ProjectionObserve` (the
+SIMULATED witness camera: projector→surface→camera transport via the exact CPU pinhole model;
+mode-swappable for a real camera+detector later — the camera-swappable seam), and
+`ProjectionCalibration` (fit the physical map from what the camera saw, invert the targets through
+it, refit, damped step). Shared math seam `runtime/projection_math.gd` (pinhole, ray-plane/cylinder,
+Hartley-normalized DLT homography least-squares); `renderers/projection_realizer.gd` rasterizes the
+warped pattern + CPU-renders the observed view headless (no GPU under --headless), and realizes the
+projector LIVE as a SpotLight3D + light_projector cookie (chosen over Decal = orthographic-only
+optics, and over per-material projector shaders = material surgery; the CPU seam stays the source
+of truth). The feedback loop is DATA-driven: the driver copies `calib.warp` into `map.params.matrix`
+each iteration (the evolver-tick pattern). **Numbers (deterministic):** angled-plane grid, gain 0.7:
+75.06 → 21.67 → 6.46 → 1.92 → **0.60 px** (converged < 1 px in 4 corrections); gain 1.0 one-shots to
+**0.095 px** (planar transport IS a homography — solved, not fudged); cylindrical screen: 48.15 →
+**1.07 px** best-fit floor. Test: `godot --headless --path godot -s res://headless_projection_test.gd`
+(**RESULT: ALL PASS**, 19 assertions incl. determinism = exact error-sequence reproduction) — writes
+before/after observed-view proofs → `godot/docs/projection_calibration_{before,after,proof}.png`.
+**Open (windowed demo):** `<Godot> --path godot res://examples/projection_sim_demo.tscn` — the angled
+screen + green target pins + the beam self-calibrating live with an error HUD, hot-reloading from THE
+one file to edit `godot/examples/projection_sim.json` (move the projector / tilt or curve the screen /
+retune gain and SAVE); `-- --shot` proof → `godot/docs/projection_sim_demo.png`.
 **Creative-mode buildable sandbox MVP (NEW 2026-07-02, verified).** Openable MC-creative-style sandbox `godot/examples/sandbox_creative.tscn` + `.gd`: free-fly cam (WASD+mouse+Space/Shift), grid-snapped left-click place / right-click remove backed by a `Vector3i→record` world Dict, a 9-slot hotbar + E-toggle paged inventory (Blocks/Shapes/Structures tabs) over the 13-shape primitive palette (untextured; per-block `material` seam for later live-texturing), hotloads from `examples/sandbox_params.json`. Open: `<Godot> --path godot res://examples/sandbox_creative.tscn` (`-- --shot` proof → `godot/docs/sandbox_creative.png`, `-- --shot --inv` → `..._inventory.png`). Test: `godot --headless --path godot -s res://headless_sandbox_test.gd` (18/18 PASS).
 **Openable painterly example — a single detail-knob with a generic falloff (GZ-3D / GZ-RENDER, NEW
 2026-07-01, verified).** An OPENABLE example scene (`godot/examples/painterly_scene.tscn` + `.gd`) that
