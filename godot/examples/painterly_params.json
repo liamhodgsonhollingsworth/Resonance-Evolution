@@ -145,14 +145,14 @@
 	"sky": {
 		"ambient_energy": 0.7,
 		"clouds": {
-			"coverage": 0.55,
+			"coverage": 0.5,
 			"enabled": true,
-			"horizon_fade": 0.22,
+			"horizon_fade": 0.1,
 			"octaves": 5,
 			"opacity": 0.95,
-			"scale": 2.6,
+			"scale": 3.4,
 			"seed": 21,
-			"softness": 0.26,
+			"softness": 0.18,
 			"tex_width": 640,
 			"tint": [
 				1.0,

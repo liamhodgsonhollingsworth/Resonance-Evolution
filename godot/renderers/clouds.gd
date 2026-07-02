@@ -33,14 +33,14 @@ extends RefCounted
 static func default_descriptor() -> Dictionary:
 	return {
 		"enabled": true,
-		"coverage": 0.55,      # 0 = clear sky, 1 = fully overcast (the density threshold)
-		"softness": 0.26,      # edge feather of the cloud shapes (0 = hard cut, 1 = very soft)
-		"scale": 2.6,          # size of the cloud cells (higher = smaller, more numerous puffs)
+		"coverage": 0.50,      # 0 = clear sky, 1 = fully overcast (the density threshold)
+		"softness": 0.18,      # edge feather of the cloud shapes (0 = hard cut, 1 = very soft)
+		"scale": 3.4,          # size of the cloud cells (higher = smaller, more numerous puffs)
 		"octaves": 5,          # fBm detail octaves (more = wispier detail)
 		"seed": 21,            # reproducibility knob (an evolvable param)
 		"tint": [1.0, 1.0, 1.0],   # cloud color (white); tinted via sky_cover_modulate
 		"opacity": 0.95,       # overall cloud strength (the modulate alpha)
-		"horizon_fade": 0.22,  # fade clouds toward the horizon so the skyline stays clean (0 = none)
+		"horizon_fade": 0.10,  # fade clouds toward the horizon so the skyline stays clean (0 = none)
 		"tex_width": 640,      # cover-texture resolution (equirect); 640x320 keeps cloud edges crisp
 	}
 
