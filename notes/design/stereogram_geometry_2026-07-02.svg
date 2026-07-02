@@ -1,0 +1,71 @@
+<svg viewBox="0 0 980 560" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7a8aa0"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="980" height="560" fill="#101418"/>
+  <text x="20" y="34" fill="#e8edf4" font-size="20" font-weight="600">Viewing geometry — one parameter set drives every stereo output mode</text>
+  <text x="20" y="56" fill="#8fa0b5" font-size="13">viewer space: cyclopean eye at origin, looking −Z · e = ipd_m · D = screen_distance_m · ppm = image_width_px / screen_width_m</text>
+
+  <!-- eyes (left side of drawing), scene to the right -->
+  <!-- Eye positions -->
+  <circle cx="120" cy="220" r="9" fill="#5fb2ff"/>
+  <circle cx="120" cy="340" r="9" fill="#ffb85f"/>
+  <text x="66" y="214" fill="#5fb2ff" font-size="14">eye L</text>
+  <text x="66" y="366" fill="#ffb85f" font-size="14">eye R</text>
+  <text x="60" y="238" fill="#5fb2ff" font-size="12">(−e/2)</text>
+  <text x="60" y="346" fill="#ffb85f" font-size="12">(+e/2)</text>
+
+  <!-- IPD bracket -->
+  <line x1="96" y1="220" x2="96" y2="340" stroke="#7a8aa0" stroke-width="1.5" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <text x="30" y="286" fill="#c8d2df" font-size="13">e (IPD)</text>
+
+  <!-- viewing axis -->
+  <line x1="120" y1="280" x2="940" y2="280" stroke="#33404f" stroke-width="1" stroke-dasharray="5 5"/>
+  <text x="905" y="272" fill="#57687c" font-size="12">−Z</text>
+
+  <!-- screen plane -->
+  <line x1="430" y1="90" x2="430" y2="500" stroke="#e8edf4" stroke-width="3"/>
+  <text x="410" y="80" fill="#e8edf4" font-size="14" font-weight="600">screen = focal / convergence plane (zero parallax)</text>
+  <text x="438" y="498" fill="#8fa0b5" font-size="12">width W_m → ppm px/m</text>
+
+  <!-- distance D bracket -->
+  <line x1="120" y1="470" x2="430" y2="470" stroke="#7a8aa0" stroke-width="1.5" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <text x="245" y="462" fill="#c8d2df" font-size="13">D = screen_distance_m</text>
+
+  <!-- FAR point behind screen (uncrossed parallax) -->
+  <circle cx="800" cy="280" r="7" fill="#9be89b"/>
+  <text x="812" y="270" fill="#9be89b" font-size="14">point at Z &gt; D (behind screen)</text>
+  <!-- rays -->
+  <line x1="120" y1="220" x2="800" y2="280" stroke="#5fb2ff" stroke-width="1.6"/>
+  <line x1="120" y1="340" x2="800" y2="280" stroke="#ffb85f" stroke-width="1.6"/>
+  <!-- screen intersections: L ray at y=220+(280-220)*(310/680)=247.4 ; R at 340-60*(310/680)=312.6 -->
+  <circle cx="430" cy="247" r="5" fill="#5fb2ff"/>
+  <circle cx="430" cy="313" r="5" fill="#ffb85f"/>
+  <line x1="452" y1="247" x2="452" y2="313" stroke="#9be89b" stroke-width="1.5" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <text x="462" y="284" fill="#9be89b" font-size="13">p(Z) = e·(Z−D)/Z  &gt; 0  (uncrossed)</text>
+
+  <!-- NEAR point in front of screen (crossed parallax) -->
+  <circle cx="300" cy="280" r="7" fill="#ff8fb3"/>
+  <text x="230" y="258" fill="#ff8fb3" font-size="14">point at Z &lt; D</text>
+  <!-- rays extended to screen: L eye (120,220) through (300,280): slope=60/180 -> at x=430: y=220+310/180*60=323.3 -->
+  <line x1="120" y1="220" x2="430" y2="323" stroke="#5fb2ff" stroke-width="1.6" stroke-dasharray="7 4"/>
+  <line x1="120" y1="340" x2="430" y2="237" stroke="#ffb85f" stroke-width="1.6" stroke-dasharray="7 4"/>
+  <circle cx="430" cy="323" r="5" fill="#5fb2ff"/>
+  <circle cx="430" cy="237" r="5" fill="#ffb85f"/>
+  <line x1="408" y1="237" x2="408" y2="323" stroke="#ff8fb3" stroke-width="1.5" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <text x="150" y="317" fill="#ff8fb3" font-size="13">p(Z) &lt; 0 (crossed)</text>
+
+  <!-- depth budget -->
+  <rect x="640" y="120" width="220" height="24" fill="none" stroke="#9be89b" stroke-dasharray="4 3"/>
+  <text x="648" y="137" fill="#9be89b" font-size="12">depth budget [display_near, display_far] — "parallel" viewing (behind screen)</text>
+  <rect x="240" y="120" width="150" height="24" fill="none" stroke="#ff8fb3" stroke-dasharray="4 3"/>
+  <text x="248" y="137" fill="#ff8fb3" font-size="12">budget — "cross" viewing</text>
+
+  <!-- formulas panel -->
+  <rect x="20" y="512" width="940" height="36" rx="6" fill="#1a212a"/>
+  <text x="34" y="535" fill="#c8d2df" font-size="13">
+    stereogram period s_px(Z) = ppm·e·|Z−D|/Z · pair disparity d(Z) = u_L−u_R = ppm·e·(D−Z)/Z · depth map v∈[0,1] maps linear-in-1/Z onto the budget · same dict → SIRDS / pair / anaglyph / VR rig
+  </text>
+</svg>
