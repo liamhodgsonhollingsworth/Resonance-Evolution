@@ -1,0 +1,20 @@
+{
+	"format": "resonance.arrangement/v1",
+	"rev": 1,
+	"_comment": "Live-texturing demo arrangement: a Const feeds a texture SPEC into a TextureApply node, which emits a renderer-neutral set_material op observed by a Log sink. Copy this file where a LiveHost watches (e.g. godot/live/) and edit the spec's colors/kind/cell while the graph runs - the op re-emits with no restart. Paste the emitted op into sandbox_params.json material_ops to re-skin a placed block live.",
+	"nodes": [
+		{ "id": "spec", "type": "Const", "params": { "value": {
+			"procedural": { "kind": "checker", "size": 64, "cells": 8,
+				"colors": [[0.9, 0.6, 0.2], [0.2, 0.2, 0.25]] },
+			"roughness": 0.7
+		} } },
+		{ "id": "target", "type": "Const", "params": { "value": [0, 1, 0] } },
+		{ "id": "apply", "type": "TextureApply", "params": {} },
+		{ "id": "out", "type": "Log", "params": {} }
+	],
+	"wires": [
+		{ "from": "spec", "out": "value", "to": "apply", "in": "spec" },
+		{ "from": "target", "out": "value", "to": "apply", "in": "cell" },
+		{ "from": "apply", "out": "material_op", "to": "out", "in": "in" }
+	]
+}

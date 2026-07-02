@@ -255,7 +255,9 @@ func _remove_block() -> void:
 
 ## Place a palette block at a grid cell. This is the ONE write path into the world Dictionary + the scene:
 ## it records the block as DATA (shape/params/material seam) and instances exactly one MeshInstance3D.
-func _set_block(cell: Vector3i, pal_idx: int) -> void:
+## `material_override` (optional) is the live-texturing hook: keys in it overlay the palette default, so a
+## seeded/params block can carry a file or PROCEDURAL texture descriptor (see _apply_material).
+func _set_block(cell: Vector3i, pal_idx: int, material_override: Dictionary = {}) -> void:
 	if pal_idx < 0 or pal_idx >= palette.size():
 		return
 	if world.has(cell):
@@ -265,14 +267,18 @@ func _set_block(cell: Vector3i, pal_idx: int) -> void:
 	mi.mesh = GodotSceneRenderer._primitive_mesh(String(entry["shape"]), entry.get("params", {}))
 	mi.position = _cell_to_world(cell)
 	_blocks_root.add_child(mi)
-	# BlockRecord — the per-block DATA. `material` is the LIVE-TEXTURING SEAM (see _apply_material): today
-	# it is just {albedo:[r,g,b]} (untextured plain colour); later a node-based texturing chip writes a
-	# richer material/texture descriptor here and the block re-skins with ZERO placement-code change.
+	# BlockRecord — the per-block DATA. `material` is the LIVE-TEXTURING SEAM (see _apply_material):
+	# it starts as the palette's plain {albedo:[r,g,b]} (untextured); the live-texturing module
+	# (TextureApply node ops / params material entries) overlays richer descriptor keys here and the
+	# block re-skins with ZERO placement-code change.
+	var material: Dictionary = entry.get("material", {}).duplicate(true)
+	for k in material_override:
+		material[k] = material_override[k]
 	var record := {
 		"type": String(entry["name"]),
 		"shape": String(entry["shape"]),
 		"params": entry.get("params", {}).duplicate(true),
-		"material": entry.get("material", {}).duplicate(true),   # ← the seam
+		"material": material,   # ← the seam
 		"node": mi,
 	}
 	_apply_material(mi, record["material"])
@@ -305,10 +311,16 @@ func _apply_material(mi: MeshInstance3D, material_desc: Dictionary) -> void:
 	var albedo = material_desc.get("albedo", [0.75, 0.75, 0.78])
 	if typeof(albedo) == TYPE_ARRAY and albedo.size() >= 3:
 		mat.albedo_color = Color(albedo[0], albedo[1], albedo[2])
-	# --- SEAM: a future texturing chip fills these from the `material` descriptor ---
+	# --- SEAM: the live-texturing module fills these from the `material` descriptor ---
+	# File texture (a path) wins; else a PROCEDURAL descriptor is synthesized by the renderer
+	# delegate (renderers/texture_synth.gd) — the data the TextureApply node emits. Deterministic,
+	# so the same descriptor always re-skins a block identically on hotload.
 	var tex_path = material_desc.get("albedo_texture", "")
+	var procedural = material_desc.get("procedural", {})
 	if typeof(tex_path) == TYPE_STRING and tex_path != "" and ResourceLoader.exists(tex_path):
 		mat.albedo_texture = load(tex_path)
+	elif typeof(procedural) == TYPE_DICTIONARY and not (procedural as Dictionary).is_empty():
+		mat.albedo_texture = TextureSynth.synthesize(procedural)
 	if material_desc.has("roughness"):
 		mat.roughness = float(material_desc["roughness"])
 	if material_desc.has("metallic"):
@@ -666,7 +678,44 @@ func _seed_world(cfg: Dictionary, is_reload := false) -> void:
 		var cell := Vector3i(int(cell_arr[0]), int(cell_arr[1]), int(cell_arr[2]))
 		var pal_idx := _palette_index(String(b.get("block", "Cube")))
 		if pal_idx >= 0:
-			_set_block(cell, pal_idx)
+			# Optional per-block `material` override — a block entry can carry a file/procedural
+			# texture descriptor and seed TEXTURED (the live-texturing module, hotloadable).
+			var mo = b.get("material", {})
+			_set_block(cell, pal_idx, mo if typeof(mo) == TYPE_DICTIONARY else {})
+	# LIVE-TEXTURING ops: a top-level `material_ops` list re-skins ALREADY-PLACED blocks. Each entry
+	# is exactly the DATA the TextureApply node emits ({cell:[x,y,z], material:{...}} — the "op" tag
+	# is tolerated and ignored), so a node-graph tick's output pasted into this file textures the
+	# world live via the same hotload watcher. Ops on empty cells are skipped (never crash).
+	_apply_material_ops(cfg.get("material_ops", []))
+
+
+## Apply set_material ops (the TextureApply node's output shape) onto existing blocks: overlay the
+## descriptor keys onto the block's `material` DATA and re-run the ONE material seam. Returns how
+## many ops applied (headless tests assert on it).
+func _apply_material_ops(ops) -> int:
+	if typeof(ops) != TYPE_ARRAY:
+		return 0
+	var applied := 0
+	for op in ops:
+		if typeof(op) != TYPE_DICTIONARY:
+			continue
+		var cell_arr = op.get("cell", null)
+		var mat_desc = op.get("material", null)
+		if typeof(cell_arr) != TYPE_ARRAY or (cell_arr as Array).size() < 3 or typeof(mat_desc) != TYPE_DICTIONARY:
+			continue
+		var cell := Vector3i(int(cell_arr[0]), int(cell_arr[1]), int(cell_arr[2]))
+		if not world.has(cell):
+			continue
+		var rec: Dictionary = world[cell]
+		var material: Dictionary = rec.get("material", {})
+		for k in mat_desc:
+			material[k] = mat_desc[k]
+		rec["material"] = material
+		var n = rec.get("node", null)
+		if n is MeshInstance3D and is_instance_valid(n):
+			_apply_material(n, material)
+			applied += 1
+	return applied
 
 
 func _palette_index(name: String) -> int:
