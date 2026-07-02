@@ -1,0 +1,29 @@
+{
+	"name": "projection_sim",
+	"description": "Projection-mapping simulation foundation: a projector above an angled plane projecting a calibration grid, watched by a witness camera, self-calibrating via the ProjectionObserve -> ProjectionCalibration -> ProjectionMap feedback loop. Everything here is DATA over registered primitives; the loop driver just copies calib.warp into map.params.matrix each iteration (hotload diff).",
+	"nodes": [
+		{ "id": "pattern", "type": "CalibrationPattern",
+			"params": { "cols": 5, "rows": 4, "margin": 0.12, "dot_radius": 0.012 } },
+		{ "id": "surface", "type": "ProjectionSurface",
+			"params": { "kind": "plane", "origin": [0.0, 1.0, 0.0], "rotation": [-35.0, 0.0, 0.0], "size": [2.6, 1.8] } },
+		{ "id": "map", "type": "ProjectionMap",
+			"params": { "matrix": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] } },
+		{ "id": "projector", "type": "Projector",
+			"params": { "position": [0.4, 3.0, 1.4], "look_at": [0.0, 1.0, 0.0], "yfov": 30.0, "resolution": [960, 540] } },
+		{ "id": "view", "type": "View",
+			"params": { "position": [0.0, 1.6, 2.6], "look_at": [0.0, 1.0, 0.0], "yfov": 40.0, "znear": 0.05, "zfar": 100.0 } },
+		{ "id": "observe", "type": "ProjectionObserve",
+			"params": { "resolution": [640, 360], "target_rect": [0.3, 0.3, 0.7, 0.7], "quantize": 0.25 } },
+		{ "id": "calib", "type": "ProjectionCalibration",
+			"params": { "gain": 0.7, "threshold": 1.0 } }
+	],
+	"wires": [
+		{ "from": "pattern", "out": "pattern", "to": "projector", "in": "pattern" },
+		{ "from": "map", "out": "map", "to": "projector", "in": "map" },
+		{ "from": "projector", "out": "projector", "to": "observe", "in": "projector" },
+		{ "from": "surface", "out": "surface", "to": "observe", "in": "surface" },
+		{ "from": "view", "out": "view", "to": "observe", "in": "view" },
+		{ "from": "observe", "out": "correspondences", "to": "calib", "in": "correspondences" },
+		{ "from": "map", "out": "map", "to": "calib", "in": "map" }
+	]
+}
