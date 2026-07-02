@@ -6,6 +6,33 @@ arrangements of already-loaded primitives, wired as data; never new code). Full 
 user-facing summary; the rest is implementation detail). This file is self-contained for dev.
 
 ## Done + verified
+**Stereogram + VR viewer foundation (stereogram-vr-viewer lane, NEW 2026-07-02, verified).** ONE
+renderer-neutral viewing-geometry dict (viewer-to-screen distance / IPD / focal-convergence plane /
+depth budget / screen size+DPI — all DATA on the wire) drives FOUR stereo output modes from the same
+`scene_node` scene: cyclopean depth map → autostereogram (classic SIRDS, cross AND parallel
+free-viewing), off-axis side-by-side stereo pair (converged exactly at the focal plane, never
+toe-in), red/cyan anaglyph, and the live/VR camera rig. New primitive
+`godot/primitives/prim_stereo_render.gd` (`StereoRender`, registered in GraphRuntime; inputs
+`scene` + optional `geometry` wire override so a knob node can drive IPD live; emits a
+JSON-serializable descriptor — PNG paths + derived geometry + depth stats, no Image on the wire);
+new `godot/renderers/stereo_rig.gd` (`StereoRig`) turns the SAME dict into two live off-axis
+`PROJECTION_FRUSTUM` Camera3Ds (`eye_descriptors()` is the single geometry source a future OpenXR
+adapter reads — headset bring-up documented as a seam, out of scope). CPU raycast over the analytic
+primitive subset (sphere + box) so every expectation is exact; GPU depth readback is the documented
+follow-up that unlocks arbitrary scenes. Demo arrangement `godot/examples/stereogram_demo.json`
+(floating shapes at known depths) writes committed artifacts `godot/docs/stereogram_demo_{sirds,
+depth,pair,anaglyph}.png`. Test: `godot --headless --path godot -s res://headless_stereo_test.gd`
+(**RESULT: ALL PASS**, 58 assertions, ~20 s) — the proof is DECODER-based: hand-computed formula
+anchors; sphere depth reads Z−r exactly; band stereograms RELOADED from PNG decode to the predicted
+periods in both viewing modes ([81,71,60,39] px parallel, [13,24,36,58] px cross — inverted
+relation caught); pair centroid disparity matches ppm·e·(D−Z)/Z within 0.8 px at three depths incl.
+zero at the focal plane; anaglyph channels exact; rig frustum offsets ±e/2·zn/D exact; the demo
+artifact's background window decodes to the far-plane period 13 px. Second, independent Python
+oracle `godot/oracle/decode_stereogram.py` (PIL, zero shared code) agrees on every band + the
+committed artifact: `py godot/oracle/decode_stereogram.py godot/docs/stereogram_demo_sirds.png
+40:560:13`. Design note + geometry diagram: `notes/design/stereogram_vr_viewer_2026-07-02.md` +
+`stereogram_geometry_2026-07-02.svg`. No regression: `headless_primitive_test` + `headless_view_test`
+still ALL PASS.
 **Projection-mapping simulation foundation — projector-as-data + camera-feedback calibration
 (NEW 2026-07-02, verified).** The shared substrate the drum-teaching / laser / projection-audio-sync
 arcs inherit: SIX new primitives (own files, one-line registrations) — `Projector` (pose/fov-or-
