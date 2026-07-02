@@ -26,6 +26,11 @@ func _initialize() -> void:
 	var run_dir := "user://evolver_test/painterly"
 	_rm_rf(run_dir)
 
+	# Snapshot the live inbox BEFORE anything runs. The final guard proves THIS RUN added no tagged
+	# rows — an absent-tag assert (the original form) false-fails forever once the PRODUCTION path has
+	# legitimately pushed a real live generation with the same SOURCE_TAG, which has now happened.
+	var live_rows_before := _live_inbox_tag_count(PrimApertureSurface.SOURCE_TAG)
+
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20260630
 
@@ -264,10 +269,10 @@ func _initialize() -> void:
 
 	# --- 8. LIVE-APERTURE GUARD: the whole test never wrote to Liam's real inbox. --------------------
 	# The live inbox is G:/Wavelet/Alethea-cc/state/aperture/inbox/inbox.jsonl. We did all pushes in
-	# mock mode, so NONE of our SOURCE_TAG rows can appear there. Assert no row tagged this evolver
-	# exists in the live inbox (if the file is missing entirely, that is also a pass).
-	ok = _check("the test NEVER pushed to the live Aperture inbox (mock-only)",
-		_live_inbox_clean_of(PrimApertureSurface.SOURCE_TAG)) and ok
+	# mock mode, so the count of rows tagged with this evolver's SOURCE_TAG must be UNCHANGED from the
+	# start-of-run snapshot (pre-existing rows from real production generations are expected).
+	ok = _check("the test ADDED no rows to the live Aperture inbox (mock-only run)",
+		_live_inbox_tag_count(PrimApertureSurface.SOURCE_TAG) == live_rows_before) and ok
 
 	print("RESULT: ", "ALL PASS" if ok else ("%d FAIL" % _fail_count))
 	quit(0 if ok else 1)
@@ -321,17 +326,19 @@ func _rm_rf(path: String) -> void:
 		name = d.get_next()
 	d.list_dir_end()
 
-## Whether the live Aperture inbox contains NO row tagged with `tag` (proves the test never pushed live).
-## Missing file → clean (pass). Any line whose source_session == tag → dirty (fail).
-func _live_inbox_clean_of(tag: String) -> bool:
+## How many live-inbox rows carry `tag` as their source_session (missing file → 0). Compared before
+## vs after the run: equal counts prove the test itself never pushed live, while tolerating the rows
+## real production generations have legitimately pushed with the same tag.
+func _live_inbox_tag_count(tag: String) -> int:
 	var live := "G:/Wavelet/Alethea-cc/state/aperture/inbox/inbox.jsonl"
 	if not FileAccess.file_exists(live):
-		return true
+		return 0
+	var n := 0
 	for line in FileAccess.get_file_as_string(live).split("\n"):
 		line = line.strip_edges()
 		if line == "":
 			continue
 		var row = JSON.parse_string(line)
 		if typeof(row) == TYPE_DICTIONARY and String(row.get("source_session", "")) == tag:
-			return false
-	return true
+			n += 1
+	return n
