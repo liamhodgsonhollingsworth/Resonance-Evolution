@@ -240,12 +240,12 @@ func effect_stack() -> Dictionary:
 	return {
 		"stack": [
 			{ "type": "god_rays", "params": {
-				"density": 0.95, "decay": 0.965, "weight": 0.85, "exposure": 1.1,
-				"threshold": 0.58, "samples": 64 } },
+				"density": 0.95, "decay": 0.965, "weight": 0.60, "exposure": 0.55,
+				"threshold": 0.80, "samples": 64 } },
 			{ "type": "lens_flare", "params": {
-				"ghosts": 4, "dispersal": 0.28, "halo_width": 0.42, "strength": 0.7,
-				"threshold": 0.70 } },
-			{ "type": "bloom", "params": { "threshold": 0.60, "intensity": 1.05, "radius": 8 } },
+				"ghosts": 4, "dispersal": 0.28, "halo_width": 0.42, "strength": 0.55,
+				"threshold": 0.72 } },
+			{ "type": "bloom", "params": { "threshold": 0.75, "intensity": 0.60, "radius": 8 } },
 		],
 	}
 
