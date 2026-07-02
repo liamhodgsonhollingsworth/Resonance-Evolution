@@ -50,6 +50,10 @@ static func breed(decided: Array, meta: Dictionary, next_gen: int, rng: RandomNu
 	var n_inject := int(meta.get("n_inject", 1))
 	n_inject = clampi(n_inject, 0, pop_size)
 	var seed_layers := int(meta.get("seed_layers", 3))
+	# The genome FAMILY fresh seeds are drawn from ("effect" default; "texture" for the procedural-
+	# texture evolver) — only the fully-culled recovery path below needs it; every other operator
+	# (keep/pin/crossover/inject-mutate) inherits the kind from its parents.
+	var genome_kind := String(meta.get("genome_kind", "effect"))
 
 	# Partition the decided generation by disposition.
 	var survivors: Array = []  # KEEP + PIN (both breed forward)
@@ -97,7 +101,7 @@ static func breed(decided: Array, meta: Dictionary, next_gen: int, rng: RandomNu
 			var src = survivors[rng.randi_range(0, survivors.size() - 1)]
 			next.append(EvolverGenome.inject_mutated(src, next_gen, rng))
 		else:
-			next.append(EvolverGenome.random_seed(seed_layers, next_gen, rng))
+			next.append(EvolverGenome.random_seed(seed_layers, next_gen, rng, genome_kind))
 
 	# Defensive: never exceed pop_size (the loops above guarantee it, but clamp for safety).
 	if next.size() > pop_size:

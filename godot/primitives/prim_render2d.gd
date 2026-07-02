@@ -48,8 +48,14 @@ func evaluate(inputs: Dictionary) -> Dictionary:
 		if typeof(gd) != TYPE_DICTIONARY:
 			continue
 		var eg := EvolverGenome.from_dict(gd)
-		var stack := eg.genome.to_stack()
-		var img := EffectStackCpu.apply(stack, src)
+		# GENOME-KIND dispatch: a texture genome GENERATES its tile (TextureSynthCpu — no source
+		# image; the genome is the whole construction); an effect genome POST-PROCESSES the source
+		# (EffectStackCpu). Same node, same descriptor, two render delegates.
+		var img: Image
+		if eg.kind() == "texture":
+			img = TextureSynthCpu.synthesize(eg.genome.to_stack(), src.get_width(), src.get_height())
+		else:
+			img = EffectStackCpu.apply(eg.genome.to_stack(), src)
 		var path := out_dir.path_join("g%d_%s.png" % [generation, eg.id])
 		var save_err := img.save_png(path)
 		rendered.append({
@@ -64,9 +70,14 @@ func evaluate(inputs: Dictionary) -> Dictionary:
 	} }
 
 ## Render ONE genome to a PNG at an explicit path (the CLI tick reuses this without an arrangement).
-## Returns true on a written, non-empty PNG. Static so a driver can call it directly.
+## Returns true on a written, non-empty PNG. Static so a driver can call it directly. Kind-dispatched
+## exactly like evaluate(): texture genomes synthesize at the source's size, effect genomes apply over it.
 static func render_genome_to(eg: EvolverGenome, abs_path: String, src: Image) -> bool:
-	var img := EffectStackCpu.apply(eg.genome.to_stack(), src)
+	var img: Image
+	if eg.kind() == "texture":
+		img = TextureSynthCpu.synthesize(eg.genome.to_stack(), src.get_width(), src.get_height())
+	else:
+		img = EffectStackCpu.apply(eg.genome.to_stack(), src)
 	var err := img.save_png(abs_path)
 	return err == OK and FileAccess.file_exists(abs_path)
 

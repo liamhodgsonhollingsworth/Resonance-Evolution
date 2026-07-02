@@ -22,12 +22,17 @@ extends RefCounted
 ## parallel genome.
 
 var id: String = ""
-var genome: EffectGenome = null
+# The wrapped look-genome. GENOME-KIND-POLYMORPHIC (2026-07-02): an EffectGenome (the painterly
+# post-process stack) OR a TextureGenome (the procedural-texture op list) — both expose the same
+# duck-typed contract (clone/mutate/to_stack/is_valid + static random/crossover/from_stack), so the
+# lineage record, the breed algebra, and the four evolver primitives drive either kind unchanged.
+# The serialized discriminator is the payload key: "stack" → effect, "texture_ops" → texture.
+var genome = null
 var generation: int = 0
 var parent_ids: Array = []
 var origin: String = "seed"
 
-func _init(p_genome: EffectGenome = null, p_id: String = "", p_generation: int = 0,
+func _init(p_genome = null, p_id: String = "", p_generation: int = 0,
 		p_parent_ids: Array = [], p_origin: String = "seed") -> void:
 	genome = p_genome if p_genome != null else EffectGenome.new([])
 	id = p_id if p_id != "" else EvolverGenome.new_id()
@@ -53,9 +58,17 @@ static func new_id() -> String:
 # ---------------------------------------------------------------------------------------------------
 
 ## A fresh random seed variant (origin "seed", no parents). Used to populate generation 0 and to
-## INJECT brand-new blood when breeding.
-static func random_seed(n_layers: int, gen: int, rng: RandomNumberGenerator) -> EvolverGenome:
+## INJECT brand-new blood when breeding. `kind` selects the genome family ("effect" default —
+## fully backward-compatible — or "texture"); carried on meta_genome.genome_kind by callers.
+static func random_seed(n_layers: int, gen: int, rng: RandomNumberGenerator, kind: String = "effect") -> EvolverGenome:
+	if kind == "texture":
+		return EvolverGenome.new(TextureGenome.random(n_layers, rng), "", gen, [], "seed")
 	return EvolverGenome.new(EffectGenome.random(n_layers, rng), "", gen, [], "seed")
+
+## Which genome FAMILY this variant carries: "texture" | "effect". The render delegate dispatches
+## on this (TextureSynthCpu.synthesize vs EffectStackCpu.apply); everything else is kind-blind.
+func kind() -> String:
+	return "texture" if genome is TextureGenome else "effect"
 
 ## KEEP this variant forward into the next generation UNCHANGED (origin "keep"). The survivor itself is
 ## the breeder; its parent is its own prior id (the lineage chain records "I came from me at gen-1").
@@ -69,15 +82,23 @@ func pin_into(next_gen: int) -> EvolverGenome:
 	return EvolverGenome.new(genome.clone(), "", next_gen, [id], "pin")
 
 ## CROSSOVER two survivors into a new variant (origin "crossover", both parents recorded). Delegates
-## the actual mix to EffectGenome.crossover — the look operator is reused, never rebuilt.
+## the actual mix to the genome family's own crossover — the look operator is reused, never rebuilt.
+## Mixed-kind parents do NOT interbreed (no cross-family splice is defined): the child degrades to a
+## clone of `a` (a degenerate one-point cross with the cut at the end of A), lineage still recorded.
 static func crossover(a: EvolverGenome, b: EvolverGenome, next_gen: int, rng: RandomNumberGenerator) -> EvolverGenome:
-	var child_genome := EffectGenome.crossover(a.genome, b.genome, rng)
+	var child_genome
+	if a.genome is TextureGenome and b.genome is TextureGenome:
+		child_genome = TextureGenome.crossover(a.genome, b.genome, rng)
+	elif a.genome is TextureGenome or b.genome is TextureGenome:
+		child_genome = a.genome.clone()
+	else:
+		child_genome = EffectGenome.crossover(a.genome, b.genome, rng)
 	return EvolverGenome.new(child_genome, "", next_gen, [a.id, b.id], "crossover")
 
 ## INJECT fresh blood by MUTATING a source variant (origin "inject", source recorded as the parent).
 ## Delegates the local edit to EffectGenome.mutate.
 static func inject_mutated(src: EvolverGenome, next_gen: int, rng: RandomNumberGenerator) -> EvolverGenome:
-	var mutated := src.genome.mutate(rng)
+	var mutated = src.genome.mutate(rng)  # untyped: the wrapped genome is kind-polymorphic
 	return EvolverGenome.new(mutated, "", next_gen, [src.id], "inject")
 
 # ---------------------------------------------------------------------------------------------------
@@ -94,7 +115,14 @@ func to_dict() -> Dictionary:
 	}
 
 static func from_dict(d: Dictionary) -> EvolverGenome:
-	var g := EffectGenome.from_stack(d.get("stack", { "stack": [] }))
+	# Kind dispatch on the payload key: a "texture_ops" payload rebuilds a TextureGenome; anything
+	# else is the original effect-stack path (unchanged for every pre-existing serialized genome).
+	var payload = d.get("stack", { "stack": [] })
+	var g
+	if typeof(payload) == TYPE_DICTIONARY and payload.has("texture_ops"):
+		g = TextureGenome.from_stack(payload)
+	else:
+		g = EffectGenome.from_stack(payload)
 	return EvolverGenome.new(
 		g,
 		String(d.get("id", "")),

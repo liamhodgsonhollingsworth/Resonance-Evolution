@@ -147,6 +147,38 @@ X/Evolve/Save button rendering is the Aperture session's separate work** — thi
 path (push via `--action`/readback via feedback) + the breeding, built + verified. Run:
 `godot --headless --path godot -s res://headless_evolver_test.gd`.
 
+**Procedural-texture genome on the general-purpose evolver (NEW 2026-07-02, verified).** A SECOND
+genome KIND rides the SAME evolver loop (no new primitives; no graph_runtime edit): a **texture
+genome** whose genes are an ordered list of **mathematical construction ops** — `value_noise`, `fbm`
+(octave stacking), `sine` (two-wave interference), `stripes`/`checker`/`radial`/`voronoi` (geometric
+partitions) — each fused with **palette-by-handle color** (handles into `TextureSynthCpu.PALETTES`,
+the ONE relinkable palette registry; never raw RGB in a genome), a **blend op**
+(replace/mix/multiply/add/screen + opacity), and **domain warping** (`warp_amp/scale/seed` on every
+generator). `renderers/texture_synth_cpu.gd` is the CPU synthesis delegate (`OP_TYPES` registry +
+`synthesize(desc,w,h)`; NO RNG anywhere in the render layer — every lattice value is an integer-hash
+function of coords+seed, so a genome renders **byte-identical** every time); `evolver/texture_genome.gd`
+is the genome (per-GENE-TYPE operators: numeric ranges re-sample in-range, handle genes re-link from
+their options list, list-level reorder/add/drop; one-point crossover closed over valid ops).
+`EvolverGenome` is now genome-kind-POLYMORPHIC (payload key `texture_ops` vs `stack` is the
+discriminator; `random_seed(..., kind)`; kinds never interbreed — mixed crossover degrades to a clone),
+`Render2D` kind-dispatches (texture → synthesize, effect → EffectStackCpu.apply), and
+`meta_genome.genome_kind: "texture"` selects the family for gen-0 seeding + fully-culled recovery —
+all defaults preserve the painterly path byte-for-byte. Material seam proof:
+`examples/texture_block_material.gd` applies a generated 256px tile to the sandbox "Cube" block mesh
+(`GodotSceneRenderer._primitive_mesh("box")` + `StandardMaterial3D.albedo_texture`) — the exact
+`material` slot `sandbox_creative.gd` reserves (the live-texturing node system remains its own arc).
+Gen-0 driver: `texture_gen0_cli.gd` seeds + renders full-size tiles under the gitignored state dir and
+prints `CANDIDATE <genome_id> <png> <caption>` lines for an Aperture-push driver. Test:
+`headless_texture_evolver_test.gd` (**RESULT: ALL PASS**, 47 assertions) — gene-algebra closure over
+30 chained mutations, byte-identical determinism, full node cycle (render → mock cards → injected
+evolve/save/skip → breed KEEP/PIN/INJECT with elite carry byte-identical + injected blood a real
+genome change (EFFECTIVE-MUTATION invariant: a mutation never silently no-ops — reorder picks
+distinct slots, perturb re-samples until the gene changes)), texture-kind tick persistence +
+idempotent resume, live-inbox guard (snapshot-based: proves the RUN added no live rows — the old
+absent-tag guard in `headless_evolver_test.gd` false-failed once the production path had pushed a
+real live generation; both tests now use the snapshot form). No regression: `headless_evolver_test`
+(42) + `headless_effect_evolve_test` (21) + `headless_effect_test` (11) still green.
+
 **Godot Aperture — node-graph renderer for {nodes,edges} (GZ-3D.3, NEW 2026-06-30, verified).** A
 read-only IN-ENGINE renderer for the SAME system-neutral `{nodes, edges}` artifact the WEB Aperture
 shows — the Godot Aperture. A pure-DATA adapter `aperture/aperture_graph.gd` (`ApertureGraph`, no Godot
@@ -344,6 +376,10 @@ godot --headless --path godot -s res://headless_comm_test.gd              # 32/3
 godot --headless --path godot -s res://headless_evolver_test.gd           # RESULT: ALL PASS (42 assertions) — seed->render PNG->mock evolve/save/skip->breed (KEEP/CROSSOVER/INJECT)->next gen; lineage append-only; state persists gitignored; idempotent re-run; live-inbox guard
 godot --headless --path godot -s res://evolver_tick_cli.gd -- --mode mock --state-dir user://evolver/painterly --feedback <fake.json>  # one human-paced tick (mock dry-run)
 godot --headless --path godot -s res://evolver_tick_cli.gd -- --mode live --state-dir godot/state/evolver/painterly               # LIVE: pushes real cards + polls real decisions
+# procedural-texture genome on the same evolver loop (second genome kind; mock-only test, never touches the live Aperture):
+godot --headless --path godot -s res://headless_texture_evolver_test.gd   # RESULT: ALL PASS — gene-algebra closure; byte-identical determinism; full cycle render->mock cards->breed; texture tick persistence; live-inbox guard
+godot --headless --path godot -s res://examples/texture_block_material.gd # genome -> 256px tile -> StandardMaterial3D on the sandbox Cube block (the material seam proof)
+godot --headless --path godot -s res://texture_gen0_cli.gd -- --count 8 --size 256 --state-dir res://state/evolver/textures       # seed+render gen-0 tiles for an Aperture-push driver
 # Godot Aperture — read-only node-graph renderer for the system-neutral {nodes,edges} artifact (GZ-3D.3):
 godot --headless --path godot -s res://headless_aperture_board_test.gd    # 32/32 RESULT: ALL PASS — adapter normalizes RE-native {nodes,wires} + generic {nodes,edges}(from/to, source/target) identically; malformed degrades gracefully
 godot --path godot res://aperture/aperture_board.tscn -- --shot           # windowed: render the bundled sample -> godot/live/aperture_board.png (committed proof: godot/docs/aperture_board.png)

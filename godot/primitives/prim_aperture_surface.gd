@@ -76,7 +76,9 @@ func _push(rendered_desc, mode: String) -> Dictionary:
 		var genome: Dictionary = entry.get("genome", {})
 		var image_path := String(entry.get("image_path", ""))
 		var genome_id := String(genome.get("id", ""))
-		var title := "Painterly gen %d · %s" % [generation, _short_origin(genome)]
+		# Kind-aware card title (plain words only — the Aperture filter drops dev/git wording).
+		var family := "Texture" if (genome.get("stack", {}) as Dictionary).has("texture_ops") else "Painterly"
+		var title := "%s gen %d · %s" % [family, generation, _short_origin(genome)]
 		var subtitle := _stack_caption(genome)
 		var card_id := _do_push(mode, title, subtitle, image_path, actions, genome_id, generation)
 		cards.append({
@@ -225,10 +227,11 @@ func _mock_feedback() -> Dictionary:
 func _short_origin(genome: Dictionary) -> String:
 	return String(genome.get("origin", "seed"))
 
-## A human caption of the genome's effect stack (the layer types in order) for the card subtitle.
+## A human caption of the genome's look (the layer/op types in order) for the card subtitle.
+## Reads both genome kinds: an effect genome's "stack" list or a texture genome's "texture_ops" list.
 func _stack_caption(genome: Dictionary) -> String:
 	var stack: Dictionary = genome.get("stack", {})
-	var layers: Array = stack.get("stack", [])
+	var layers: Array = stack.get("stack", stack.get("texture_ops", []))
 	var names: Array = []
 	for l in layers:
 		if typeof(l) == TYPE_DICTIONARY:
