@@ -6,6 +6,7 @@ arrangements of already-loaded primitives, wired as data; never new code). Full 
 user-facing summary; the rest is implementation detail). This file is self-contained for dev.
 
 ## Done + verified
+**Creative-mode buildable sandbox MVP (NEW 2026-07-02, verified).** Openable MC-creative-style sandbox `godot/examples/sandbox_creative.tscn` + `.gd`: free-fly cam (WASD+mouse+Space/Shift), grid-snapped left-click place / right-click remove backed by a `Vector3i→record` world Dict, a 9-slot hotbar + E-toggle paged inventory (Blocks/Shapes/Structures tabs) over the 13-shape primitive palette (untextured; per-block `material` seam for later live-texturing), hotloads from `examples/sandbox_params.json`. Open: `<Godot> --path godot res://examples/sandbox_creative.tscn` (`-- --shot` proof → `godot/docs/sandbox_creative.png`, `-- --shot --inv` → `..._inventory.png`). Test: `godot --headless --path godot -s res://headless_sandbox_test.gd` (18/18 PASS).
 **Openable painterly example — a single detail-knob with a generic falloff (GZ-3D / GZ-RENDER, NEW
 2026-07-01, verified).** An OPENABLE example scene (`godot/examples/painterly_scene.tscn` + `.gd`) that
 COMPOSES a small 3D scene from CATALOG PARTS (arch + stairs + pillars + sphere/torus/cone + ground, via

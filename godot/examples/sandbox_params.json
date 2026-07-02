@@ -1,0 +1,332 @@
+{
+	"blocks": [
+		{
+			"block": "Cube",
+			"cell": [
+				-2,
+				0,
+				-2
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				-2,
+				0,
+				-1
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				-2,
+				0,
+				0
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				-2,
+				0,
+				1
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				-2,
+				0,
+				2
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				-1,
+				0,
+				-2
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				-1,
+				0,
+				-1
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				-1,
+				0,
+				0
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				-1,
+				0,
+				1
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				-1,
+				0,
+				2
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				0,
+				0,
+				-2
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				0,
+				0,
+				-1
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				0,
+				0,
+				0
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				0,
+				0,
+				1
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				0,
+				0,
+				2
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				1,
+				0,
+				-2
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				1,
+				0,
+				-1
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				1,
+				0,
+				0
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				1,
+				0,
+				1
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				1,
+				0,
+				2
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				2,
+				0,
+				-2
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				2,
+				0,
+				-1
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				2,
+				0,
+				0
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				2,
+				0,
+				1
+			]
+		},
+		{
+			"block": "Cube",
+			"cell": [
+				2,
+				0,
+				2
+			]
+		},
+		{
+			"block": "Pillar",
+			"cell": [
+				-2,
+				1,
+				-2
+			]
+		},
+		{
+			"block": "Pillar",
+			"cell": [
+				2,
+				1,
+				-2
+			]
+		},
+		{
+			"block": "Pillar",
+			"cell": [
+				-2,
+				2,
+				-2
+			]
+		},
+		{
+			"block": "Pillar",
+			"cell": [
+				2,
+				2,
+				-2
+			]
+		},
+		{
+			"block": "Pillar",
+			"cell": [
+				-2,
+				3,
+				-2
+			]
+		},
+		{
+			"block": "Pillar",
+			"cell": [
+				2,
+				3,
+				-2
+			]
+		},
+		{
+			"block": "Ball",
+			"cell": [
+				-2,
+				4,
+				-2
+			]
+		},
+		{
+			"block": "Ball",
+			"cell": [
+				2,
+				4,
+				-2
+			]
+		},
+		{
+			"block": "Arch",
+			"cell": [
+				0,
+				2,
+				-2
+			]
+		},
+		{
+			"block": "Stairs",
+			"cell": [
+				0,
+				1,
+				2
+			]
+		},
+		{
+			"block": "Cone",
+			"cell": [
+				-1,
+				1,
+				0
+			]
+		},
+		{
+			"block": "Pyramid",
+			"cell": [
+				1,
+				1,
+				0
+			]
+		},
+		{
+			"block": "Wedge",
+			"cell": [
+				0,
+				1,
+				1
+			]
+		},
+		{
+			"block": "Torus",
+			"cell": [
+				-2,
+				1,
+				2
+			]
+		},
+		{
+			"block": "Capsule",
+			"cell": [
+				2,
+				1,
+				2
+			]
+		}
+	],
+	"camera_start": [
+		6.0,
+		6.0,
+		12.0
+	],
+	"fly_speed": 8.0,
+	"grid_size": 1.0,
+	"mouse_sensitivity": 0.0025
+}

@@ -280,6 +280,10 @@ func _erase_block(cell: Vector3i) -> void:
 	var rec: Dictionary = world[cell]
 	var n = rec.get("node", null)
 	if n != null and is_instance_valid(n):
+		# Detach from the tree IMMEDIATELY (so the scene reflects the removal this frame, not after the
+		# deferred free settles — matters for place-then-replace in one input), then free.
+		if n.get_parent() != null:
+			n.get_parent().remove_child(n)
 		n.queue_free()
 	world.erase(cell)
 
@@ -470,11 +474,11 @@ func _rebuild_inventory_tabs() -> void:
 	for c in _inv_tabs.get_children():
 		c.queue_free()
 	for cat in _categories():
+		var cc := String(cat)
 		var t := Button.new()
-		t.text = cat
+		t.text = cc
 		t.toggle_mode = true
-		t.button_pressed = (cat == _active_category)
-		var cc := cat
+		t.button_pressed = (cc == _active_category)
 		t.pressed.connect(func(): _populate_inventory(cc))
 		_inv_tabs.add_child(t)
 
@@ -704,14 +708,20 @@ func _default_params() -> Dictionary:
 # (a real viewport is needed to grab pixels); the caller supplies a window via the normal scene launch.
 func _take_shot() -> void:
 	_did_shot = true
+	# --inv: open the creative inventory before the grab, to prove the MC inventory panel renders.
+	var inv := ("--inv" in OS.get_cmdline_user_args()) or ("--inv" in OS.get_cmdline_args())
+	var out_path := SHOT_PATH
+	if inv and not _headless and _inv_panel != null:
+		_toggle_inventory()
+		out_path = "res://docs/sandbox_creative_inventory.png"
 	# Let the scene light + render a few frames before grabbing.
 	for _i in 6:
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	DirAccess.make_dir_recursive_absolute("res://docs")
-	img.save_png(SHOT_PATH)
-	print("[sandbox_creative] proof written: %s  (%d blocks placed)" % [SHOT_PATH, world.size()])
+	img.save_png(out_path)
+	print("[sandbox_creative] proof written: %s  (%d blocks placed)" % [out_path, world.size()])
 	get_tree().quit(0)
 
 
