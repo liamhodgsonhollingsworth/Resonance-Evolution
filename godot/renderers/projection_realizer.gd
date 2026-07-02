@@ -138,7 +138,13 @@ static func drive_spotlight(light: SpotLight3D, projector: Dictionary, input_img
 	light.spot_attenuation = 0.4
 	light.light_energy = 6.0
 	light.shadow_enabled = true
-	light.light_projector = ImageTexture.create_from_image(_letterbox_square(input_img, half_diag, yfov, hfov))
+	# Reuse the one cookie texture across re-drives (set_image in place): re-ASSIGNING
+	# light_projector each step churns the renderer's decal atlas (and logs engine errors).
+	var cookie := _letterbox_square(input_img, half_diag, yfov, hfov)
+	if light.light_projector is ImageTexture:
+		(light.light_projector as ImageTexture).set_image(cookie)
+	else:
+		light.light_projector = ImageTexture.create_from_image(cookie)
 
 static func make_spotlight(projector: Dictionary, input_img: Image) -> SpotLight3D:
 	var light := SpotLight3D.new()
