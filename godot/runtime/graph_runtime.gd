@@ -96,6 +96,12 @@ func _init() -> void:
 	register("ProjectionMap", PrimProjectionMap)
 	register("ProjectionObserve", PrimProjectionObserve)
 	register("ProjectionCalibration", PrimProjectionCalibration)
+	# StereoRender: ONE viewing-geometry parameter set (viewer distance / IPD / focal plane /
+	# depth budget / screen DPI, all DATA on the wire) drives MULTIPLE stereo output modes from
+	# the same scene — depth map, autostereogram (SIRDS), stereo pair, anaglyph — and the same
+	# dict drives the live/VR camera rig (renderers/stereo_rig.gd). CPU + headless-decodable;
+	# see notes/design/stereogram_vr_viewer_2026-07-02.md.
+	register("StereoRender", PrimStereoRender)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
