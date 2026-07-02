@@ -427,15 +427,16 @@ func _run_length_at(cell: int, tile: String, axis: String) -> int:
 	var dy := 0 if axis == "x" else 1
 	var run := 0
 	for sgn in [1, -1]:
-		var x := cx + dx * sgn
-		var y := cy + dy * sgn
+		var step := int(sgn)
+		var x := cx + dx * step
+		var y := cy + dy * step
 		while x >= 0 and x < _w and y >= 0 and y < _h:
 			var i := y * _w + x
 			if not _committed[i] or String((_domains[i] as Array)[0]) != tile:
 				break
 			run += 1
-			x += dx * sgn
-			y += dy * sgn
+			x += dx * step
+			y += dy * step
 	return run
 
 # --- observe (§1.3) ---------------------------------------------------------------------------------
