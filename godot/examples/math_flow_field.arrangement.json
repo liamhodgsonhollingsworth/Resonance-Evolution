@@ -1,0 +1,79 @@
+{
+	"format": "resonance.arrangement/v1",
+	"name": "math_flow_field",
+	"nodes": [
+		{
+			"id": "paint",
+			"type": "MathPaint",
+			"params": {
+				"painting": {
+					"generator": "flow_field",
+					"seed": 29,
+					"strokes": 2600,
+					"steps": 46,
+					"step_len": 2.0,
+					"noise_scale": 3.2,
+					"octaves": 3,
+					"stroke_radius": 1,
+					"width": 640,
+					"height": 400,
+					"background": [
+						0.07,
+						0.09,
+						0.16
+					],
+					"palette": [
+						[
+							0.0,
+							0.12,
+							0.25,
+							0.55
+						],
+						[
+							0.45,
+							0.2,
+							0.65,
+							0.75
+						],
+						[
+							0.75,
+							0.55,
+							0.9,
+							0.95
+						],
+						[
+							1.0,
+							0.95,
+							0.98,
+							1.0
+						]
+					]
+				},
+				"effect_stack": [
+					{
+						"type": "kuwahara",
+						"params": {
+							"radius": 2
+						}
+					},
+					{
+						"type": "posterize",
+						"params": {
+							"levels": 14
+						}
+					},
+					{
+						"type": "paper_grain",
+						"params": {
+							"amount": 0.05,
+							"scale": 4.0,
+							"seed": 29
+						}
+					}
+				],
+				"out_path": "res://live/math_flow_field.png"
+			}
+		}
+	],
+	"wires": []
+}

@@ -6,6 +6,8 @@ arrangements of already-loaded primitives, wired as data; never new code). Full 
 user-facing summary; the rest is implementation detail). This file is self-contained for dev.
 
 ## Done + verified
+
+**Math-based painting demos — parametric curves / flow fields / harmonics as painterly arrangements (GZ-RENDER, NEW 2026-07-02, verified).** ONE new generator primitive `MathPaint` (`godot/primitives/prim_math_paint.gd`, one-line registration) over a pure math module `godot/renderers/math_painting.gd` (`MathPainting`): three deterministic seeded constructions — a parametric-curve brush trace (Lissajous / rose), streamlines advected through the CURL of seeded fBm value noise (the shared integer-hash noise family), and a Chladni standing-wave superposition (modes as DATA, nodal lines inked) — each painted through the existing `EffectStackCpu` painterly stack and emitted as a JSON descriptor (PNG path + reproducible sha256; no Image on the wire). Three committed demo ARRANGEMENTS (`godot/examples/math_{lissajous,flow_field,harmonic}.arrangement.json` — each is just one MathPaint node; edit the math/palette/stack DATA and re-run) + a headless runner `godot/examples/math_painting_demo.gd`. Verified: `headless_math_paint_test.gd` 22/22 PASS (byte-identical determinism, seed sensitivity, margin-box stroke bounds, nodal-line inking, all three arrangements end-to-end through GraphRuntime); proofs committed `godot/docs/math_{lissajous,flow_field,harmonic}.png`.
 **Stereogram + VR viewer foundation (stereogram-vr-viewer lane, NEW 2026-07-02, verified).** ONE
 renderer-neutral viewing-geometry dict (viewer-to-screen distance / IPD / focal-convergence plane /
 depth budget / screen size+DPI — all DATA on the wire) drives FOUR stereo output modes from the same
