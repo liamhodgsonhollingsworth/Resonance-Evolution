@@ -131,6 +131,11 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if _headless:
 		return
+	# During a --shot proof run, ignore ALL player input: the window can open under the pointer and a
+	# stray click leaks in as a placement, making the proof nondeterministic (observed live: 41 blocks
+	# rendered from a 40-block params file; sandbox-live-verify pass, 2026-07-02).
+	if _did_shot:
+		return
 	# Mouse-look (only while the pointer is captured and the inventory is closed).
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_yaw -= event.relative.x * mouse_sens
@@ -538,7 +543,9 @@ func _refresh_status() -> void:
 
 # ── the placement PREVIEW ghost (shows where the next block lands) ────────────────────────────────────
 func _update_preview() -> void:
-	if _inv_open or _cam == null:
+	# Hide the placement ghost during a --shot proof run: it floats ~half-reach in FRONT of the camera,
+	# so in the proof PNG it renders huge and obscures the actual build. Proofs show the build, not UI ghosts.
+	if _did_shot or _inv_open or _cam == null:
 		if _preview != null:
 			_preview.visible = false
 		return
@@ -708,6 +715,13 @@ func _default_params() -> Dictionary:
 # (a real viewport is needed to grab pixels); the caller supplies a window via the normal scene launch.
 func _take_shot() -> void:
 	_did_shot = true
+	# GUARD (found by the sandbox-live-verify adversarial pass, 2026-07-02): under --headless there is
+	# no renderer, so `await RenderingServer.frame_post_draw` below never fires and the process HANGS
+	# forever instead of writing a proof. Fail fast + loud with a nonzero exit so callers notice.
+	if _headless:
+		print("[sandbox_creative] --shot needs a display (no renderer under --headless; run without --headless). Quitting with exit 2.")
+		get_tree().quit(2)
+		return
 	# --inv: open the creative inventory before the grab, to prove the MC inventory panel renders.
 	var inv := ("--inv" in OS.get_cmdline_user_args()) or ("--inv" in OS.get_cmdline_args())
 	var out_path := SHOT_PATH
