@@ -10,21 +10,21 @@
 		},
 		{
 			"params": {
-				"strength": 0.9,
-				"threshold": 0.08
+				"strength": 0.85,
+				"threshold": 0.1
 			},
 			"type": "edge_darken"
 		},
 		{
 			"params": {
-				"levels": 8
+				"levels": 14
 			},
 			"type": "posterize"
 		},
 		{
 			"params": {
-				"amount": 0.12,
-				"scale": 6.0,
+				"amount": 0.07,
+				"scale": 5.0,
 				"seed": 7
 			},
 			"type": "paper_grain"
@@ -40,7 +40,7 @@
 		"radius": 0.85,
 		"type": "radial"
 	},
-	"paint_width": 320,
+	"paint_width": 640,
 	"scene": [
 		{
 			"params": {
@@ -142,16 +142,59 @@
 			]
 		}
 	],
+	"sky": {
+		"ambient_energy": 0.7,
+		"clouds": {
+			"coverage": 0.5,
+			"enabled": true,
+			"horizon_fade": 0.1,
+			"octaves": 5,
+			"opacity": 0.95,
+			"scale": 3.4,
+			"seed": 21,
+			"softness": 0.18,
+			"tex_width": 640,
+			"tint": [
+				1.0,
+				1.0,
+				1.0
+			]
+		},
+		"ground_color": [
+			0.55,
+			0.52,
+			0.47
+		],
+		"horizon_color": [
+			0.8,
+			0.88,
+			0.95
+		],
+		"sky_energy": 1.0,
+		"sun_angle_deg": 35.0,
+		"sun_azimuth_deg": -40.0,
+		"sun_color": [
+			1.0,
+			0.95,
+			0.84
+		],
+		"sun_energy": 1.2,
+		"top_color": [
+			0.32,
+			0.52,
+			0.84
+		]
+	},
 	"view": {
 		"look_at": [
 			0.0,
-			0.8,
+			1.6,
 			0.0
 		],
 		"position": [
 			4.5,
-			3.5,
-			6.5
+			3.8,
+			6.8
 		],
 		"yfov": 55.0
 	}

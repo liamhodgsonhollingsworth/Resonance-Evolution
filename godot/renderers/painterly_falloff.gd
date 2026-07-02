@@ -78,9 +78,13 @@ static func coarsen_stack(stack: Dictionary, amount: float) -> Dictionary:
 				var lv := float(p.get("levels", 4.0))
 				p["levels"] = maxi(2, int(round(lerpf(lv, max(2.0, lv - 2.0), amount))))
 			"paper_grain":
-				# More grain → rougher, less-refined surface.
+				# Slightly more grain → rougher paper in the coarse periphery. GENTLE (×2 of the authored
+				# amount, not a flat +0.35): the old +0.35 bump put ±40%+ multiplicative noise over every
+				# coarse-dominant region (sky, ground), which read as per-pixel STATIC — the residual
+				# "pixelated" look. Coarse painting means BROADER STROKES (the kuwahara radius above), not
+				# heavier noise; the grain only nudges up so the periphery paper feels a touch rougher.
 				var amt := float(p.get("amount", 0.15))
-				p["amount"] = clampf(lerpf(amt, min(1.0, amt + 0.35), amount), 0.0, 1.0)
+				p["amount"] = clampf(lerpf(amt, min(1.0, amt * 2.0), amount), 0.0, 1.0)
 			"edge_darken":
 				# Weaker edge pooling → softer, less-defined contours in the coarse periphery.
 				var s := float(p.get("strength", 1.0))
