@@ -102,9 +102,12 @@ static func seed_if_empty(state_dir: String, meta: Dictionary, seed: int) -> Dic
 	rng.seed = seed
 	var pop_size := int(meta.get("population_size", 2))
 	var seed_layers := int(meta.get("seed_layers", 3))
+	# meta_genome.genome_kind selects the genome family gen-0 is seeded from: "effect" (default,
+	# the painterly stack — unchanged behavior) or "texture" (the procedural-texture op genome).
+	var genome_kind := String(meta.get("genome_kind", "effect"))
 	var population: Array = []
 	for _i in maxi(1, pop_size):
-		population.append(EvolverGenome.random_seed(seed_layers, 0, rng).to_dict())
+		population.append(EvolverGenome.random_seed(seed_layers, 0, rng, genome_kind).to_dict())
 	var state := {
 		"generation": 0,
 		"meta_genome": meta,
