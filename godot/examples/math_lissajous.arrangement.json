@@ -1,0 +1,81 @@
+{
+	"format": "resonance.arrangement/v1",
+	"name": "math_lissajous",
+	"nodes": [
+		{
+			"id": "paint",
+			"type": "MathPaint",
+			"params": {
+				"painting": {
+					"generator": "parametric_curve",
+					"curve": "lissajous",
+					"a": 3,
+					"b": 4,
+					"delta": 1.5707963,
+					"loops": 1.0,
+					"samples": 9000,
+					"stroke_radius": 4,
+					"margin": 0.12,
+					"width": 640,
+					"height": 400,
+					"background": [
+						0.93,
+						0.9,
+						0.84
+					],
+					"palette": [
+						[
+							0.0,
+							0.55,
+							0.1,
+							0.08
+						],
+						[
+							0.45,
+							0.85,
+							0.45,
+							0.1
+						],
+						[
+							1.0,
+							0.95,
+							0.78,
+							0.35
+						]
+					]
+				},
+				"effect_stack": [
+					{
+						"type": "kuwahara",
+						"params": {
+							"radius": 2
+						}
+					},
+					{
+						"type": "edge_darken",
+						"params": {
+							"strength": 0.6,
+							"threshold": 0.12
+						}
+					},
+					{
+						"type": "posterize",
+						"params": {
+							"levels": 12
+						}
+					},
+					{
+						"type": "paper_grain",
+						"params": {
+							"amount": 0.05,
+							"scale": 4.0,
+							"seed": 11
+						}
+					}
+				],
+				"out_path": "res://live/math_lissajous.png"
+			}
+		}
+	],
+	"wires": []
+}

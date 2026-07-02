@@ -105,6 +105,7 @@ func _init() -> void:
 	# TextureApply: emits renderer-neutral set_material ops (the node-based live-texturing driver
 	# for the sandbox's _apply_material seam) — see primitives/prim_texture_apply.gd.
 	register("TextureApply", PrimTextureApply)
+	register("MathPaint", PrimMathPaint)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
