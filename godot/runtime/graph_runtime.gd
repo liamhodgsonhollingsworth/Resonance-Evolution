@@ -102,6 +102,9 @@ func _init() -> void:
 	# dict drives the live/VR camera rig (renderers/stereo_rig.gd). CPU + headless-decodable;
 	# see notes/design/stereogram_vr_viewer_2026-07-02.md.
 	register("StereoRender", PrimStereoRender)
+	# TextureApply: emits renderer-neutral set_material ops (the node-based live-texturing driver
+	# for the sandbox's _apply_material seam) — see primitives/prim_texture_apply.gd.
+	register("TextureApply", PrimTextureApply)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
