@@ -16,7 +16,7 @@ extends PrimChip
 ##   "radius":     <float>   (handler "proximity": the static interaction range; default 1.0)
 ##   "lod_radius": <float>   (handler "observer": the static near/far LOD distance; default 1.0)
 ##   "steps":      <int>     (handlers "tick"/"sim"/"event": ticks to advance when it fires; default 1)
-##   "wfc":        { width, height, tiles, adjacency }   (handler "wfc": the static generation ruleset — see the wfc section)
+##   "wfc":        { width, height, tiles, adjacency, [weights, counters, entropy, backtrack, backtrack_limit] }   (handler "wfc": the generation ruleset — see the wfc section)
 ##   "channel":    "in_world"|"dev_console"|"external_bridge"  (handler "connector": which comm channel — see the connector section)
 ##   "routing"/"identity"/"interaction_pattern":  static envelope fields (handler "connector"; §2.4)
 ##   "live_dir":   <string>  (handler "connector", channel "external_bridge": the bridge file dir to reuse)
@@ -648,6 +648,11 @@ func _connector_config() -> Dictionary:
 
 # --- wfc (wave-function-collapse procedural generation: a deterministic generator handler) ---------
 
+# The PROBABILISTIC generalization module (the weight oracle + generation-state counters + weighted
+# entropy + opt-in backtracking) — see its header for the full extended schema and the base-case
+# subset proof. preload'd by path (no class_name) so the module stays self-contained.
+const WfcGeneralized := preload("res://primitives/wfc_generalized.gd")
+
 ## The WFC (wave-function-collapse) generator. Unlike the dataflow-derived handlers above (which run
 ## or memoize an inner ARRANGEMENT), `wfc` is a pure GENERATOR: it collapses a grid of cells against a
 ## tile-adjacency ruleset and emits the collapsed grid as data, with NO inner arrangement required. It
@@ -672,6 +677,18 @@ func _connector_config() -> Dictionary:
 ##              pair; an omitted pair entirely means "no constraint in that axis" (everything allowed),
 ##              the least-surprising open default.
 ##
+##   PROBABILISTIC GENERALIZATION (all OPTIONAL — absent fields reproduce the deterministic base case
+##   BYTE-IDENTICALLY; full schema + subset proof: primitives/wfc_generalized.gd and
+##   notes/design/generalized_probabilistic_wfc_2026-07-01.md):
+##   "weights":   { mode: "uniform"|"conditional"|"evolving", rules, default_weight, min_weight }
+##              the weight ORACLE W(tile, cell, ctx): T1 rules bias a tile beside a committed
+##              neighbour; T2 rules are closed data-only expressions over generation-state counters
+##              (evolving distributions: P(A|B) grows/decays with the committed count n_AB).
+##   "counters":  { name: { track: tile_count|adjacent_pair|region_count|run_length, ... } }
+##              the running tallies T2 expressions read (committed state only -> seed-deterministic).
+##   "entropy":   "size" (=base: domain-count argmin) | "weighted" (Shannon over oracle weights).
+##   "backtrack" / "backtrack_limit": opt-in rollback-on-contradiction (default false / 10000).
+##
 ## Outputs: the Context's DECLARED output ports (params.ports.outputs) receive the result by NAME --
 ##   "grid"          -> the collapsed grid as a row-major Array of rows, each row an Array of tile-name
 ##                      strings (the canonical generated structure).
@@ -684,7 +701,12 @@ func _connector_config() -> Dictionary:
 ##                      ruleset this is BELOW width*height (a strongly-constrained ruleset fills the whole
 ##                      grid from a few observations) -- a coarse "how much was forced vs chosen" signal,
 ##                      mirroring the abstract handler's `_evals`. The grid is still fully filled.
-## Any declared port not in {grid, contradiction, collapses} receives null. If a scope declares NO
+##   "starved"       -> int: soft-starvation draws on the generalized path (domain legal by adjacency
+##                      but every oracle weight 0 — saturated quotas; filled with the first sorted
+##                      name and counted, DISTINCT from contradiction). Always 0 on the base path.
+##   "exhausted"     -> bool: the generalized path's backtrack budget ran out and the run fell back
+##                      to fail-soft. Always false on the base path.
+## Any declared port not in {grid, contradiction, collapses, starved, exhausted} receives null. If a scope declares NO
 ## outputs, the result is still computed and the empty outputs dict returned, exactly like a no-output Chip.
 func _evaluate_wfc(inputs: Dictionary) -> Dictionary:
 	var cfg: Dictionary = params.get("wfc", {})
@@ -695,7 +717,16 @@ func _evaluate_wfc(inputs: Dictionary) -> Dictionary:
 	# seed: dynamic input. Missing/null -> 0 (a stable default scene). Coerced to a stable int so floats
 	# that are equal-as-numbers (1.0 vs 1) seed identically.
 	var seed := int(Primitive.as_num(inputs.get("seed", 0)))
-	var res := _wfc_collapse(w, h, tiles, adjacency, seed)
+	# PROBABILISTIC GENERALIZATION seam: a ruleset using ANY of the optional extended fields
+	# (weights / counters / entropy / backtrack / backtrack_limit) routes to the weight-oracle
+	# collapser in primitives/wfc_generalized.gd. A ruleset WITHOUT them runs the unchanged base
+	# path below — and an extended-but-trivial one (weights.mode="uniform") must produce the
+	# byte-identical grid (the subset proof, mechanized in headless_wfc_prob_test.gd).
+	var res: Dictionary
+	if WfcGeneralized.is_generalized(cfg):
+		res = WfcGeneralized.new().collapse(cfg, w, h, adjacency, seed)
+	else:
+		res = _wfc_collapse(w, h, tiles, adjacency, seed)
 	# Emit to the DECLARED output ports by name (same enumeration as _outputs_null). A port whose name is
 	# not a known WFC field gets null -- the result is published only through ports the scope asked for.
 	var out := {}
@@ -708,6 +739,10 @@ func _evaluate_wfc(inputs: Dictionary) -> Dictionary:
 				out[nm] = res.get("contradiction")
 			"collapses":
 				out[nm] = res.get("collapses")
+			"starved":
+				out[nm] = res.get("starved", 0)
+			"exhausted":
+				out[nm] = res.get("exhausted", false)
 			_:
 				out[nm] = null
 	return out

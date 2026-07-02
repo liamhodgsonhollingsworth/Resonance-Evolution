@@ -275,3 +275,60 @@ Everything else — the observe/propagate skeleton, the seeded RNG, the fail-sof
 1. **WFC is already a weighted collapser; determinism is the special case where every weight is 1.** The generalization replaces the constant per-tile weight lookup with a *weight oracle* `W(tile, cell, ctx)` at the single existing draw site, and makes the entropy heuristic weight-aware so observe + collapse stay consistent — no new phase, no new loop.
 2. **Three tiers of one oracle, each a strict superset of the last:** T0 static-uniform (today's code), T1 static-conditional (`P(A|neighbor=B)`), T2 evolving-distribution (weight = a pure function of generation-state counters the collapse itself writes — Liam's `P(A|B) ∝ f(n_AB)`). All fields optional; a base-case `params.wfc` is a valid subset, so `headless_wfc_test.gd` passes verbatim (mechanized subset proof).
 3. **Evolving distributions ≈ genome-over-time:** a T2 weight-function's parameters (`base`, `k`, `target`) are evolvable genes, so a WFC ruleset folds into the *existing* supervised evolver (Breed/EvolverPopulation/Aperture human-fitness) with no new machinery — and the whole weight-function is authored as a wired Counter→Math→collapse sub-graph (node-wiring simplicity law), keeping it DATA, not code.
+
+
+---
+
+## 8. Implementation appendix — adversarial findings from the build (2026-07-02)
+
+Phases 1–3 (minus pins) landed in `godot/primitives/wfc_generalized.gd` + the dispatch seam in
+`prim_context.gd` (branch `feat/wfc-probabilistic`, 2026-07-02; suite `godot/headless_wfc_prob_test.gd`
+21/21 ALL PASS, base suite `headless_wfc_test.gd` untouched and green).
+The §2 subset proof is mechanized: uniform/static configs routed through the generalized path are
+byte-identical to the base handler across 4 rulesets × 5 seeds (grid + contradiction + collapses).
+Findings from the adversarial pass, beyond what §4 predicted:
+
+1. **Propagation-forced cells must feed the counters.** A cell decided by *propagation* (domain
+   reduced to 1 without an observe) is committed state, and Liam's `n_AB` must see it — otherwise
+   the evolving weight lags the visible grid. The implementation commits via a post-propagate
+   ascending-index sweep, so counter order is deterministic and each adjacency edge is counted
+   exactly once (when its second endpoint commits). A naive "increment at observe" would have
+   silently undercounted on constrained rulesets.
+2. **Starved cells must not consume RNG draws.** The soft-starvation fallback (§4.5) returns before
+   the `randf()` call — matching the base handler's zero-total early-return — so a starved draw does
+   not shift the RNG stream. Getting this wrong breaks nothing visibly on the starved run but
+   de-syncs *later* draws, a reproducibility hazard that only shows up as "same seed, different
+   grid" two features later.
+3. **Weighted entropy collapses starving cells EAGERLY.** A cell whose every option has weight 0
+   reports H = 0 (maximally determined), so `entropy:"weighted"` observes it next and starved-fills
+   it immediately. This is deterministic and arguably correct (the cell has no probabilistic future)
+   but it front-loads quota-violating fills instead of leaving them to the end — documented as
+   intended behavior; `min_weight > 0` avoids it entirely.
+4. **Backtracking memory is O(n² · |tiles|), not O(n).** Each frame snapshots all domains, so a
+   50×50 backtracking run holds up to 2500 full-grid copies. Fine for the opt-in small/medium grids
+   it targets (pins, hard-ish quotas); a bounded-depth trail (keep last K frames, blame beyond it
+   falls back to fail-soft) is the natural follow-up if large backtracking grids ever matter.
+5. **Root exhaustion ≠ budget exhaustion.** A genuinely unsatisfiable ruleset exhausts the *trail*
+   (every root option tried) long before a sane budget — that run reports `contradiction=true,
+   exhausted=false`. `exhausted=true` is reserved for the budget cap (§4.1 livelock guard), proven
+   by the `backtrack_limit:1` test. Conflating the two would make "raise the limit" look like a fix
+   for impossible rulesets.
+6. **`run_length` wants to be an at-read counter, not a commit tally.** "Current consecutive run"
+   is a property of the cell being weighed; implementing it as a global commit-time tally is
+   ill-defined (which run?). Reading the adjacent committed run at draw time gives DeBroglie's
+   Max-Consecutive exactly (quota target 3 → no run of 4 can ever complete, proven in the suite)
+   and stays a pure function of committed state, so determinism holds. Its generation stamp bumps
+   on every commit of its tile (conservative) so weighted-entropy caches never go stale.
+7. **Performance (measured, GDScript, headless, 2026-07-02).** 30×30: base 217 ms vs
+   generalized-uniform 231 ms (≈6% overhead — the T0 zero-cost claim holds; the O(n) observe scan
+   dominates both). 50×50: base 1633 ms vs generalized-uniform 1548 ms (within run-to-run noise).
+   Worst case wired — T2 pair-feedback + weighted entropy, 30×30 — 4684 ms (~20× base): the
+   `adjacent_pair` counter moves on nearly every commit, so the per-counter stamps (§4.3) still
+   invalidate most cells' H every step; the dirty-set only pays off for T1/local rules and
+   slow-moving counters. Acceptable at current sizes; the documented hotspot if editor-scale
+   interactivity is ever needed — Townscaper local-recollapse (research note §4) remains the plan
+   there, not micro-optimizing the global recompute.
+
+Deferred exactly as staged: **pins** (Phase 3's second half — tied to the instance-editor loop) and
+the **Phase 4 authoring GUI** (supervised). The evolver tie-in (§ Phase 2, "a T2 ruleset is a
+genome") needs no engine work — `base`/`k`/`target`/`cap` are already scalar genes in DATA.
