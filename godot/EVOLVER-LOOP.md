@@ -194,3 +194,37 @@ evolve/save/skip → breed → next generation has the right size with KEEP/CROS
 every genome renderable → lineage append-only (`parent_ids` present, never mutated) → state persists
 under the gitignored dir → a re-run resumes (idempotent). A final guard asserts the live Aperture inbox
 contains **no** row tagged by this evolver — the test never touched Liam's live surface.
+
+---
+
+## 8. Genome KINDS — the loop is genome-polymorphic (2026-07-02)
+
+The four primitives + the breed algebra + the tick are **genome-KIND-blind**. `EvolverGenome` (the
+lineage wrapper) is the single polymorphic point: it wraps EITHER
+
+- an **`EffectGenome`** (`renderers/effect_genome.gd`) — the painterly post-process stack this
+  document was written for (payload key `stack`), or
+- a **`TextureGenome`** (`evolver/texture_genome.gd`) — the **procedural-texture genome**: an ordered
+  list of mathematical construction ops (`value_noise`, `fbm`, `sine` interference, `stripes`,
+  `checker`, `radial`, `voronoi`), each fused with a **palette HANDLE** (into
+  `TextureSynthCpu.PALETTES`, the one relinkable palette registry — never raw RGB in a genome), a
+  blend op + opacity, and per-op domain warping. Payload key `texture_ops`. Rendered by
+  `renderers/texture_synth_cpu.gd` (`synthesize` — pure hash-based, NO RNG in the render layer, so a
+  genome is byte-identical across runs).
+
+The serialized **payload key is the discriminator** (`stack` → effect, `texture_ops` → texture) — no
+schema change, so every pre-existing painterly lineage loads unchanged. `Render2D` dispatches per
+candidate (texture genomes GENERATE their tile; effect genomes post-process the source), and
+`meta_genome.genome_kind` ("effect" default | "texture") tells gen-0 seeding + the fully-culled
+recovery floor which family to draw fresh seeds from. **Kinds never interbreed**: a mixed-kind
+crossover degrades to a clone of parent A (a degenerate one-point cross), so a mixed population is
+safe but pointless — run one kind per state dir.
+
+Adding a THIRD genome kind = a new genome class with the same duck contract (`clone/mutate/to_stack/
+is_valid` + static `random/crossover/from_stack`), a payload-key branch in `EvolverGenome.from_dict`
++ `random_seed`, and a render delegate branch in `Render2D` — additive, never a foundation edit.
+
+Texture-specific verification: `headless_texture_evolver_test.gd` (full cycle, mock-only, live-inbox
+guard). Gen-0 driver for the live surface: `texture_gen0_cli.gd` (renders tiles + prints
+`CANDIDATE <genome_id> <png> <caption>` for the Aperture-push driver; pushing stays outside the
+engine, exactly like the painterly path's separation of transport and presentation).
