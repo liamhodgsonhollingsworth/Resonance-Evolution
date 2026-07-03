@@ -40,6 +40,48 @@ func act(card: Dictionary, action: String, comment: String = "") -> Dictionary:
 	return _feedback(id, act_l, comment)
 
 # ---------------------------------------------------------------------------------------------------
+# note channel (per-card FREE-TEXT feedback) → notes.jsonl (+ server-side .md mirror)
+# ---------------------------------------------------------------------------------------------------
+
+## Record a per-card free-text NOTE — the SAME substrate the web board's detail-page textarea
+## writes (web spec: aperture_notes.py is the schema owner). This is a DIFFERENT channel from
+## skip/bookmark and keys on the FULL web DOM tile id (module_id = "tile_artifact_<apx>" for a
+## pushed artifact / the board tile id), NEVER the stripped skipId — so a note typed on the Godot
+## board is byte-indistinguishable from one typed on the web board, and both co-key to the same
+## card. That is the cross-renderer proof-of-neutrality invariant for per-card feedback.
+##
+## Channel selection is DATA (config.mode), exactly like the skip/bookmark writes:
+##   - "http": POST /api/aperture/note {module_id, module_title, text} — the exact web route, so
+##             the SERVER appends the 5-key notes.jsonl row AND rewrites the <safe_module_id>.md
+##             mirror (aperture_notes.record). This is the live board's path.
+##   - "file": append the SAME 5-key row {module_id, module_title, text, noted_at, by} in that
+##             exact order directly to notes.jsonl (the :8770-down fallback AND, pointed at a temp
+##             file, the zero-pollution test path). The .md mirror is a server-derived artifact —
+##             the file fallback writes the canonical JSONL row (which the mirror is regenerated
+##             from); the real tool re-derives the mirror on the next server-side write.
+## Returns { ok, channel "note", mode, id ( = module_id), [status]|[error] }.
+func note(module_id: String, text: String, module_title: String = "") -> Dictionary:
+	var mid := module_id.strip_edges()
+	if mid == "" or text.strip_edges() == "":
+		return { "ok": false, "channel": "note", "error": "module_id and non-empty text required" }
+	var mode := String(config.get("mode", "file"))
+	if mode == "http":
+		var payload := { "module_id": mid, "module_title": (module_title if module_title != "" else null), "text": text }
+		var res := _http_post_json("/api/aperture/note", payload)
+		res["channel"] = "note"; res["mode"] = mode; res["id"] = mid
+		return res
+	# file mode — the EXACT 5-key row aperture_notes.record appends, in the same key order.
+	var row := {
+		"module_id": mid,
+		"module_title": (module_title if module_title != "" else null),
+		"text": text,
+		"noted_at": now_iso(),
+		"by": String(config.get("by", "liam")),
+	}
+	var ok := _append_row(String(config.get("notes_path", "")), row)
+	return { "ok": ok, "channel": "note", "mode": "file", "id": mid }
+
+# ---------------------------------------------------------------------------------------------------
 # decision channel (skip / unskip / evolve / save / cull / ...) → feedback.jsonl
 # ---------------------------------------------------------------------------------------------------
 
