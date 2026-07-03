@@ -20,7 +20,7 @@ extends SceneTree
 ##
 ## HEADLESS LIMITATION (documented, asserted): Input.mouse_mode cannot become MOUSE_MODE_CAPTURED under the
 ## headless DisplayServer, so the LEFT-click branch takes the recapture path instead of placing. The suite
-## asserts whichever behaviour the platform reports, and tests placement itself via _place_block (the same
+## asserts whichever behaviour the platform reports, and tests placement itself via _place_active (the same
 ## method the click branch calls) with the camera genuinely aimed.
 
 const SandboxScene := preload("res://examples/sandbox_creative.tscn")
@@ -29,6 +29,11 @@ var _fails := 0
 
 func _initialize() -> void:
 	var ok := true
+
+	# Keep the test OFF the real Wavelet state: the scene honours these env overrides for the
+	# world store + the notes file, so a test run never touches Alethea-cc/state/sandbox.
+	OS.set_environment("SANDBOX_WORLDS_DIR", ProjectSettings.globalize_path("user://test_interaction_worlds"))
+	OS.set_environment("SANDBOX_NOTES_PATH", ProjectSettings.globalize_path("user://test_interaction_notes.jsonl"))
 
 	# ── A) the real scene boots headless ─────────────────────────────────────────────────────────────
 	var s = SandboxScene.instantiate()
@@ -53,26 +58,26 @@ func _initialize() -> void:
 	ok = _check("B1 raycast hits the origin cube", rc["hit"] == true and rc["cell"] == Vector3i(0, 0, 0)) and ok
 	ok = _check("B2 raycast place cell is the adjacent face cell", rc["place"] == Vector3i(0, 0, 1)) and ok
 	s.active_slot = 0                     # slot 0 = Cube by default hotbar
-	s._place_block()
+	s._place_active()
 	ok = _check("B3 place: block lands on the adjacent cell", s.world.has(Vector3i(0, 0, 1)) and s.world.size() == 2) and ok
-	s._place_block()
+	s._place_active()
 	ok = _check("B4 second place extends a column toward the camera (MC-like)", s.world.has(Vector3i(0, 0, 2)) and s.world.size() == 3) and ok
-	s._remove_block()
+	s._remove_target()
 	ok = _check("B5 remove takes the nearest (pointed-at) block first", not s.world.has(Vector3i(0, 0, 2)) and s.world.size() == 2) and ok
-	s._remove_block()
-	s._remove_block()
+	s._remove_target()
+	s._remove_target()
 	ok = _check("B6 repeated remove empties the whole column", s.world.size() == 0) and ok
 	# The occupied-place-cell no-op guard: with the camera INSIDE a block, hit cell == place cell.
 	s._seed_world({ "blocks": [ { "cell": [0, 0, 0], "block": "Cube" } ] }, true)
 	s._cam.position = Vector3.ZERO
-	s._place_block()
+	s._place_active()
 	ok = _check("B7 place from inside a block is a no-op (occupied place cell)", s.world.size() == 1) and ok
 	s._seed_world({ "blocks": [] }, true)
 	s._cam.position = Vector3(0, 0, 5)
 	s._look_toward(Vector3.ZERO)
-	s._remove_block()
+	s._remove_target()
 	ok = _check("B8 remove on empty space is a no-op (no crash)", s.world.size() == 0) and ok
-	s._place_block()
+	s._place_active()
 	ok = _check("B8b ground-place into empty space lands at half reach", s.world.has(Vector3i(0, 0, 1)) and s.world.size() == 1) and ok
 	# Aim from below at a negative-coordinate build (grid math sanity beyond round-trip).
 	s._seed_world({ "blocks": [ { "cell": [-3, -2, -5], "block": "Ball" } ] }, true)
@@ -121,7 +126,8 @@ func _initialize() -> void:
 
 	# ── D) the Minecraft-creative inventory UI ────────────────────────────────────────────────────────
 	var cats: Array = s._categories()
-	ok = _check("D1 palette exposes 3 categories (Blocks/Shapes/Structures)", cats == ["Blocks", "Shapes", "Structures"]) and ok
+	ok = _check("D1 palette leads with the 3 block categories (Blocks/Shapes/Structures)", cats.slice(0, 3) == ["Blocks", "Shapes", "Structures"]) and ok
+	ok = _check("D1b every manifest kit contributes an asset category tab (all imported assets in the inventory)", (s.assets.kits as Array).size() >= 2 and cats.size() == 3 + (s.assets.kits as Array).size()) and ok
 	ok = _check("D2 inventory has one tab per category", _live_children(s._inv_tabs).size() == cats.size()) and ok
 	s._populate_inventory("Shapes")
 	var shapes_count := 0
