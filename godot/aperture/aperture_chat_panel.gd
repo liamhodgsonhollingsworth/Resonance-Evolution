@@ -16,6 +16,11 @@ extends Control
 ## board's ChatPanelSlot (the 2D board leaves one) or run the scene standalone
 ## (godot --path godot res://aperture/aperture_chat_panel.tscn) for a full-window chat.
 
+# Class-cache-independent sibling load (grey-screen defect, 2026-07-03): resolved by PATH so this
+# script parses on checkouts whose gitignored .godot global-class cache is stale or absent. See
+# aperture_board_2d.gd for the full note.
+const ApertureChatStore = preload("res://aperture/aperture_chat_store.gd")
+
 ## The Aperture web server. Empty ⇒ file-only mode.
 @export var http_base: String = "http://127.0.0.1:8770"
 ## The chat substrate dir for the file fallback. Empty ⇒ ApertureChatStore.default_chat_dir().
