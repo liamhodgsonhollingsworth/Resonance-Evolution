@@ -326,6 +326,14 @@ func _column_width() -> float:
 func refresh() -> void:
 	if _root_vbox == null:
 		return          # UI not built yet (_ready is deferred when added during tree bootstrap)
+	# BOOT SETTLE FIX (input-fix arc r2): _build_ui builds columns before the board's real size is
+	# known (deferred _ready → size.x can be 0), so the FIRST grid layout used the wrong column count
+	# and then re-laid-out once the resize signal fired — a ~1s "settle" during which tiles jumped.
+	# Reconcile the column count to the actual width HERE, before any tile is placed, so the grid is
+	# built once at the final geometry and never re-settles. (No-op when already correct.)
+	var want := _column_count_for(min(size.x, MAX_WIDTH))
+	if want != _columns.size():
+		_rebuild_columns()
 	var cards := await _fetch_cards()
 	var board_cards := await _fetch_board_cards()
 	var composed := ApertureBoardLogic.compose(cards, board_cards, _skipped)
@@ -1210,8 +1218,14 @@ func _load_local_image_deferred(entry: Dictionary, slot: int, path: String) -> v
 ## CENTERED letterboxes the image inside it: images fade in WITHOUT moving any tile. Zero layout
 ## thrash on arrival = the grid is click-stable from the first frame.
 func _apply_image(entry: Dictionary, slot: int, tex: Texture2D) -> void:
-	var rect := entry["rect"] as TextureRect
-	if rect == null or not is_instance_valid(rect):
+	# is_instance_valid on the RAW stored value BEFORE the cast — casting a freed instance with `as`
+	# itself raises "Trying to cast a freed object" (the error fires before any null-check), so a
+	# late image job whose tile was skipped/rebuilt away must be filtered here, not after the cast.
+	var raw = entry.get("rect")
+	if not is_instance_valid(raw):
+		return
+	var rect := raw as TextureRect
+	if rect == null:
 		return
 	while (entry["textures"] as Array).size() <= slot:
 		(entry["textures"] as Array).append(null)
@@ -1243,9 +1257,13 @@ func _run_image_job(job: Dictionary) -> void:
 	_img_workers -= 1
 	_pump_image_queue()
 	var entry: Dictionary = job["entry"]
-	var rect := entry.get("rect") as TextureRect
-	if rect == null or not is_instance_valid(rect):
-		return          # the tile was freed while this fetch was in flight — drop the result
+	var raw = entry.get("rect")
+	if not is_instance_valid(raw):
+		return          # the tile was freed while this fetch was in flight — drop the result (guard
+		                # BEFORE the `as` cast, which would itself raise on a freed instance)
+	var rect := raw as TextureRect
+	if rect == null:
+		return
 	if not bool(res.get("ok", false)):
 		if int(job["slot"]) == 0:
 			_degrade_to_text(entry.get("tile"), rect)
@@ -1279,9 +1297,15 @@ func _decode_image(bytes: PackedByteArray) -> Image:
 ## The ~4s cross-fade carousel (approximated as a texture swap; pause on hover — web parity).
 func _advance_carousels() -> void:
 	for entry in _carousels:
-		var rect := entry["rect"] as TextureRect
-		var tile := entry["tile"] as Control
-		if rect == null or not is_instance_valid(rect) or tile == null or not is_instance_valid(tile):
+		# is_instance_valid on the raw values BEFORE casting — a skipped/rebuilt tile leaves freed
+		# instances in _carousels, and `as` on a freed object raises "Trying to cast a freed object".
+		var raw_rect = entry.get("rect")
+		var raw_tile = entry.get("tile")
+		if not is_instance_valid(raw_rect) or not is_instance_valid(raw_tile):
+			continue
+		var rect := raw_rect as TextureRect
+		var tile := raw_tile as Control
+		if rect == null or tile == null:
 			continue
 		if tile.has_meta("hovered") and bool(tile.get_meta("hovered")):
 			continue
