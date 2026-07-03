@@ -74,5 +74,5 @@ static func make_handler(entry: Dictionary) -> Object:
 
 
 ## Is this entry a holdable TOOL (vs a placeable block/asset)?
-static func is_tool(entry: Dictionary) -> bool:
+static func is_tool_entry(entry: Dictionary) -> bool:
 	return String(entry.get("kind", "block")) == "tool"

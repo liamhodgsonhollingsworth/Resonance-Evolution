@@ -19,10 +19,21 @@ func _initialize() -> void:
 	s._build_world_nodes()
 	get_root().add_child(s)
 
-	# 1) Palette: 14 generic blocks, each shape builds a real mesh in the renderer vocabulary.
-	ok = _check("palette has 14 blocks", s.palette.size() == 14) and ok
+	# 1) Palette: 14 generic blocks (each shape builds a real mesh) + the held TOOLS (Sticky Note; act on
+	#    click, no placement mesh). Count = 14 blocks + the tool palette entries.
+	var block_count := 0
+	var tool_count := 0
+	for entry in s.palette:
+		if String(entry.get("kind", "block")) == "tool":
+			tool_count += 1
+		else:
+			block_count += 1
+	ok = _check("palette has 14 blocks", block_count == 14) and ok
+	ok = _check("palette includes the held tools (Sticky Note)", tool_count >= 1) and ok
 	var all_meshes := true
 	for entry in s.palette:
+		if String(entry.get("kind", "block")) == "tool":
+			continue                       # tools have no placement mesh (they act on click)
 		var m: Mesh = GodotSceneRenderer._primitive_mesh(String(entry["shape"]), entry.get("params", {}))
 		if m == null or m.get_surface_count() == 0:
 			all_meshes = false

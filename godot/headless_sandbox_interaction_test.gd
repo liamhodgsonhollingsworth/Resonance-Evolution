@@ -108,26 +108,31 @@ func _initialize() -> void:
 	ok = _check("C7 wheel is ignored while the inventory is open", s.active_slot == 0) and ok
 	s._unhandled_input(_key(KEY_E))
 	ok = _check("C8 E closes the inventory", s._inv_open == false and s._inv_panel.visible == false) and ok
-	# The click place/remove gate: pointer capture is impossible under the headless DisplayServer, so
-	# assert the gate takes the RECAPTURE branch (no placement) there - and the place branch if a real
-	# display ever runs this suite. Either way the routing is exercised, nothing crashes.
+	# MINECRAFT-DEFAULT click routing (Liam spec 2026-07-03): RIGHT=place, LEFT=destroy, MIDDLE=pick.
+	# Pointer capture is impossible under the headless DisplayServer, so the FIRST click after ESC takes
+	# the recapture branch. We set capture explicitly and drive the click-dispatch methods the routing
+	# calls, so the routing + the MC semantics are both exercised without a real display.
 	s._seed_world({ "blocks": [ { "cell": [0, 0, 0], "block": "Cube" } ] }, true)
 	s._cam.position = Vector3(0, 0, 5)
 	s._look_toward(Vector3.ZERO)
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
-	s._unhandled_input(_click(MOUSE_BUTTON_LEFT))
-	if captured:
-		ok = _check("C9 LEFT click places when the pointer is captured", s.world.size() == 2) and ok
-	else:
-		ok = _check("C9 LEFT click without capture takes the recapture branch (no placement; headless limitation)", s.world.size() == 1) and ok
-	s._unhandled_input(_click(MOUSE_BUTTON_RIGHT))
-	ok = _check("C10 RIGHT click removes the pointed-at block (no capture gate)", s.world.size() == (1 if captured else 0)) and ok
+	s.active_slot = 0                     # Cube in hand (empty-hand MC defaults)
+	# RIGHT click = MC PLACE (adjacent face cell).
+	s._click_secondary()
+	ok = _check("C9 RIGHT click PLACES (MC default) on the adjacent face", s.world.has(Vector3i(0, 0, 1)) and s.world.size() == 2) and ok
+	# LEFT click = MC DESTROY (the pointed-at block).
+	s._click_primary()
+	ok = _check("C10 LEFT click DESTROYS (MC default) the nearest pointed-at block", not s.world.has(Vector3i(0, 0, 1)) and s.world.size() == 1) and ok
+	# MIDDLE click = MC PICK: the pointed-at Cube becomes the active hotbar entry.
+	s._select_slot(3)
+	s.hotbar[3] = s._palette_index("Ball")     # put something else in the active slot first
+	s._click_middle()
+	ok = _check("C11 MIDDLE click PICKS the looked-at block into the active slot (MC pick)", s.hotbar[3] == s._palette_index("Cube")) and ok
+	s._select_slot(0)
 
 	# ── D) the Minecraft-creative inventory UI ────────────────────────────────────────────────────────
 	var cats: Array = s._categories()
 	ok = _check("D1 palette leads with the 3 block categories (Blocks/Shapes/Structures)", cats.slice(0, 3) == ["Blocks", "Shapes", "Structures"]) and ok
-	ok = _check("D1b every manifest kit contributes an asset category tab (all imported assets in the inventory)", (s.assets.kits as Array).size() >= 2 and cats.size() == 3 + (s.assets.kits as Array).size()) and ok
+	ok = _check("D1b every manifest kit contributes an asset category tab + the Tools tab (all imported assets + tools in the inventory)", (s.assets.kits as Array).size() >= 2 and cats.size() == 3 + (s.assets.kits as Array).size() + 1 and cats.has("Tools")) and ok
 	ok = _check("D2 inventory has one tab per category", _live_children(s._inv_tabs).size() == cats.size()) and ok
 	s._populate_inventory("Shapes")
 	var shapes_count := 0
@@ -164,11 +169,125 @@ func _initialize() -> void:
 	mat = mi.material_override as StandardMaterial3D
 	ok = _check("F2 seam applies a richer descriptor (albedo+roughness+metallic)", mat.albedo_color.r > 0.99 and absf(mat.roughness - 0.2) < 0.001 and absf(mat.metallic - 0.9) < 0.001) and ok
 
+	# ── G) HELD-ITEM SEAM + STICKY NOTE (Liam spec 2026-07-03) ────────────────────────────────────────
+	# G1: the Sticky Note tool is in the palette under a Tools category.
+	var sticky_idx := -1
+	for i in s.palette.size():
+		var e: Dictionary = s.palette[i]
+		if String(e.get("kind", "")) == "tool" and String(e.get("tool", "")) == "sticky_note":
+			sticky_idx = i
+			break
+	ok = _check("G1 the Sticky Note tool exists in the palette", sticky_idx >= 0) and ok
+	ok = _check("G1b Tools is a category tab", s._categories().has("Tools")) and ok
+
+	# G2: holding the sticky note selects its handler; empty hand / blocks have no handler (MC default).
+	s._select_slot(0)
+	s.hotbar[0] = s._palette_index("Cube")
+	s._refresh_held_item()
+	ok = _check("G2 empty-hand/block => no tool handler (MC defaults apply)", s._active_handler == null) and ok
+	s.hotbar[0] = sticky_idx
+	s._refresh_held_item()
+	ok = _check("G2b holding the sticky note => a handler is active", s._active_handler != null) and ok
+
+	# G3: a TOOL held in hand does NOT place a block on RIGHT click (tools act, not placed).
+	s._seed_world({ "blocks": [ { "cell": [0, 0, 0], "block": "Cube" } ] }, true)
+	s._cam.position = Vector3(0, 0, 5)
+	s._look_toward(Vector3.ZERO)
+	var before: int = s.world.size()
+	s._click_secondary()      # sticky note's secondary() is a no-op
+	ok = _check("G3 RIGHT click with a tool held does NOT place a block", s.world.size() == before) and ok
+
+	# G4: surface_pick returns the exact surface point + a face normal + the target on the pointed-at block.
+	var hit: Dictionary = s.surface_pick()
+	ok = _check("G4 surface_pick hits the origin cube", bool(hit.get("hit", false)) and String((hit.get("target", {}) as Dictionary).get("kind", "")) == "block") and ok
+	ok = _check("G4b surface_pick point is on the +Z face of the cube (looking down -Z from z=5)", hit.has("point") and (hit["point"] as Vector3).z > 0.3) and ok
+	ok = _check("G4c surface_pick normal points back toward the camera (+Z)", hit.has("normal") and (hit["normal"] as Vector3).z > 0.5) and ok
+
+	# G5: stick_note stores a LOCAL-space anchor + normal, realizes a record, returns an id.
+	var note_id: String = s.stick_note(hit)
+	ok = _check("G5 stick_note returns a note id", note_id != "" and s._notes.has(note_id)) and ok
+	var nrec: Dictionary = s._notes.get(note_id, {})
+	ok = _check("G5b note stores a local_point + local_normal + target", nrec.has("local_point") and nrec.has("local_normal") and nrec.has("target")) and ok
+	ok = _check("G5c note carries the held-item provenance (sticky_note)", String(nrec.get("held_item", "")) == "sticky_note") and ok
+
+	# G6: the note's world position reconstructs at the original hit point (local anchor round-trip).
+	var xf: Transform3D = s._note_target_xform(nrec)
+	var lp: Array = nrec["local_point"]
+	var reconstructed: Vector3 = xf * Vector3(lp[0], lp[1], lp[2])
+	ok = _check("G6 local-anchor round-trips back to the world hit point", reconstructed.distance_to(hit["point"]) < 0.01) and ok
+
+	# G7: a note stuck on a MOVING OBJECT rides it. Place an asset object, stick a note to it, move it.
+	if s.assets != null and (s.assets.manifest as Dictionary).size() > 0:
+		var some_asset := String((s.assets.manifest as Dictionary).keys()[0])
+		var oid: String = s._place_object(some_asset, Vector3(4, 0, 0))
+		if oid != "":
+			# Build a synthetic object hit at a point on the object.
+			var orec: Dictionary = s.objects[oid]
+			var onode: Node3D = orec["node"]
+			var world_pt: Vector3 = onode.global_position + Vector3(0, 0.5, 0)
+			var ohit := { "hit": true, "point": world_pt, "normal": Vector3(0, 1, 0),
+				"target": { "kind": "object", "id": oid } }
+			var onote: String = s.stick_note(ohit)
+			var onrec: Dictionary = s._notes[onote]
+			var before_xf: Transform3D = s._note_target_xform(onrec)
+			var olp: Array = onrec["local_point"]
+			var world_before: Vector3 = before_xf * Vector3(olp[0], olp[1], olp[2])
+			# Move the object; the note's reconstructed world point must move with it.
+			orec["base_pos"] = Vector3(10, 0, 0)
+			s._tick_objects(0.016)
+			var after_xf: Transform3D = s._note_target_xform(onrec)
+			var world_after: Vector3 = after_xf * Vector3(olp[0], olp[1], olp[2])
+			ok = _check("G7 a note stuck to an object RIDES it when the object moves", world_after.distance_to(world_before) > 3.0) and ok
+
+	# G8: notes persist into the world save AND reload (round-trip through _serialize_world/_apply_world_data).
+	var serialized: Dictionary = s._serialize_world()
+	ok = _check("G8 world serialize includes a notes list", serialized.has("notes") and (serialized["notes"] as Array).size() >= 1) and ok
+	var note_count_before: int = s._notes.size()
+	s._apply_world_data(serialized)
+	ok = _check("G8b notes reload with the world (count preserved)", s._notes.size() == note_count_before) and ok
+
+	# G9: sticky-note text saves an ADDITIVELY-EXTENDED notes.jsonl row (RE #145 fields + anchor + provenance).
+	var notes_file: String = ProjectSettings.globalize_path("user://test_interaction_notes.jsonl")
+	if FileAccess.file_exists(notes_file):
+		DirAccess.remove_absolute(notes_file)
+	# stick a fresh note and write it (bypassing the GUI editor).
+	s._seed_world({ "blocks": [ { "cell": [0, 0, 0], "block": "Cube" } ] }, true)
+	s._cam.position = Vector3(0, 0, 5)
+	s._look_toward(Vector3.ZERO)
+	var h2: Dictionary = s.surface_pick()
+	var nid2: String = s.stick_note(h2)
+	(s._notes[nid2] as Dictionary)["text"] = "check the +Z face alignment here"
+	ok = _check("G9 _write_sticky_note succeeds", s._write_sticky_note(s._notes[nid2])) and ok
+	var row := _last_json_line(notes_file)
+	ok = _check("G9b jsonl row keeps the RE #145 schema fields", row.has("ts") and row.has("world") and row.has("world_version") and row.has("object_id") and row.has("asset_id") and row.has("position") and row.has("note")) and ok
+	ok = _check("G9c jsonl row ADDS the sticky-note anchor + provenance", row.has("note_id") and String(row.get("kind", "")) == "sticky_note" and row.has("anchor_target") and row.has("local_point") and row.has("local_normal") and String(row.get("held_item", "")) == "sticky_note") and ok
+	ok = _check("G9d jsonl row carries the typed text", String(row.get("note", "")) == "check the +Z face alignment here") and ok
+
+	# G10: the debug verb layer is OFF by default (MC controls are the default) and toggles on.
+	ok = _check("G10 debug verb layer is OFF by default", s._debug_verbs == false) and ok
+	s._toggle_debug_verbs()
+	ok = _check("G10b debug verb layer toggles ON", s._debug_verbs == true) and ok
+	s._toggle_debug_verbs()
+	ok = _check("G10c debug verb layer toggles back OFF", s._debug_verbs == false) and ok
+
 	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
 	# Detach + free the scene BEFORE quit so the engine's own tree start cannot re-run _ready on it.
 	get_root().remove_child(s)
 	s.free()
 	quit(0 if ok else 1)
+
+
+## Read the last JSON line of a JSONL file as a Dictionary ({} on any failure).
+func _last_json_line(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		return {}
+	var text := FileAccess.get_file_as_string(path).strip_edges()
+	if text == "":
+		return {}
+	var lines := text.split("\n", false)
+	var last := lines[lines.size() - 1]
+	var data = JSON.parse_string(last)
+	return data if typeof(data) == TYPE_DICTIONARY else {}
 
 
 func _key(code: Key) -> InputEventKey:

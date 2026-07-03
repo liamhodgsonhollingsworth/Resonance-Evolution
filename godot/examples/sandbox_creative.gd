@@ -336,7 +336,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		if _inv_open:
 			return
-		# Recapture-after-ESC is handled first for ANY button so a click brings the pointer back.
+		# Wheel = hotbar select — always active (capture-independent, MC parity).
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_select_slot(wrapi(active_slot - 1, 0, 9))
+			return
+		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_select_slot(wrapi(active_slot + 1, 0, 9))
+			return
+		# Recapture-after-ESC gates the ACTION buttons only: the first click after releasing the pointer
+		# re-captures it rather than placing/destroying (so a click to refocus the window doesn't build).
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 			return
@@ -347,10 +355,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				_click_secondary()        # MC PLACE (empty hand) / tool secondary
 			MOUSE_BUTTON_MIDDLE:
 				_click_middle()           # MC PICK (empty hand) / tool middle
-			MOUSE_BUTTON_WHEEL_UP:
-				_select_slot(wrapi(active_slot - 1, 0, 9))
-			MOUSE_BUTTON_WHEEL_DOWN:
-				_select_slot(wrapi(active_slot + 1, 0, 9))
 
 
 func _update_movement(delta: float) -> void:
@@ -423,7 +427,7 @@ func _raycast_grid() -> Dictionary:
 ## layer) or an asset (object layer). (Tools are never placed; they act on click via the seam.)
 func _place_active() -> void:
 	var entry: Dictionary = palette[hotbar[active_slot]]
-	if Items.is_tool(entry):
+	if Items.is_tool_entry(entry):
 		return                                       # tools are not placed; they act on click
 	var rc := _raycast_grid()
 	var cell: Vector3i = rc["place"]
@@ -467,7 +471,7 @@ func _click_secondary() -> void:
 		return
 	# A tool held in hand is not "placed"; only blocks/assets are.
 	var entry: Dictionary = palette[hotbar[active_slot]]
-	if Items.is_tool(entry):
+	if Items.is_tool_entry(entry):
 		return
 	_place_active()
 
@@ -529,8 +533,8 @@ func _refresh_held_item() -> void:
 	var prev = _active_handler
 	var entry: Dictionary = palette[hotbar[active_slot]] if hotbar[active_slot] < palette.size() else {}
 	var next = null
-	if Items.is_tool(entry):
-		var slot_idx := hotbar[active_slot]
+	if Items.is_tool_entry(entry):
+		var slot_idx: int = hotbar[active_slot]
 		if not _handlers.has(slot_idx):
 			_handlers[slot_idx] = Items.make_handler(entry)
 		next = _handlers[slot_idx]
@@ -1843,7 +1847,7 @@ func _update_preview() -> void:
 			_preview.visible = false
 		return
 	# Holding a TOOL => no block-placement ghost (the tool draws its own preview, e.g. the note orb).
-	if Items.is_tool(palette[hotbar[active_slot]]):
+	if Items.is_tool_entry(palette[hotbar[active_slot]]):
 		if _preview != null:
 			_preview.visible = false
 		return

@@ -164,8 +164,14 @@ func _initialize() -> void:
 	s.add_child(s.assets)
 	s.assets.load_manifest()
 	s._extend_palette_with_assets()
-	ok = _check("E1 inventory palette = 14 blocks + ALL 34 imported assets", s.palette.size() == 48) and ok
-	ok = _check("E2 categories = 3 block tabs + one per kit", (s._categories() as Array).size() == 5) and ok
+	# Palette = 14 generic blocks + the held tools (Sticky Note) + ALL imported assets. Count the
+	# non-asset entries robustly rather than baking in a fixed total (the tool set may grow).
+	var non_assets := 0
+	for e in s.palette:
+		if String(e.get("kind", "block")) != "asset":
+			non_assets += 1
+	ok = _check("E1 inventory palette = 14 blocks + tools + ALL 34 imported assets", non_assets == 15 and s.palette.size() == non_assets + 34) and ok
+	ok = _check("E2 categories = 3 block tabs + Tools + one per kit", (s._categories() as Array).size() == 6 and (s._categories() as Array).has("Tools")) and ok
 	var tmp_e := ProjectSettings.globalize_path("user://test_wb_integration")
 	_rm_rf(tmp_e)
 	s.store = WorldStoreScript.new(tmp_e)
