@@ -31,6 +31,13 @@ const APERTURE_JS_CANDIDATES := [
 ]
 const TEST_PREFIX := "ap2dtest_"
 
+# Class-cache-independent loads (grey-screen defect, 2026-07-03): the suite must run on a FRESH
+# checkout with NO .godot class cache — exactly the context that produced the defect — so every
+# aperture class is resolved by PATH here too.
+const ApertureBoardLogic = preload("res://aperture/aperture_board_logic.gd")
+const ApertureInbox = preload("res://aperture/aperture_inbox.gd")
+const ApertureBoard2D = preload("res://aperture/aperture_board_2d.gd")
+
 var _fail_count := 0
 
 func _check(name: String, cond: bool) -> bool:
@@ -218,6 +225,27 @@ func _run() -> void:
 	ok = _check("ChatPanelSlot embed point exists for the peer chat lane",
 		board.chat_panel_slot != null and board.chat_panel_slot.name == "ChatPanelSlot"
 		and board.chat_panel_slot.get_child_count() == 0) and ok
+	ok = _check("defensive status line names the file substrate + card count (grey-screen floor)",
+		board._status_label != null and "file substrate" in board._status_label.text
+		and "cards" in board._status_label.text) and ok
+
+	# defensive floor: an EMPTY substrate must still say something visible (never a silent grey board)
+	var empty_dir := run_dir + "/empty"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(empty_dir))
+	_write_lines(empty_dir + "/inbox.jsonl", [])
+	_write_lines(empty_dir + "/feedback.jsonl", [])
+	var board0 := ApertureBoard2D.new()
+	board0.config = { "mode": "file", "base_url": "http://127.0.0.1:1",
+		"inbox_path": empty_dir + "/inbox.jsonl", "feedback_path": empty_dir + "/feedback.jsonl",
+		"bookmarks_path": empty_dir + "/bookmarks.jsonl", "board_json_path": "", "mount_chat": false }
+	board0.size = Vector2(1600, 1000)
+	get_root().add_child(board0)
+	await process_frame
+	await board0.refresh()
+	ok = _check("EMPTY substrate → status line says 0 cards + an empty-board hint (grey-screen floor)",
+		board0._status_label != null and "0 cards" in board0._status_label.text
+		and "empty board" in board0._status_label.text) and ok
+	board0.queue_free()
 
 	# ---- 5. write round-trip (byte-compatible with the web files) ---------------------------------
 	var first: Dictionary = shown[0]

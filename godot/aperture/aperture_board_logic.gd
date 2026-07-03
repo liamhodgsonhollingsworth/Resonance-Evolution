@@ -22,6 +22,11 @@ extends RefCounted
 ## (the read/write halves this file composes with). The headless test cross-checks disperse_by_type
 ## against the REAL aperture.js functions executed via node, so drift from the web logic FAILS.
 
+# Class-cache-independent sibling load (grey-screen defect, 2026-07-03): resolved by PATH so this
+# script parses on checkouts whose gitignored .godot global-class cache is stale or absent (fresh
+# clone / pulled-but-never-imported main checkout). See aperture_board_2d.gd for the full note.
+const ApertureInbox = preload("res://aperture/aperture_inbox.gd")
+
 ## Spec 5 (web): cap the active grid to a readable count. MUST match aperture.js BOARD_CAP.
 const BOARD_CAP := 30
 

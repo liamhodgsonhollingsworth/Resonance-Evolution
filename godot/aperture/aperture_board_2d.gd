@@ -28,6 +28,17 @@ extends Control
 ## One-shot screenshot:     godot --path godot res://aperture/aperture_board_2d.tscn -- --shot
 ## File-mode fixture:       ... -- --mode file --inbox <p> --feedback <p> --bookmarks <p>
 
+# ---- class-cache-independent sibling loads (grey-screen defect, 2026-07-03) ----------------------
+# Resolve the sibling scripts by PATH, not by global class_name. Outside the editor, global class
+# names resolve through the gitignored .godot/global_script_class_cache.cfg — on a checkout that
+# pulled new scripts but never ran an editor/import pass (the desktop-shortcut main-checkout path),
+# that cache is stale/absent, this script fails to PARSE, and the scene renders an information-free
+# grey window. preload() needs no cache. The consts deliberately shadow the global class names so
+# every existing reference keeps working either way (SHADOWED_GLOBAL_IDENTIFIER is expected, non-fatal).
+const ApertureBoardLogic = preload("res://aperture/aperture_board_logic.gd")
+const ApertureInbox = preload("res://aperture/aperture_inbox.gd")
+const ApertureActions = preload("res://aperture/aperture_actions.gd")
+
 # ---- palette: aperture.css :root, colors referenced by handle (relinkable) -----------------------
 const COL_BG := Color("000000")
 const COL_INK := Color("d8d8d8")
@@ -72,6 +83,7 @@ var _taskboard_row: VBoxContainer
 var _notif_row: VBoxContainer
 var _evolver_row: VBoxContainer
 var _masonry: HBoxContainer
+var _status_label: Label                      # defensive floor: always-visible source/count line
 var _columns: Array = []                      # VBoxContainer per masonry column
 var _col_heights: Array = []                  # greedy-masonry accumulated estimates
 
@@ -212,6 +224,19 @@ func _build_ui() -> void:
 	_masonry.add_theme_constant_override("separation", GAP)
 	_root_vbox.add_child(_masonry)
 	_rebuild_columns()
+
+	# ---- defensive status line (grey-screen floor, 2026-07-03): the board NEVER renders an
+	# information-free window — this one line always names the data source and the card count.
+	_status_label = Label.new()
+	_status_label.name = "StatusLine"
+	_status_label.text = "loading…"
+	_status_label.add_theme_font_size_override("font_size", 11)
+	_status_label.add_theme_color_override("font_color", COL_INK_SOFT)
+	_status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_status_label)
+	_status_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT, Control.PRESET_MODE_MINSIZE, 8)
+	_status_label.grow_horizontal = Control.GROW_DIRECTION_END
+	_status_label.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_on_resized()
 
 func _on_resized() -> void:
@@ -267,7 +292,9 @@ func refresh() -> void:
 		return          # UI not built yet (_ready is deferred when added during tree bootstrap)
 	var cards := await _fetch_cards()
 	var board_cards := await _fetch_board_cards()
-	_render_all(ApertureBoardLogic.compose(cards, board_cards, _skipped))
+	var composed := ApertureBoardLogic.compose(cards, board_cards, _skipped)
+	_render_all(composed)
+	_update_status(composed)
 	await _render_taskboard_entry()
 
 ## The compact TASK BOARD entry card (taskboard.js parity): "Task board ❐", "N of Liam's verbatim
@@ -439,12 +466,38 @@ func _poll() -> void:
 	if ekey != _last_evolver_key:
 		_render_evolver_entry(evo)
 	_queue = (composed.get("grid", []) as Array).duplicate()
+	_update_status(composed)
 
 func _key_of(cards: Array) -> String:
 	var parts: Array = []
 	for c in cards:
 		parts.append(String((c as Dictionary).get("id", "")) + "@" + str((c as Dictionary).get("generation", -1)))
 	return "|".join(parts)
+
+## Defensive floor (grey-screen defect, 2026-07-03): one always-visible line naming the data
+## source and the card count, so "empty", "server down", and "file fallback" are diagnosable on
+## sight — the board never renders an information-free window.
+func _update_status(composed: Dictionary) -> void:
+	if _status_label == null:
+		return
+	var total := (composed.get("grid", []) as Array).size() \
+		+ (composed.get("notifications", []) as Array).size() \
+		+ (composed.get("evolver", []) as Array).size()
+	var src := ""
+	match _mode_in_use:
+		"http":
+			src = "live " + String(config["base_url"])
+		"file":
+			if String(config.get("mode", "auto")) == "file":
+				src = "file substrate"
+			else:
+				src = "inbox unreachable at " + String(config["base_url"]) + " — file fallback"
+		_:
+			src = "no data source reachable"
+	var txt := "%s — %d cards" % [src, total]
+	if total == 0:
+		txt += "  (empty board: check " + String(config["inbox_path"]) + ")"
+	_status_label.text = txt
 
 # ---------------------------------------------------------------------------------------------------
 # regions
