@@ -341,6 +341,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				_act_on_aimed("save")
 			KEY_R:
 				_fetch_inbox()
+			KEY_TAB:
+				# the compact entry to the DEDICATED evolution page (spec item 2): all evolution
+				# UI lives in the evolution room, the board only links to it.
+				get_tree().change_scene_to_file("res://aperture/evolution_3d.tscn")
 			KEY_T:
 				var rep := wall.evolver_tick()
 				_set_status("evolver tick: gen %d · %d candidates · advanced=%s" %
@@ -474,7 +478,7 @@ func _build_camera() -> void:
 func _controls_text() -> String:
 	return ("GODOT APERTURE — click to capture mouse, ESC to release\n" +
 		"WASD+mouse fly · X skip · B bookmark · E evolve · V save · R refresh\n" +
-		"live wall: [ / ] edit gene (hotload) · T evolver tick (mock)")
+		"live wall: [ / ] edit gene (hotload) · T evolver tick (mock) · TAB evolution room")
 
 func _build_hud() -> void:
 	var layer := CanvasLayer.new()
