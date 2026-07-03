@@ -1,0 +1,122 @@
+{
+	"coarsen": 1.0,
+	"detail_knob": 0.85,
+	"effect_stack": [
+		{
+			"params": {
+				"radius": 3
+			},
+			"type": "kuwahara"
+		},
+		{
+			"params": {
+				"strength": 0.85,
+				"threshold": 0.1
+			},
+			"type": "edge_darken"
+		},
+		{
+			"params": {
+				"levels": 14
+			},
+			"type": "posterize"
+		},
+		{
+			"params": {
+				"amount": 0.07,
+				"scale": 5.0,
+				"seed": 7
+			},
+			"type": "paper_grain"
+		}
+	],
+	"falloff": {
+		"center": [
+			0.5,
+			0.45
+		],
+		"curve": 2.0,
+		"edge": 0.1,
+		"radius": 0.85,
+		"type": "radial"
+	},
+	"lsystem": {
+		"axiom": "X",
+		"depth": 4,
+		"name": "bush",
+		"rules": {
+			"F": "FF",
+			"X": "F[!+X][!-X][!&X][!^X]FX"
+		},
+		"seed": 0,
+		"turtle": {
+			"angle_deg": 26.0,
+			"radius": 0.05,
+			"radius_decay": 0.72,
+			"step": 0.14,
+			"step_decay": 0.9
+		}
+	},
+	"paint_width": 640,
+	"plant_pos": [
+		0.0,
+		0.0,
+		0.0
+	],
+	"sky": {
+		"ambient_energy": 0.7,
+		"clouds": {
+			"coverage": 0.5,
+			"enabled": true,
+			"horizon_fade": 0.1,
+			"octaves": 5,
+			"opacity": 0.95,
+			"scale": 3.4,
+			"seed": 21,
+			"softness": 0.18,
+			"tex_width": 640,
+			"tint": [
+				1.0,
+				1.0,
+				1.0
+			]
+		},
+		"ground_color": [
+			0.55,
+			0.52,
+			0.47
+		],
+		"horizon_color": [
+			0.8,
+			0.88,
+			0.95
+		],
+		"sky_energy": 1.0,
+		"sun_angle_deg": 35.0,
+		"sun_azimuth_deg": -40.0,
+		"sun_color": [
+			1.0,
+			0.95,
+			0.84
+		],
+		"sun_energy": 1.2,
+		"top_color": [
+			0.32,
+			0.52,
+			0.84
+		]
+	},
+	"view": {
+		"look_at": [
+			0.0,
+			2.0,
+			0.0
+		],
+		"position": [
+			4.2,
+			3.4,
+			5.6
+		],
+		"yfov": 55.0
+	}
+}
