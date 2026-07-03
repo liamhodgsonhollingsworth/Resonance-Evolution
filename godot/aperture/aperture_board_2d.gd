@@ -105,6 +105,12 @@ var _board_json_loaded := false
 var _shot_requested := false
 var _shot_out := "res://live/aperture_board_2d.png"
 
+## Testability seam (input-fix arc, 2026-07-03): EVERY click-through "open this url" routes
+## through _open_url below. Tests inject a recorder Callable here so the destination of every
+## click is assertable without opening real browser/file windows; when unset (the live board)
+## it is OS.shell_open exactly as before.
+var open_url_handler: Callable = Callable()
+
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	_parse_user_args()
@@ -372,7 +378,7 @@ func _render_taskboard_entry() -> void:
 	panel.gui_input.connect(func(ev: InputEvent):
 		var mb := ev as InputEventMouseButton
 		if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-			OS.shell_open(String(config["base_url"]) + "/static/aperture/taskboard/"))
+			_open_url(String(config["base_url"]) + "/static/aperture/taskboard/"))
 	_taskboard_row.add_child(panel)
 	_taskboard_row.visible = true
 
@@ -550,7 +556,7 @@ func _render_evolver_entry(cards: Array) -> void:
 	panel.gui_input.connect(func(ev: InputEvent):
 		var mb := ev as InputEventMouseButton
 		if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-			OS.shell_open(String(config["base_url"]) + "/static/aperture/evolution/index.html"))
+			_open_url(String(config["base_url"]) + "/static/aperture/evolution/index.html"))
 	_evolver_row.add_child(panel)
 
 func _render_grid(cards: Array) -> void:
@@ -956,6 +962,15 @@ func _open_card(card: Dictionary) -> void:
 	else:
 		url = ApertureBoardLogic.explore_url(card)
 	if url != "":
+		_open_url(url)
+
+## The single choke-point every click-through open goes out of (see open_url_handler above).
+func _open_url(url: String) -> void:
+	if url == "":
+		return
+	if open_url_handler.is_valid():
+		open_url_handler.call(url)
+	else:
 		OS.shell_open(url)
 
 # ---------------------------------------------------------------------------------------------------
