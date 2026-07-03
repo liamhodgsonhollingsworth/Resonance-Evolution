@@ -71,8 +71,12 @@ func _ready() -> void:
 	# headless run that can't capture a GPU frame.
 	_write_effect_data()
 	if not _shot_requested():
-		# Headless smoke: the path ran + DATA is written; quit so the test terminates deterministically.
-		get_tree().quit(0)
+		if DisplayServer.get_name() == "headless":
+			# Headless smoke: the path ran + DATA is written; quit so the test terminates
+			# deterministically.
+			get_tree().quit(0)
+		# Windowed without --shot: STAY OPEN — this is the live viewable scene the Aperture demo
+		# card opens (the sunbeam forest). Quitting here made the card's window close instantly.
 
 func _process(_delta: float) -> void:
 	if not _shot_requested():
