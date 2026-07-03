@@ -20,7 +20,14 @@ extends SceneTree
 ##     web files — the REAL aperture_feedback.py / aperture_bookmark.py read back what the board
 ##     wrote, and skip ids match the web's skipId semantics (unprefixed substrate ids for
 ##     feedback; web DOM tile ids for bookmarks).
-##  6. LIVE GUARDS: the live inbox/feedback/bookmarks gained no rows from this run.
+##  6. VIEWPORT INTERACTION (input-fix arc, 2026-07-03): real InputEventMouseButton pushed
+##     through the viewport at each affordance's ON-SCREEN rect, so occlusion / mouse-filter /
+##     wrong-action bugs are caught — image-region clicks open the card (the image wrapper used
+##     to eat them), opens fire on press+release-inside (web `click` semantics), never on the
+##     bare press, resonance:// scene-link cards launch in-engine, hover reveals ✕/☆, clicking
+##     ✕ skips the RIGHT card without click-through, decision buttons record their verbatim
+##     action id, and wheel scroll still reaches the ScrollContainer over STOP tiles.
+##  7. LIVE GUARDS: the live inbox/feedback/bookmarks gained no rows from this run.
 
 const LIVE_INBOX := "G:/Wavelet/Alethea-cc/state/aperture/inbox/inbox.jsonl"
 const LIVE_FEEDBACK := "G:/Wavelet/Alethea-cc/state/aperture/feedback.jsonl"
@@ -304,7 +311,163 @@ func _run() -> void:
 	ok = _check("REAL aperture_bookmark.py reads the board's save back",
 		py2.strip_edges() == "['%s']" % want_dom) and ok
 
-	# ---- 6. live guards ----------------------------------------------------------------------------
+	# ---- 6. viewport-level interaction (input-fix arc, 2026-07-03) --------------------------------
+	# Every click below is a REAL InputEventMouseButton pushed through the viewport at the
+	# affordance's on-screen rect — the same routing (hit test, mouse_filter, z-order, capture)
+	# a live mouse goes through — so "looks clickable but is not hittable" and "fires the wrong
+	# action" both FAIL here. Headless has no OS cursor, so Button-hover is established the way
+	# probe'd empirically: NOTIFICATION_MOUSE_ENTER + NOTIFICATION_MOUSE_ENTER_SELF, then the
+	# synthesized press+release fires BaseButton.pressed exactly like a real click.
+	board.queue_free()                                # clear earlier boards off the hit-test plane
+	dummy_btn.queue_free()
+	await process_frame
+	await process_frame
+
+	var idir := run_dir + "/interact"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(idir))
+	# a REAL loadable image, so the image region renders (a broken image degrades to text style)
+	var real_img := Image.create(64, 48, false, Image.FORMAT_RGB8)
+	real_img.fill(Color(0.2, 0.4, 0.6))
+	var img_path := ProjectSettings.globalize_path(idir + "/real.png").replace("\\", "/")
+	real_img.save_png(img_path)
+	var irows := [
+		{ "id": TEST_PREFIX + "iimg", "kind": "artifact", "title": "Clickable image card",
+			"media": { "image_url": img_path, "link": "https://example.com/openme" },
+			"status": "pending", "disposition": "content" },
+		{ "id": TEST_PREFIX + "iscene", "kind": "artifact", "title": "Open the WFC demo",
+			"media": { "text": "a scene link",
+				"link": "resonance://open?target=godot&scene=res%3A%2F%2Fexamples%2Fwfc_demo.tscn&mode=2d" },
+			"status": "pending", "disposition": "content" },
+		{ "id": TEST_PREFIX + "itxt", "kind": "artifact", "title": "Text card",
+			"media": { "text": "body", "link": "https://example.com/text" },
+			"status": "pending", "disposition": "content" },
+		{ "id": TEST_PREFIX + "idec", "kind": "question", "title": "Decide me",
+			"media": { "text": "pick" }, "status": "pending", "disposition": "decision",
+			"actions": [ { "id": "yes", "label": "Yes" }, { "id": "no", "label": "No" } ] },
+	]
+	var ilines: Array = []
+	for r in irows:
+		ilines.append(JSON.stringify(r))
+	_write_lines(idir + "/inbox.jsonl", ilines)
+	_write_lines(idir + "/feedback.jsonl", [])
+
+	# The headless root window is tiny (100x100) and a ScrollContainer CLIPS hit-testing to its
+	# visible rect, so the board is hosted in an explicitly-sized parent Control — the FULL_RECT
+	# anchors then size the board (and its scroll viewport) to 1600x1000 regardless of the window.
+	var host := Control.new()
+	host.size = Vector2(1600, 1000)
+	get_root().add_child(host)
+	var board2 := ApertureBoard2D.new()
+	board2.config = { "mode": "file", "base_url": "http://127.0.0.1:1",
+		"inbox_path": idir + "/inbox.jsonl", "feedback_path": idir + "/feedback.jsonl",
+		"bookmarks_path": idir + "/bookmarks.jsonl", "board_json_path": "", "mount_chat": false }
+	var opened: Array = []
+	board2.open_url_handler = func(u): opened.append(String(u))
+	var launched: Array = []
+	# set() so a board WITHOUT the seam (pre-fix) still runs — and then FAILS the launch assert
+	board2.set("scene_launch_handler", func(c): launched.append(String((c as Dictionary).get("id", ""))))
+	host.add_child(board2)
+	# A scripted-in (no .tscn) board child of a plain Control lays out 0x0 — the live scene gets
+	# its FULL_RECT from aperture_board_2d.tscn. Apply the same anchors+offsets explicitly so the
+	# scroll viewport (which CLIPS hit-testing) actually covers the 1600x1000 host.
+	board2.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	await process_frame
+	await board2.refresh()
+	await process_frame
+	await process_frame
+
+	# 6a. the IMAGE REGION opens the card (the image wrapper PanelContainer used to eat the click)
+	var t_img: Control = board2._displayed[TEST_PREFIX + "iimg"]
+	var img_region := (t_img.get_child(0) as Control).get_child(0) as Control
+	ok = _check("image tile renders a non-degraded image region",
+		img_region.visible and img_region.get_global_rect().size.y > 20.0) and ok
+	_vp_click(img_region.get_global_rect().get_center())
+	await process_frame
+	ok = _check("click on the IMAGE REGION opens the card link (wrapper no longer eats it)",
+		str(opened) == str(["https://example.com/openme"])) and ok
+
+	# 6b. web `click` semantics: a bare press opens nothing; press-then-release-outside aborts
+	opened.clear()
+	var t_txt: Control = board2._displayed[TEST_PREFIX + "itxt"]
+	var txt_center := t_txt.get_global_rect().get_center()
+	_vp_button(txt_center, true)
+	await process_frame
+	ok = _check("bare mouse-DOWN opens nothing (web fires on click, not press)", opened.is_empty()) and ok
+	_vp_button(Vector2(2, 998), false)
+	await process_frame
+	ok = _check("press then release-OUTSIDE opens nothing (aborted click)", opened.is_empty()) and ok
+
+	# 6c. a full press+release on the same tile opens exactly once, with the RIGHT destination
+	_vp_click(txt_center)
+	await process_frame
+	ok = _check("press+release on the SAME tile opens its OWN link exactly once",
+		str(opened) == str(["https://example.com/text"])) and ok
+
+	# 6d. a resonance:// scene-link card launches the scene IN-ENGINE, never a url open
+	opened.clear()
+	var t_sc: Control = board2._displayed[TEST_PREFIX + "iscene"]
+	_vp_click(t_sc.get_global_rect().get_center())
+	await process_frame
+	ok = _check("scene_link card launches in-engine via the launcher seam (no shell_open)",
+		str(launched) == str([TEST_PREFIX + "iscene"]) and opened.is_empty()) and ok
+
+	# 6e. hover reveals ✕/☆; clicking ✕ skips the RIGHT card and does NOT click through
+	opened.clear()
+	var skip_btn := _find_glyph_button(t_img, "✕")
+	ok = _check("✕ skip button exists and is hidden until hover",
+		skip_btn != null and not skip_btn.visible) and ok
+	_hover(t_img)
+	ok = _check("hovering the tile reveals the ✕ skip button", skip_btn != null and skip_btn.visible) and ok
+	if skip_btn != null:
+		_hover(skip_btn)
+		_vp_click(skip_btn.get_global_rect().get_center())
+		await process_frame
+	var ifb := _read_jsonl(idir + "/feedback.jsonl")
+	ok = _check("clicking ✕ writes the durable skip for the RIGHT card (button actually hittable)",
+		ifb.size() == 1 and ifb[0].get("action") == "skip"
+		and ifb[0].get("artifact_id") == TEST_PREFIX + "iimg") and ok
+	ok = _check("clicking ✕ does NOT also open the card underneath (no click-through)",
+		opened.is_empty()) and ok
+	ok = _check("the skipped tile leaves the grid", not board2._displayed.has(TEST_PREFIX + "iimg")) and ok
+
+	# 6f. a decision banner button records its verbatim action id (right action, right card)
+	var t_dec: Control = board2._notif_row.get_child(0)
+	var yes_btn := _find_glyph_button(t_dec, "Yes")
+	ok = _check("decision card renders its Yes action button", yes_btn != null) and ok
+	if yes_btn != null:
+		_hover(yes_btn)
+		_vp_click(yes_btn.get_global_rect().get_center())
+		await process_frame
+	ifb = _read_jsonl(idir + "/feedback.jsonl")
+	ok = _check("clicking Yes records the verbatim action id for the decision card",
+		ifb.size() == 2 and ifb[1].get("action") == "yes"
+		and ifb[1].get("artifact_id") == TEST_PREFIX + "idec") and ok
+	ok = _check("deciding never opens a url", opened.is_empty()) and ok
+
+	# 6g. wheel scroll still reaches the ScrollContainer over STOP tiles (regression guard)
+	host.size = Vector2(1600, 60)           # shrink the viewport so the content overflows
+	await process_frame
+	await process_frame
+	# a point that is BOTH inside the visible scroll rect and on a remaining tile
+	var vis := (board2._scroll as Control).get_global_rect()
+	var trect := (board2._displayed[TEST_PREFIX + "itxt"] as Control).get_global_rect()
+	var wheel_at := Vector2(trect.get_center().x,
+		clampf(trect.position.y + 5.0, vis.position.y + 5.0, vis.end.y - 5.0))
+	for i in 3:
+		var w := InputEventMouseButton.new()
+		w.button_index = MOUSE_BUTTON_WHEEL_DOWN
+		w.pressed = true
+		w.position = wheel_at
+		w.global_position = wheel_at
+		w.factor = 1.0
+		get_root().push_input(w)
+	await process_frame
+	ok = _check("mouse wheel over a tile scrolls the board (nothing eats the wheel)",
+		board2._scroll.scroll_vertical > 0) and ok
+	host.queue_free()
+	await process_frame
+
+	# ---- 7. live guards ----------------------------------------------------------------------------
 	ok = _check("live inbox unchanged", _line_count(LIVE_INBOX) == live_inbox_before) and ok
 	ok = _check("live feedback gained no test rows",
 		_rows_with_prefix(LIVE_FEEDBACK, TEST_PREFIX) == live_fb_before) and ok
@@ -346,6 +509,44 @@ func _content_fixture() -> Array:
 # ---------------------------------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------------------------------
+
+# ---- viewport-interaction helpers (input-fix arc, 2026-07-03) ------------------------------------
+
+## One synthesized left-button press at `pos` (window coords), routed through the viewport's
+## real hit-testing — exactly what a physical mouse press produces.
+func _vp_button(pos: Vector2, pressed: bool) -> void:
+	var ev := InputEventMouseButton.new()
+	ev.button_index = MOUSE_BUTTON_LEFT
+	ev.pressed = pressed
+	ev.position = pos
+	ev.global_position = pos
+	get_root().push_input(ev)
+
+## A full click: press + release at the same point (the web `click` gesture).
+func _vp_click(pos: Vector2) -> void:
+	_vp_button(pos, true)
+	_vp_button(pos, false)
+
+## Establish hover in headless (no OS cursor). Two distinct mechanisms, both needed:
+##   * BaseButton only fires `pressed` on the release when its INTERNAL hover flag is set —
+##     empirically (Godot 4.6) that flag is set by NOTIFICATION_MOUSE_ENTER(+_SELF);
+##   * the `mouse_entered` SIGNAL (what the tile's reveal handler listens to) is emitted by the
+##     viewport's live cursor tracking, NOT by the notification — emit it explicitly.
+func _hover(ctrl: Control) -> void:
+	ctrl.notification(Control.NOTIFICATION_MOUSE_ENTER)
+	if "NOTIFICATION_MOUSE_ENTER_SELF" in ClassDB.class_get_integer_constant_list("Control"):
+		ctrl.notification(ClassDB.class_get_integer_constant("Control", "NOTIFICATION_MOUSE_ENTER_SELF"))
+	ctrl.emit_signal("mouse_entered")
+
+## Depth-first search for the Button whose text is `glyph` under `node` (✕ / ☆ / action labels).
+func _find_glyph_button(node: Node, glyph: String) -> Button:
+	if node is Button and (node as Button).text == glyph:
+		return node
+	for c in node.get_children():
+		var hit := _find_glyph_button(c, glyph)
+		if hit != null:
+			return hit
+	return null
 
 func _ids_of(cards: Array) -> Array:
 	var out: Array = []

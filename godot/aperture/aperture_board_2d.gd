@@ -38,6 +38,7 @@ extends Control
 const ApertureBoardLogic = preload("res://aperture/aperture_board_logic.gd")
 const ApertureInbox = preload("res://aperture/aperture_inbox.gd")
 const ApertureActions = preload("res://aperture/aperture_actions.gd")
+const ApertureSceneLauncher = preload("res://aperture/scene_launcher.gd")
 
 # ---- palette: aperture.css :root, colors referenced by handle (relinkable) -----------------------
 const COL_BG := Color("000000")
@@ -105,6 +106,20 @@ var _board_json_loaded := false
 var _shot_requested := false
 var _shot_out := "res://live/aperture_board_2d.png"
 
+## Testability seam (input-fix arc, 2026-07-03): EVERY click-through "open this url" routes
+## through _open_url below. Tests inject a recorder Callable here so the destination of every
+## click is assertable without opening real browser/file windows; when unset (the live board)
+## it is OS.shell_open exactly as before.
+var open_url_handler: Callable = Callable()
+
+## Same seam for SCENE-LINK cards (input-fix arc, 2026-07-03): a card whose link is a
+## resonance:// godot scene link launches the linked scene IN-ENGINE via
+## ApertureSceneLauncher.launch_card — the exact window the web surface's protocol handler
+## opens — instead of an OS.shell_open that silently no-ops when the resonance:// protocol
+## registration is missing. Tests inject a recorder here to assert the launch without
+## spawning real Godot processes.
+var scene_launch_handler: Callable = Callable()
+
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	_parse_user_args()
@@ -149,6 +164,25 @@ func _parse_user_args() -> void:
 			"--board-json":
 				config["board_json_path"] = args[i + 1]; i += 1
 		i += 1
+
+## Web-parity CLICK semantics (input-fix arc, 2026-07-03). The web board acts on `click` —
+## a press AND a release on the SAME element. The first Godot port fired on mouse-DOWN, so a
+## half-click (press on a card, drag away / change your mind, release elsewhere) opened a
+## browser window anyway — "clicks do the wrong thing". This helper arms on the press and
+## fires only when the matching release lands inside the control's rect, exactly like a DOM
+## click. Shared by every clickable surface (tiles, taskboard entry, evolver entry).
+func _connect_click(ctrl: Control, on_click: Callable) -> void:
+	ctrl.gui_input.connect(func(ev: InputEvent):
+		var mb := ev as InputEventMouseButton
+		if mb == null or mb.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if mb.pressed:
+			ctrl.set_meta("press_armed", true)
+			return
+		var armed: bool = ctrl.has_meta("press_armed") and bool(ctrl.get_meta("press_armed"))
+		ctrl.set_meta("press_armed", false)
+		if armed and ctrl.get_global_rect().has_point(mb.global_position):
+			on_click.call())
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	# Ctrl+Z → undo the last skip (writes the same "unskip" row the web writes).
@@ -369,10 +403,7 @@ func _render_taskboard_entry() -> void:
 		chip.add_child(l)
 		chips.add_child(chip)
 	v.add_child(chips)
-	panel.gui_input.connect(func(ev: InputEvent):
-		var mb := ev as InputEventMouseButton
-		if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-			OS.shell_open(String(config["base_url"]) + "/static/aperture/taskboard/"))
+	_connect_click(panel, func(): _open_url(String(config["base_url"]) + "/static/aperture/taskboard/"))
 	_taskboard_row.add_child(panel)
 	_taskboard_row.visible = true
 
@@ -547,10 +578,7 @@ func _render_evolver_entry(cards: Array) -> void:
 	cta.add_theme_font_size_override("font_size", 13)
 	cta.add_theme_color_override("font_color", COL_LINK)
 	row.add_child(cta)
-	panel.gui_input.connect(func(ev: InputEvent):
-		var mb := ev as InputEventMouseButton
-		if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-			OS.shell_open(String(config["base_url"]) + "/static/aperture/evolution/index.html"))
+	_connect_click(panel, func(): _open_url(String(config["base_url"]) + "/static/aperture/evolution/index.html"))
 	_evolver_row.add_child(panel)
 
 func _render_grid(cards: Array) -> void:
@@ -630,6 +658,11 @@ func _build_tile(card: Dictionary, opts: Dictionary) -> Control:
 		var img_bg := StyleBoxFlat.new()
 		img_bg.bg_color = COL_IMG_BG
 		var img_panel := PanelContainer.new()
+		# PanelContainer defaults to MOUSE_FILTER_STOP — it silently ATE every click on the image
+		# region (the largest area of an image card), so image cards could not be click-opened at
+		# all ("I cannot click some things", 2026-07-03). PASS lets the click bubble to the tile
+		# panel's click handler while the ✕/☆ overlay buttons (drawn above) still take priority.
+		img_panel.mouse_filter = Control.MOUSE_FILTER_PASS
 		img_panel.add_theme_stylebox_override("panel", img_bg)
 		img_panel.add_child(rect)
 		vbox.add_child(img_panel)
@@ -756,11 +789,9 @@ func _build_tile(card: Dictionary, opts: Dictionary) -> Control:
 			bm_btn.visible = _bookmarked.has(_dom_id(card))   # a saved ★ stays visible
 		panel.set_meta("hovered", false))
 
-	# ---- click-through (openUrl parity: artifacts open media.link; board tiles explore) ----
-	panel.gui_input.connect(func(ev: InputEvent):
-		var mb := ev as InputEventMouseButton
-		if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-			_open_card(card))
+	# ---- click-through (openUrl parity: artifacts open media.link; board tiles explore).
+	# Fires on press+release-inside (web `click` semantics), never on the bare press.
+	_connect_click(panel, func(): _open_card(card))
 	return panel
 
 func _subtitle_line(text: String, accent: Color, is_quote: bool) -> Control:
@@ -771,6 +802,7 @@ func _subtitle_line(text: String, accent: Color, is_quote: bool) -> Control:
 		var rule := ColorRect.new()
 		rule.color = accent
 		rule.custom_minimum_size = Vector2(2, 0)
+		rule.mouse_filter = Control.MOUSE_FILTER_IGNORE   # ColorRect defaults to STOP — a 2px click dead-strip
 		row.add_child(rule)
 	var l := Label.new()
 	l.text = text
@@ -940,8 +972,15 @@ func _decide(card: Dictionary, action_id: String, tile: Control) -> void:
 	tile.queue_free()
 
 ## openUrl parity: pushed artifacts open their media.link (no fallback); quotes resolve to the
-## author's page; board content tiles always reach an explorable destination.
+## author's page; board content tiles always reach an explorable destination. A resonance://
+## godot SCENE LINK launches the linked scene in-engine (the same window the web surface's
+## protocol handler opens) instead of relying on the OS protocol registration.
 func _open_card(card: Dictionary) -> void:
+	var raw_link := String(card.get("link", ""))
+	if raw_link.to_lower().begins_with("resonance://") \
+			and bool(ApertureSceneLauncher.parse(raw_link).get("ok", false)):
+		_launch_scene(card)
+		return
 	var url := ""
 	if String(card.get("source", "")) == "inbox":
 		url = String(card.get("link", ""))
@@ -956,7 +995,25 @@ func _open_card(card: Dictionary) -> void:
 	else:
 		url = ApertureBoardLogic.explore_url(card)
 	if url != "":
+		_open_url(url)
+
+## The single choke-point every click-through open goes out of (see open_url_handler above).
+func _open_url(url: String) -> void:
+	if url == "":
+		return
+	if open_url_handler.is_valid():
+		open_url_handler.call(url)
+	else:
 		OS.shell_open(url)
+
+## The single choke-point every in-engine scene launch goes out of (see scene_launch_handler
+## above). Live board: ApertureSceneLauncher.launch_card spawns the linked scene as its own
+## detached Godot window — identical argv to the web's resonance:// watcher path.
+func _launch_scene(card: Dictionary) -> void:
+	if scene_launch_handler.is_valid():
+		scene_launch_handler.call(card)
+	else:
+		ApertureSceneLauncher.launch_card(card)
 
 # ---------------------------------------------------------------------------------------------------
 # images — the SAME sources the web loads (media-route reverse-map / local path / http), carousel

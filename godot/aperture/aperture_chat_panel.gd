@@ -109,6 +109,10 @@ func _build_ui() -> void:
 
 # ------------------------------------------------------------------ send (http → file)
 func _send() -> void:
+	if _send_btn.disabled:
+		return   # a send is already in flight — Enter re-fires text_submitted while the button
+		         # is disabled, and the busy HTTPRequest would ERR_BUSY into the file fallback,
+		         # double-writing the same message (input-fix arc, 2026-07-03)
 	var text := _input.text
 	if text.strip_edges() == "":
 		return
@@ -183,7 +187,8 @@ func _render(messages: Array) -> void:
 		return
 	_last_render_key = key
 	for c in _history_box.get_children():
-		c.queue_free()
+		_history_box.remove_child(c)   # detach NOW — queue_free alone leaves the old rows in the
+		c.queue_free()                 # box for a frame, doubling the list height mid-render
 	for m in tail:
 		var who := String(m.get("from", ""))
 		var lbl := RichTextLabel.new()

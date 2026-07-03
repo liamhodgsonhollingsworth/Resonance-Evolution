@@ -13,6 +13,12 @@ extends SceneTree
 ## plus: field-map override retargets a foreign schema; the bundled sample loads; ports_for_node
 ## unions generic + explicit ports; edges referencing unknown nodes are dropped.
 
+
+# Class-cache-independent loads (mistake #046 / grey-screen defect, 2026-07-03): resolve every
+# class under test by PATH so this suite parses on a fresh checkout with NO .godot class cache
+# (the desktop-shortcut launcher context). Global class_name refs failed to PARSE there.
+const ApertureGraph = preload("res://aperture/aperture_graph.gd")
+
 var _pass := 0
 var _fail := 0
 
