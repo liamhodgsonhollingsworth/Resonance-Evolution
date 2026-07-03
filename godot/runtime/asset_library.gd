@@ -204,6 +204,40 @@ func _finish(id: String, state: GLTFState) -> bool:
 	var tpl := Node3D.new()
 	tpl.name = id
 	tpl.add_child(scene)
+	_bake_importer_meshes(tpl)
 	_cache[id] = tpl
 	loads_completed += 1
 	return true
+
+
+## Runtime GLTFDocument.generate_scene emits ImporterMeshInstance3D nodes — import-pipeline
+## carriers that do NOT render in a running game (observed live: 34 gallery objects, zero
+## visible models; only a behavior's OmniLight3D child rendered). Bake each into a real
+## MeshInstance3D (same name/transform/skin, ImporterMesh.get_mesh() → ArrayMesh with its
+## surface materials) IN PLACE, so everything the library hands out is renderable. This is
+## the single choke point every asset load passes through.
+static func _bake_importer_meshes(root: Node) -> void:
+	var stack: Array = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is ImporterMeshInstance3D and n != root:
+			var imp := n as ImporterMeshInstance3D
+			var mi := MeshInstance3D.new()
+			if imp.mesh != null:
+				mi.mesh = imp.mesh.get_mesh()
+			mi.transform = imp.transform
+			mi.skin = imp.skin
+			# Carry any children across, then swap the nodes in place.
+			for c in imp.get_children():
+				imp.remove_child(c)
+				mi.add_child(c)
+			var parent := imp.get_parent()
+			var nm := String(imp.name)
+			parent.remove_child(imp)
+			imp.free()
+			mi.name = nm
+			parent.add_child(mi)
+			stack.append(mi)          # keep walking the carried-over children
+		else:
+			for c in n.get_children():
+				stack.append(c)

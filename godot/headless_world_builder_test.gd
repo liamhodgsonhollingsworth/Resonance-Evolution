@@ -42,6 +42,18 @@ func _initialize() -> void:
 	var i1: Node3D = lib.instantiate(sample)
 	var i2: Node3D = lib.instantiate(sample)
 	ok = _check("A6 instantiate hands out DISTINCT instances", i1 != null and i2 != null and i1 != i2 and i1.get_child_count() > 0) and ok
+	var renderable := 0
+	var importer_leftovers := 0
+	var walk: Array = [i1]
+	while not walk.is_empty():
+		var wn: Node = walk.pop_back()
+		if wn is MeshInstance3D and (wn as MeshInstance3D).mesh != null:
+			renderable += 1
+		if wn is ImporterMeshInstance3D:
+			importer_leftovers += 1
+		for wc in wn.get_children():
+			walk.append(wc)
+	ok = _check("A6b instances carry RENDERABLE meshes (no ImporterMeshInstance3D carriers)", renderable > 0 and importer_leftovers == 0) and ok
 	i1.free()
 	i2.free()
 	lib.request_sync(sample)
