@@ -16,6 +16,13 @@ extends SceneTree
 ##     verifies the process is running, then kills it (host-only; not for CI).
 ## Mirrors headless_chip_test.gd style (PASS/FAIL lines, RESULT, non-zero exit on failure).
 
+# Class-cache-independent loads (mistake #046 / grey-screen defect, 2026-07-03): resolve the
+# classes under test by PATH so this suite parses on a fresh checkout with NO .godot class
+# cache — the exact context the desktop-shortcut launcher runs in. Before this, the whole
+# file failed to PARSE without a cache ("Identifier ApertureSceneLauncher not declared").
+const ApertureChatStore = preload("res://aperture/aperture_chat_store.gd")
+const ApertureSceneLauncher = preload("res://aperture/scene_launcher.gd")
+
 var _ok := true
 
 
