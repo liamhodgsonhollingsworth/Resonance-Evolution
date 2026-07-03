@@ -56,29 +56,39 @@ extends Node3D
 ##        uses to iterate a world on disk while it stays open.
 ##   (<Godot> = C:\Users\Liam\godot\Godot_v4.6.3-stable_win64_console.exe for stdout.)
 ##
-## CONTROLS (Minecraft creative parity + the world-builder verbs):
+## CONTROLS — MINECRAFT DEFAULTS (Liam spec 2026-07-03; empty hand = standard MC):
 ##   Move        : W A S D            (relative to look direction, flattened to horizontal)
 ##   Up / Down   : Space / Shift
 ##   Look        : move mouse (pointer captured; ESC releases; click canvas to recapture)
 ##   Faster      : hold Ctrl (sprint)
 ##   Select slot : 1 .. 9 (or mouse wheel)
-##   Place       : LEFT click  (block OR asset, per the active hotbar entry)
-##   Remove      : RIGHT click (the block or placed object you're pointing at)
-##   Inventory   : E  (paged block+asset picker with category tabs; click → active hotbar slot)
-##   Select obj  : F  (the placed object under the crosshair; F again deselects)
-##   Grab / drop : G  (selected object follows the build ray; LEFT click or G drops it)
-##   Rotate      : R / Shift+R  (±15° yaw on the selection)
-##   Scale       : + / -        (×1.1 / ÷1.1 on the selection)
-##   Delete obj  : X            (the selection)
-##   Behaviors   : B  (panel; 1..5 toggle spin/orbit/bob/follow/light on the selection)
-##   Note        : N  (type a note on the selection — or the crosshair spot — Enter saves)
+##   PLACE       : RIGHT click  (block OR asset, per the active hotbar entry) — MC place
+##   DESTROY     : LEFT click   (the block or placed object you're pointing at) — MC destroy
+##   PICK        : MIDDLE click  (the thing you're looking at → into the hand/hotbar) — MC pick-block
+##   Inventory   : E  (drag-and-drop block+asset+tool picker, image previews; drag → hotbar slot)
 ##   Save world  : F5 (append-only: writes version N+1, never overwrites)
 ##   Switch world: [ / ]  (previous / next world; preloads swap scene-to-scene)
+##
+## HELD-ITEM SEAM (spec: "items I can hold in my hand ... clicking using those items has
+## different behavior than usual"): what you hold decides what clicking does. Empty hand = the
+## MC defaults above. A TOOL item overrides them (see runtime/sandbox_items.gd + sticky_note.gd):
+##   Sticky Note : hold it, aim at any surface (a preview orb shows the exact stick point), LEFT
+##                 click sticks a note there (rides the object if it moves), then type; Enter saves.
+##   (The rotate/scale/manipulate WAND is a queued tool — a future handler in the same seam.)
+##
+## DEBUG VERB LAYER (superseded default, kept reachable — press BACKSLASH \ to toggle):
+##   The pre-2026-07-03 default verbs are NOT gone, only demoted. Toggle the debug layer on and:
+##   F select obj · G grab/drop · R/Shift+R rotate · +/- scale · X delete · B behaviors · N note.
+##   Append-only supersession: MC controls are the default; these remain for power/debug use.
 
 const GodotSceneRenderer := preload("res://renderers/godot_scene_renderer.gd")
 const AssetLibraryScript := preload("res://runtime/asset_library.gd")
 const Behaviors := preload("res://runtime/sandbox_behaviors.gd")
 const WorldStoreScript := preload("res://runtime/world_store.gd")
+const Items := preload("res://runtime/sandbox_items.gd")               # held-item seam (MC-default + tool handlers)
+const StickyNote := preload("res://runtime/sticky_note.gd")            # the one tool built now
+const ItemThumbnails := preload("res://runtime/item_thumbnails.gd")   # inventory image previews
+const _InvSlot := preload("res://examples/sandbox_inventory_slot.gd") # drag-and-drop inventory/hotbar slot
 
 const PARAMS_PATH := "res://examples/sandbox_params.json"     # the file Liam/Claude edit to iterate settings
 const SHOT_PATH := "res://docs/sandbox_creative.png"          # headless proof PNG (committed under docs/)
@@ -144,6 +154,17 @@ var _behavior_open := false
 var _note_open := false
 var _time := 0.0                                              # behavior clock (seconds since scene start)
 
+# ── held-item seam + sticky notes (Liam spec 2026-07-03) ──────────────────────────────────────────────
+var _debug_verbs := false                                    # the superseded F/G/R/+-/X verb layer (BACKSLASH toggles)
+var _handlers: Dictionary = {}                               # palette index -> tool handler object (lazily built)
+var _active_handler = null                                   # handler for the currently held item (empty hand => null)
+var _preview3d_root: Node3D = null                           # parent for held-tool 3D previews (the sticky-note orb)
+var _notes: Dictionary = {}                                  # note_id -> note record (anchor + text + render node)
+var _note_seq := 0                                           # monotonic note-id counter
+var _notes_root: Node3D = null                               # parent for stuck-note render meshes
+var _editing_note_id := ""                                   # the note whose text the editor is currently editing
+var thumbs = null                                            # ItemThumbnails (image previews; lazily built)
+
 # hotload watcher state (the painterly_scene / live_demo pattern: content-change → re-apply)
 var _params_mtime := -1
 var _world_watch_path := ""                                   # latest version file of the active world
@@ -171,8 +192,11 @@ func _ready() -> void:
 	assets.asset_ready.connect(_on_asset_ready)
 	_extend_palette_with_assets()
 	if not _headless:
+		# Inventory image previews (small low-quality thumbnail screenshots), cached to disk per host.
+		thumbs = ItemThumbnails.new(get_tree())
 		_build_hud()
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		_refresh_held_item()                         # select the handler for the starting hotbar slot
 	# Settings from the params file (writes a seed file on first run so there is something to edit).
 	var cfg := _load_params()
 	_apply_settings(cfg)
@@ -220,6 +244,10 @@ func _process(delta: float) -> void:
 	_update_movement(delta)
 	_update_preview()
 	_update_selection_marker()
+	_tick_notes()                                # notes ride their (moving) targets
+	# The held tool draws its per-frame preview (the sticky-note orb at the aimed point).
+	if _active_handler != null and _active_handler.has_method("while_held") and not _inv_open and not _note_open:
+		_active_handler.while_held(self, delta)
 
 
 # ══ CREATIVE-MODE CAMERA + CONTROLS ═══════════════════════════════════════════════════════════════════
@@ -253,6 +281,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_toggle_behavior_panel()
 				return
 			return
+		# ALWAYS-ON keys (MC defaults + world ops; independent of the debug verb layer).
 		match event.keycode:
 			KEY_E:
 				_toggle_inventory()
@@ -260,29 +289,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_ESCAPE:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 				return
-			KEY_F:
-				_toggle_select()
-				return
-			KEY_G:
-				_toggle_grab()
-				return
-			KEY_R:
-				_rotate_selected(-15.0 if event.shift_pressed else 15.0)
-				return
-			KEY_EQUAL, KEY_KP_ADD:
-				_scale_selected(1.1)
-				return
-			KEY_MINUS, KEY_KP_SUBTRACT:
-				_scale_selected(1.0 / 1.1)
-				return
-			KEY_X:
-				_delete_selected()
-				return
-			KEY_B:
-				_toggle_behavior_panel()
-				return
-			KEY_N:
-				_open_note()
+			KEY_BACKSLASH:
+				_toggle_debug_verbs()
 				return
 			KEY_F5:
 				_save_world()
@@ -293,6 +301,34 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_BRACKETRIGHT:
 				_cycle_world(1)
 				return
+		# DEBUG VERB LAYER (superseded default, gated behind BACKSLASH; append-only supersession).
+		# MC controls (mouse) are the default; these fire only when the debug layer is toggled on.
+		if _debug_verbs:
+			match event.keycode:
+				KEY_F:
+					_toggle_select()
+					return
+				KEY_G:
+					_toggle_grab()
+					return
+				KEY_R:
+					_rotate_selected(-15.0 if event.shift_pressed else 15.0)
+					return
+				KEY_EQUAL, KEY_KP_ADD:
+					_scale_selected(1.1)
+					return
+				KEY_MINUS, KEY_KP_SUBTRACT:
+					_scale_selected(1.0 / 1.1)
+					return
+				KEY_X:
+					_delete_selected()
+					return
+				KEY_B:
+					_toggle_behavior_panel()
+					return
+				KEY_N:
+					_open_note()
+					return
 		# Number keys 1..9 select the hotbar slot (MC parity).
 		if event.keycode >= KEY_1 and event.keycode <= KEY_9:
 			_select_slot(event.keycode - KEY_1)
@@ -300,16 +336,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		if _inv_open:
 			return
+		# Recapture-after-ESC is handled first for ANY button so a click brings the pointer back.
+		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+			return
 		match event.button_index:
 			MOUSE_BUTTON_LEFT:
-				if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
-					Input.mouse_mode = Input.MOUSE_MODE_CAPTURED     # click to recapture after ESC
-				elif _grabbing:
-					_toggle_grab()                                   # click DROPS the grabbed object
-				else:
-					_place_active()
+				_click_primary()          # MC DESTROY (empty hand) / tool primary
 			MOUSE_BUTTON_RIGHT:
-				_remove_target()
+				_click_secondary()        # MC PLACE (empty hand) / tool secondary
+			MOUSE_BUTTON_MIDDLE:
+				_click_middle()           # MC PICK (empty hand) / tool middle
 			MOUSE_BUTTON_WHEEL_UP:
 				_select_slot(wrapi(active_slot - 1, 0, 9))
 			MOUSE_BUTTON_WHEEL_DOWN:
@@ -382,9 +419,12 @@ func _raycast_grid() -> Dictionary:
 	return { "hit": false, "cell": _world_to_cell(far), "place": _world_to_cell(far), "t": REACH * grid_size * 0.5 }
 
 
-## LEFT click: place whatever the active hotbar entry is — a block (voxel layer) or an asset (object layer).
+## MC PLACE (empty-hand RIGHT click): place whatever the active hotbar entry is — a block (voxel
+## layer) or an asset (object layer). (Tools are never placed; they act on click via the seam.)
 func _place_active() -> void:
 	var entry: Dictionary = palette[hotbar[active_slot]]
+	if Items.is_tool(entry):
+		return                                       # tools are not placed; they act on click
 	var rc := _raycast_grid()
 	var cell: Vector3i = rc["place"]
 	if String(entry.get("kind", "block")) == "asset":
@@ -395,7 +435,8 @@ func _place_active() -> void:
 	_set_block(cell, hotbar[active_slot])
 
 
-## RIGHT click: remove the block OR the placed object under the crosshair — whichever the ray reaches first.
+## MC DESTROY (empty-hand LEFT click): remove the block OR the placed object under the crosshair —
+## whichever the ray reaches first.
 func _remove_target() -> void:
 	var rc := _raycast_grid()
 	var block_t: float = rc["t"] if rc["hit"] else INF
@@ -405,6 +446,280 @@ func _remove_target() -> void:
 		return
 	if rc["hit"]:
 		_erase_block(rc["cell"])
+
+
+# ══ HELD-ITEM SEAM: click dispatch (Liam spec 2026-07-03) ═════════════════════════════════════════════
+# Every click asks the ACTIVE HELD ITEM what to do. Empty hand => the Minecraft defaults; a TOOL item
+# (the sticky note today, the wand later) overrides. The controller never hard-codes per-tool behavior —
+# the tool's handler does, via the small documented API below. See runtime/sandbox_items.gd.
+
+## LEFT click. Empty hand => MC DESTROY. Tool => its primary().
+func _click_primary() -> void:
+	if _active_handler != null and _active_handler.has_method("primary"):
+		_active_handler.primary(self)
+		return
+	_remove_target()
+
+## RIGHT click. Empty hand => MC PLACE. Tool => its secondary().
+func _click_secondary() -> void:
+	if _active_handler != null and _active_handler.has_method("secondary"):
+		_active_handler.secondary(self)
+		return
+	# A tool held in hand is not "placed"; only blocks/assets are.
+	var entry: Dictionary = palette[hotbar[active_slot]]
+	if Items.is_tool(entry):
+		return
+	_place_active()
+
+## MIDDLE click. Empty hand OR a tool that does not override middle => MC PICK-BLOCK.
+func _click_middle() -> void:
+	if _active_handler != null and _active_handler.has_method("middle"):
+		_active_handler.middle(self)
+		return
+	_pick_into_hand()
+
+## MC pick-block: the thing you are looking at (a placed asset object first, else a block) becomes
+## the ACTIVE hotbar entry. If it is not already in the hotbar, it replaces the active slot.
+func _pick_into_hand() -> void:
+	var rc := _raycast_grid()
+	var block_t: float = rc["t"] if rc["hit"] else INF
+	var pick := _pick_object()
+	# Object under the crosshair (closer than any block) => pick its asset.
+	if pick["id"] != "" and pick["t"] < block_t and objects.has(pick["id"]):
+		var asset_id := String((objects[pick["id"]] as Dictionary)["asset"])
+		var pi := _palette_index_for_asset(asset_id)
+		if pi >= 0:
+			hotbar[active_slot] = pi
+			_after_hotbar_change()
+			_flash_status("picked asset: %s" % asset_id)
+		return
+	# Else a block => pick its palette type.
+	if rc["hit"] and world.has(rc["cell"]):
+		var type_name := String((world[rc["cell"]] as Dictionary)["type"])
+		var bi := _palette_index(type_name)
+		if bi >= 0:
+			hotbar[active_slot] = bi
+			_after_hotbar_change()
+			_flash_status("picked block: %s" % type_name)
+
+func _palette_index_for_asset(asset_id: String) -> int:
+	for i in palette.size():
+		var e: Dictionary = palette[i]
+		if String(e.get("kind", "block")) == "asset" and String(e.get("asset_id", "")) == asset_id:
+			return i
+	return -1
+
+func _after_hotbar_change() -> void:
+	_refresh_held_item()
+	_rebuild_hotbar_ui()
+	_refresh_status()
+	_update_preview_mesh()
+
+
+func _toggle_debug_verbs() -> void:
+	_debug_verbs = not _debug_verbs
+	_flash_status("debug verb layer %s (F/G/R/+-/X/B/N)" % ("ON" if _debug_verbs else "OFF"))
+
+
+# ══ HELD-ITEM REFRESH: build/select the handler for the active hotbar entry ════════════════════════════
+# Called whenever the active slot or its content changes. Empty hand / block / asset => no handler (MC
+# defaults). A tool => its (reused) handler; on_select / on_deselect fire so a tool can set up/tear down
+# its preview (the sticky-note orb).
+func _refresh_held_item() -> void:
+	var prev = _active_handler
+	var entry: Dictionary = palette[hotbar[active_slot]] if hotbar[active_slot] < palette.size() else {}
+	var next = null
+	if Items.is_tool(entry):
+		var slot_idx := hotbar[active_slot]
+		if not _handlers.has(slot_idx):
+			_handlers[slot_idx] = Items.make_handler(entry)
+		next = _handlers[slot_idx]
+	if next == prev:
+		return
+	if prev != null and prev.has_method("on_deselect"):
+		prev.on_deselect(self)
+	_active_handler = next
+	if next != null and next.has_method("on_select"):
+		next.on_select(self)
+
+
+# ══ STICKY-NOTE CONTROLLER API (the surface the sticky_note handler calls) ═════════════════════════════
+# The handler stays persistence-/scene-agnostic; the controller owns the world, the objects, the render
+# roots, and the save paths. These methods are that documented surface.
+
+## Raycast the crosshair to the EXACT surface point (spec: "sticks at the exact point I am looking at").
+## Returns { hit, point:Vector3 (world), normal:Vector3 (world), target:{kind, id?|cell?} }. Picks the
+## nearest of: a placed object (its exact mesh surface) OR a block cell face.
+func surface_pick() -> Dictionary:
+	if _cam == null:
+		return { "hit": false }
+	var origin := _cam.global_position
+	var dir := (-_cam.global_transform.basis.z).normalized()
+	# 1) placed objects: exact triangle-less approximation via the object AABB entry point + face.
+	var pick := _pick_object()
+	var obj_t: float = pick["t"] if pick["id"] != "" else INF
+	# 2) blocks: step to the first filled cell, hit point on its face.
+	var rc := _raycast_grid()
+	var block_t: float = rc["t"] if rc["hit"] else INF
+	if obj_t < block_t and objects.has(pick["id"]):
+		var rec: Dictionary = objects[pick["id"]]
+		var node = rec.get("node")
+		if node != null and is_instance_valid(node):
+			var world_aabb: AABB = (node as Node3D).global_transform * (rec["aabb"] as AABB)
+			var point := origin + dir * obj_t
+			var normal := _aabb_face_normal(world_aabb, point)
+			return { "hit": true, "point": point, "normal": normal,
+				"target": { "kind": "object", "id": String(pick["id"]) } }
+	if rc["hit"] and world.has(rc["cell"]):
+		var point2 := origin + dir * block_t
+		var cell_centre := _cell_to_world(rc["cell"])
+		var normal2 := _cell_face_normal(cell_centre, point2)
+		return { "hit": true, "point": point2, "normal": normal2,
+			"target": { "kind": "block", "cell": [rc["cell"].x, rc["cell"].y, rc["cell"].z] } }
+	return { "hit": false }
+
+## Outward normal of the AABB face nearest to a surface point.
+func _aabb_face_normal(aabb: AABB, point: Vector3) -> Vector3:
+	var c := aabb.get_center()
+	var d := point - c
+	var e := aabb.size * 0.5
+	# distance from each face (positive outside); largest ratio => the face we are on.
+	var rx := absf(d.x) / maxf(e.x, 1e-4)
+	var ry := absf(d.y) / maxf(e.y, 1e-4)
+	var rz := absf(d.z) / maxf(e.z, 1e-4)
+	if rx >= ry and rx >= rz:
+		return Vector3(signf(d.x), 0, 0)
+	elif ry >= rx and ry >= rz:
+		return Vector3(0, signf(d.y), 0)
+	return Vector3(0, 0, signf(d.z))
+
+func _cell_face_normal(cell_centre: Vector3, point: Vector3) -> Vector3:
+	var d := point - cell_centre
+	var ax := absf(d.x); var ay := absf(d.y); var az := absf(d.z)
+	if ax >= ay and ax >= az:
+		return Vector3(signf(d.x), 0, 0)
+	elif ay >= ax and ay >= az:
+		return Vector3(0, signf(d.y), 0)
+	return Vector3(0, 0, signf(d.z))
+
+## Stick a note at a surface hit. Stores the anchor in the TARGET's LOCAL space (+ face normal) so it
+## rides the target if it moves, renders the flat orange square, and returns the note id ("" on failure).
+func stick_note(hit: Dictionary) -> String:
+	if not bool(hit.get("hit", false)):
+		return ""
+	var target: Dictionary = hit.get("target", {})
+	var world_point: Vector3 = hit["point"]
+	var world_normal: Vector3 = hit.get("normal", Vector3.UP)
+	var local_point := world_point
+	var local_normal := world_normal
+	var xform := Transform3D.IDENTITY
+	if String(target.get("kind", "")) == "object" and objects.has(String(target.get("id", ""))):
+		var rec: Dictionary = objects[String(target["id"])]
+		var node = rec.get("node")
+		if node != null and is_instance_valid(node):
+			xform = (node as Node3D).global_transform
+			local_point = xform.affine_inverse() * world_point
+			local_normal = xform.affine_inverse().basis * world_normal
+	elif String(target.get("kind", "")) == "block":
+		var ca = target.get("cell", [0, 0, 0])
+		var cell := Vector3i(int(ca[0]), int(ca[1]), int(ca[2]))
+		xform = Transform3D(Basis.IDENTITY, _cell_to_world(cell))
+		local_point = xform.affine_inverse() * world_point
+		local_normal = world_normal
+	_note_seq += 1
+	var note_id := "note_%d" % _note_seq
+	var record := {
+		"id": note_id,
+		"target": target,
+		"local_point": [local_point.x, local_point.y, local_point.z],
+		"local_normal": [local_normal.x, local_normal.y, local_normal.z],
+		"text": "",
+		"held_item": Items.TOOL_STICKY_NOTE,   # provenance: which tool stuck it
+		"node": null,
+	}
+	_notes[note_id] = record
+	_realize_note(record)
+	return note_id
+
+## Build (or refresh) the flat orange square render node for a note and parent it under the notes root.
+func _realize_note(record: Dictionary) -> void:
+	if _headless:
+		return
+	if _notes_root == null:
+		_notes_root = Node3D.new()
+		_notes_root.name = "Notes"
+		add_child(_notes_root)
+	var mi = record.get("node")
+	if mi == null or not is_instance_valid(mi):
+		mi = StickyNote.make_note_mesh()
+		_notes_root.add_child(mi)
+		record["node"] = mi
+	_position_note(record)
+
+## Place a note's square at target.global_transform * local_anchor, oriented to the face normal.
+func _position_note(record: Dictionary) -> void:
+	var mi = record.get("node")
+	if mi == null or not is_instance_valid(mi):
+		return
+	var lp: Array = record["local_point"]
+	var ln: Array = record["local_normal"]
+	var local_point := Vector3(lp[0], lp[1], lp[2])
+	var local_normal := Vector3(ln[0], ln[1], ln[2])
+	var xform := _note_target_xform(record)
+	var world_point := xform * local_point
+	var world_normal := (xform.basis * local_normal).normalized()
+	if world_normal.length() < 0.01:
+		world_normal = Vector3.UP
+	# Sit the square just off the surface, facing outward along the normal.
+	(mi as Node3D).global_position = world_point + world_normal * 0.02
+	var up := Vector3.UP if absf(world_normal.dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
+	(mi as Node3D).look_at(world_point + world_normal * 0.02 + world_normal, up)
+
+## The current world transform of a note's target (object => its live node; block => its fixed cell).
+func _note_target_xform(record: Dictionary) -> Transform3D:
+	var target: Dictionary = record.get("target", {})
+	if String(target.get("kind", "")) == "object" and objects.has(String(target.get("id", ""))):
+		var rec: Dictionary = objects[String(target["id"])]
+		var node = rec.get("node")
+		if node != null and is_instance_valid(node):
+			return (node as Node3D).global_transform
+	if String(target.get("kind", "")) == "block":
+		var ca = target.get("cell", [0, 0, 0])
+		return Transform3D(Basis.IDENTITY, _cell_to_world(Vector3i(int(ca[0]), int(ca[1]), int(ca[2]))))
+	return Transform3D.IDENTITY
+
+## Re-place every note each frame so notes ride their (possibly moving/rotating) targets.
+func _tick_notes() -> void:
+	if _headless:
+		return
+	for id in _notes:
+		_position_note(_notes[id])
+
+## Open the note text editor bound to a specific note id (reuses the N-note LineEdit panel).
+func open_note_editor(note_id: String) -> void:
+	if _headless or _note_panel == null or not _notes.has(note_id):
+		return
+	_editing_note_id = note_id
+	_note_open = true
+	_note_panel.visible = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if _note_target_label != null:
+		var rec: Dictionary = _notes[note_id]
+		_note_target_label.text = "Sticky note on: %s" % String((rec.get("target", {}) as Dictionary).get("kind", "surface"))
+	_note_edit.text = String((_notes[note_id] as Dictionary).get("text", ""))
+	_note_edit.grab_focus()
+
+## Handlers call this to surface a one-line hint (delegates to the existing flash).
+func flash(msg: String) -> void:
+	_flash_status(msg)
+
+## Handlers call this to parent a 3D preview node (the sticky-note orb) under a HUD-3D root.
+func add_preview_child(n: Node3D) -> void:
+	if _preview3d_root == null:
+		_preview3d_root = Node3D.new()
+		_preview3d_root.name = "HeldToolPreview"
+		add_child(_preview3d_root)
+	_preview3d_root.add_child(n)
 
 
 ## Place a palette block at a grid cell. This is the ONE write path into the world Dictionary + the scene:
@@ -804,15 +1119,97 @@ func _close_note(save: bool) -> void:
 	if _note_panel != null:
 		_note_panel.visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	var editing := _editing_note_id
+	_editing_note_id = ""
 	if not save:
+		# Cancelled a fresh sticky note with no text yet => drop the empty note anchor.
+		if editing != "" and _notes.has(editing) and String((_notes[editing] as Dictionary).get("text", "")) == "":
+			_remove_note(editing)
 		return
 	var text := _note_edit.text.strip_edges() if _note_edit != null else ""
 	if text == "":
+		if editing != "" and _notes.has(editing):
+			_remove_note(editing)   # empty text => discard the sticky note
 		return
+	# STICKY-NOTE path: text belongs to a stuck note anchor (LEFT-click-with-sticky-note-held).
+	if editing != "" and _notes.has(editing):
+		(_notes[editing] as Dictionary)["text"] = text
+		if _write_sticky_note(_notes[editing]):
+			_flash_status("sticky note saved -> %s" % notes_path)
+		else:
+			_flash_status("NOTE FAILED to write %s" % notes_path)
+		return
+	# LEGACY N-note path (debug verb layer): a note on the selection or the crosshair spot.
 	if _write_note(text):
 		_flash_status("note saved -> %s" % notes_path)
 	else:
 		_flash_status("NOTE FAILED to write %s" % notes_path)
+
+
+## Remove a sticky note (its render node + record). Used when a fresh note is cancelled/left empty.
+func _remove_note(note_id: String) -> void:
+	if not _notes.has(note_id):
+		return
+	var rec: Dictionary = _notes[note_id]
+	var n = rec.get("node")
+	if n != null and is_instance_valid(n):
+		n.queue_free()
+	_notes.erase(note_id)
+
+
+## Append one STICKY-NOTE line to notes.jsonl. ADDITIVELY extends the RE #145 row schema: every prior
+## field is preserved (ts/world/world_version/object_id/asset_id/position/note) and the sticky-note
+## anchor (local_point, local_normal, target) + held-item provenance are ADDED. A Claude Code session
+## reading the file cold gets both the world position (for old readers) and the exact anchor.
+func _write_sticky_note(record: Dictionary) -> bool:
+	var target: Dictionary = record.get("target", {})
+	var obj_id := ""
+	var asset_id := ""
+	if String(target.get("kind", "")) == "object":
+		obj_id = String(target.get("id", ""))
+		if objects.has(obj_id):
+			asset_id = String((objects[obj_id] as Dictionary)["asset"])
+	# World position of the anchor now (so the legacy `position` field stays meaningful).
+	var xform := _note_target_xform(record)
+	var lp: Array = record["local_point"]
+	var world_point: Vector3 = xform * Vector3(lp[0], lp[1], lp[2])
+	var entry := {
+		# --- existing RE #145 schema (unchanged) ---
+		"ts": Time.get_datetime_string_from_system(true) + "Z",
+		"world": world_name,
+		"world_version": store.latest_version(world_name) if store != null else 0,
+		"object_id": obj_id,
+		"asset_id": asset_id,
+		"position": [world_point.x, world_point.y, world_point.z],
+		"note": String(record.get("text", "")),
+		# --- ADDED (additive; old readers ignore unknown keys) ---
+		"note_id": String(record.get("id", "")),
+		"kind": "sticky_note",
+		"held_item": String(record.get("held_item", Items.TOOL_STICKY_NOTE)),
+		"anchor_target": target,
+		"local_point": record["local_point"],
+		"local_normal": record["local_normal"],
+	}
+	return _append_note_line(entry)
+
+
+## Shared JSONL append (both note paths use it). Returns success.
+func _append_note_line(entry: Dictionary) -> bool:
+	var dir := notes_path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir):
+		DirAccess.make_dir_recursive_absolute(dir)
+	var f: FileAccess
+	if FileAccess.file_exists(notes_path):
+		f = FileAccess.open(notes_path, FileAccess.READ_WRITE)
+		if f != null:
+			f.seek_end()
+	else:
+		f = FileAccess.open(notes_path, FileAccess.WRITE)
+	if f == null:
+		return false
+	f.store_line(JSON.stringify(entry))
+	f.close()
+	return true
 
 
 ## Append one note line (JSONL). Standalone so headless tests call it directly. Returns success.
@@ -842,21 +1239,7 @@ func _write_note(text: String, obj_id_override := "", pos_override = null) -> bo
 		"position": [pos.x, pos.y, pos.z],
 		"note": text,
 	}
-	var dir := notes_path.get_base_dir()
-	if not DirAccess.dir_exists_absolute(dir):
-		DirAccess.make_dir_recursive_absolute(dir)
-	var f: FileAccess
-	if FileAccess.file_exists(notes_path):
-		f = FileAccess.open(notes_path, FileAccess.READ_WRITE)
-		if f != null:
-			f.seek_end()
-	else:
-		f = FileAccess.open(notes_path, FileAccess.WRITE)
-	if f == null:
-		return false
-	f.store_line(JSON.stringify(entry))
-	f.close()
-	return true
+	return _append_note_line(entry)
 
 
 # ══ WORLDS: load / save (append-only) / switch (preload swap) ═════════════════════════════════════════
@@ -894,7 +1277,45 @@ func _apply_world_data(data: Dictionary) -> void:
 			float(o.get("yaw_deg", 0.0)), float(o.get("scale", 1.0)),
 			o.get("behaviors", []) if typeof(o.get("behaviors")) == TYPE_ARRAY else [],
 			String(o.get("id", "")))
+	# Sticky notes reload with the world (their anchors target block cells / object ids just placed).
+	_clear_notes()
+	for nd in data.get("notes", []):
+		if typeof(nd) != TYPE_DICTIONARY:
+			continue
+		_load_note(nd)
 	_refresh_status()
+
+
+## Clear every stuck-note render node + record (a world switch / re-seed).
+func _clear_notes() -> void:
+	for id in _notes.keys():
+		var rec: Dictionary = _notes[id]
+		var n = rec.get("node")
+		if n != null and is_instance_valid(n):
+			n.queue_free()
+	_notes.clear()
+
+
+## Rebuild a note record from persisted data + realize its render node.
+func _load_note(nd: Dictionary) -> void:
+	var id := String(nd.get("id", ""))
+	if id == "":
+		_note_seq += 1
+		id = "note_%d" % _note_seq
+	else:
+		var n := int(id.trim_prefix("note_"))
+		_note_seq = maxi(_note_seq, n)
+	var record := {
+		"id": id,
+		"target": (nd.get("target", {}) as Dictionary).duplicate(true),
+		"local_point": (nd.get("local_point", [0, 0, 0]) as Array).duplicate(),
+		"local_normal": (nd.get("local_normal", [0, 1, 0]) as Array).duplicate(),
+		"text": String(nd.get("text", "")),
+		"held_item": String(nd.get("held_item", "sticky_note")),
+		"node": null,
+	}
+	_notes[id] = record
+	_realize_note(record)
 
 
 ## Serialize the live world back to pure data (the exact file shape the store persists).
@@ -919,10 +1340,24 @@ func _serialize_world() -> Dictionary:
 			"scale": float(rec["scale"]),
 			"behaviors": (rec.get("behaviors", []) as Array).duplicate(true),
 		})
+	# Sticky notes: persist so they reload WITH the world (spec: "into the world save so notes
+	# reload with the world"). Each carries its anchor (target + local point/normal) + text.
+	var notes := []
+	for id in _notes:
+		var nrec: Dictionary = _notes[id]
+		notes.append({
+			"id": String(nrec.get("id", id)),
+			"target": (nrec.get("target", {}) as Dictionary).duplicate(true),
+			"local_point": (nrec.get("local_point", [0, 0, 0]) as Array).duplicate(),
+			"local_normal": (nrec.get("local_normal", [0, 1, 0]) as Array).duplicate(),
+			"text": String(nrec.get("text", "")),
+			"held_item": String(nrec.get("held_item", "sticky_note")),
+		})
 	return {
 		"grid_size": grid_size,
 		"blocks": blocks,
 		"objects": objs,
+		"notes": notes,
 	}
 
 
@@ -1018,6 +1453,10 @@ func _build_palette() -> void:
 		_pal("Stairs",   "stairs",   {"width":1.0,"total_height":1.0,"total_depth":1.0,"steps":4}, [0.72,0.72,0.76], "Structures"),
 		_pal("Arch",     "arch",     {"width":2.0,"height":2.0,"depth":0.6},               [0.76,0.70,0.66], "Structures"),
 	]
+	# HELD TOOLS (Liam spec 2026-07-03): holdable items whose click behavior overrides the MC defaults.
+	# The sticky note is the one tool built now; the rotate/scale/manipulate wand is queued (same seam).
+	for tool_entry in Items.tool_palette_entries():
+		palette.append(tool_entry)
 
 func _pal(name: String, shape: String, params: Dictionary, albedo: Array, category: String) -> Dictionary:
 	# `material` starts as a plain albedo colour (UNTEXTURED). This dict is the per-block live-texturing seam.
@@ -1113,13 +1552,21 @@ func _rebuild_hotbar_ui() -> void:
 		c.queue_free()
 	for i in 9:
 		var slot := _make_slot_button(hotbar[i], i == active_slot, str(i + 1))
+		slot.role = "hotbar"                          # drag source + drop target
+		slot.slot_index = i
 		var idx := i
 		slot.pressed.connect(func(): _select_slot(idx))
 		_hotbar_ui.add_child(slot)
+		_apply_slot_thumbnail(slot, hotbar[i])
 
 
-func _make_slot_button(pal_idx: int, active: bool, label: String) -> Button:
-	var b := Button.new()
+## Build one drag-and-drop-aware inventory slot button (SandboxInventorySlot: extends Button).
+## `role`/`slot_index` are set by the caller. Shows the item's thumbnail (image preview) if cached,
+## else the flat albedo tint (fallback) + name.
+func _make_slot_button(pal_idx: int, active: bool, label: String) -> Object:
+	var b = _InvSlot.new()
+	b.ctrl = self
+	b.pal_idx = pal_idx
 	b.custom_minimum_size = Vector2(56, 56)
 	b.clip_text = true
 	var entry: Dictionary = palette[pal_idx] if pal_idx >= 0 and pal_idx < palette.size() else {}
@@ -1128,17 +1575,83 @@ func _make_slot_button(pal_idx: int, active: bool, label: String) -> Button:
 	else:
 		b.text = String(entry.get("name", "-"))
 	b.add_theme_font_size_override("font_size", 11)
-	# Tint the slot with the block's untextured albedo so the palette reads at a glance.
+	# Tint the slot with the block's untextured albedo so the palette reads at a glance (fallback +
+	# background behind the thumbnail).
 	var col_arr = entry.get("material", {}).get("albedo", [0.8, 0.8, 0.8])
 	var col := Color(col_arr[0], col_arr[1], col_arr[2])
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = col.darkened(0.15)
+	sb.bg_color = col.darkened(0.35)
 	sb.set_border_width_all(3)
 	sb.border_color = Color(1, 1, 0.4) if active else Color(0.15, 0.15, 0.18)
 	b.add_theme_stylebox_override("normal", sb)
 	b.add_theme_stylebox_override("hover", sb)
 	b.add_theme_stylebox_override("pressed", sb)
 	return b
+
+
+## Overlay the item's image-preview thumbnail on a slot button (a TextureRect child that fills the
+## button). If no thumbnail exists yet, request one (async render); the icon fills in on the next open.
+func _apply_slot_thumbnail(slot: Object, pal_idx: int) -> void:
+	if thumbs == null or pal_idx < 0 or pal_idx >= palette.size():
+		return
+	var entry: Dictionary = palette[pal_idx]
+	var key := _thumb_key(entry)
+	# Remove any prior thumbnail child.
+	var old = (slot as Control).get_node_or_null("thumb")
+	if old != null:
+		old.queue_free()
+	var tex: Texture2D = thumbs.get_texture(key)
+	if tex != null:
+		var tr := TextureRect.new()
+		tr.name = "thumb"
+		tr.texture = tex
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE   # clicks/drags pass through to the button
+		tr.set_anchors_preset(Control.PRESET_FULL_RECT)
+		tr.offset_top = 12                              # leave the top label visible
+		(slot as Control).add_child(tr)
+	else:
+		# No thumbnail cached — kick off a render so it is ready next time the inventory opens.
+		_request_thumbnail(pal_idx)
+
+
+func _thumb_key(entry: Dictionary) -> String:
+	var kind := String(entry.get("kind", "block"))
+	if kind == "asset":
+		return "asset__" + String(entry.get("asset_id", entry.get("name", "?")))
+	if kind == "tool":
+		return "tool__" + String(entry.get("tool", entry.get("name", "?")))
+	return "block__" + String(entry.get("name", "?"))
+
+
+## Render a thumbnail for a palette entry (block synchronously; asset when its GLB is loaded).
+func _request_thumbnail(pal_idx: int) -> void:
+	if thumbs == null or _headless or pal_idx < 0 or pal_idx >= palette.size():
+		return
+	var entry: Dictionary = palette[pal_idx]
+	var key := _thumb_key(entry)
+	if thumbs.has_thumbnail(key):
+		return
+	var kind := String(entry.get("kind", "block"))
+	if kind == "block" or kind == "tool":
+		var shape := String(entry.get("shape", ""))
+		if shape == "":
+			return                                       # tools have no mesh preview (flat tint is fine)
+		await thumbs.ensure_block(key, shape, entry.get("params", {}), entry.get("material", {}).get("albedo", [0.8, 0.8, 0.8]))
+	elif kind == "asset":
+		var aid := String(entry.get("asset_id", ""))
+		if assets != null and assets.is_loaded(aid):
+			var tpl = assets._cache.get(aid)
+			if tpl != null:
+				await thumbs.ensure_asset(key, tpl)
+
+
+## Public: a Texture2D thumbnail for a palette index (used by the drag preview). May be null.
+func thumbnail_for(pal_idx: int) -> Texture2D:
+	if thumbs == null or pal_idx < 0 or pal_idx >= palette.size():
+		return null
+	return thumbs.get_texture(_thumb_key(palette[pal_idx]))
 
 
 func _build_inventory_panel() -> void:
@@ -1198,21 +1711,72 @@ func _populate_inventory(category: String) -> void:
 		var entry: Dictionary = palette[pal_idx]
 		if entry["category"] != category:
 			continue
-		var b := _make_slot_button(pal_idx, false, "")
+		var b = _make_slot_button(pal_idx, false, "")
+		b.role = "inventory"                          # drag source (drag onto a hotbar slot)
 		b.custom_minimum_size = Vector2(80, 72)
 		b.add_theme_font_size_override("font_size", 11)
-		var idx := pal_idx
+		var idx: int = pal_idx
 		b.pressed.connect(func(): _pick_into_hotbar(idx))
 		_inv_grid.add_child(b)
+		_apply_slot_thumbnail(b, pal_idx)
 	# reflect the active tab
 	for t in _inv_tabs.get_children():
 		if t is Button:
 			t.button_pressed = (t.text == category)
+	# Render any missing thumbnails for this tab's items, then re-apply so images fill in this open.
+	_render_missing_thumbnails_for(category)
+
+
+## Render (async) any not-yet-cached thumbnails for the given category, then re-skin the grid slots.
+func _render_missing_thumbnails_for(category: String) -> void:
+	if thumbs == null or _headless:
+		return
+	var rendered_any := false
+	for pal_idx in palette.size():
+		var entry: Dictionary = palette[pal_idx]
+		if String(entry.get("category", "")) != category:
+			continue
+		var key := _thumb_key(entry)
+		if thumbs.has_thumbnail(key):
+			continue
+		await _request_thumbnail(pal_idx)
+		rendered_any = true
+	# Only re-skin if the inventory is still open on this tab (the user may have moved on).
+	if rendered_any and _inv_open and _active_category == category:
+		for child in _inv_grid.get_children():
+			if child.has_method("_get_drag_data") and int(child.pal_idx) >= 0:
+				_apply_slot_thumbnail(child, int(child.pal_idx))
 
 
 func _pick_into_hotbar(pal_idx: int) -> void:
-	# MC creative: clicking a block in the inventory puts it in the ACTIVE hotbar slot.
+	# MC creative: clicking (or dragging) a block in the inventory puts it in the ACTIVE hotbar slot.
 	hotbar[active_slot] = pal_idx
+	_refresh_held_item()
+	_rebuild_hotbar_ui()
+	_refresh_status()
+	_update_preview_mesh()
+
+
+## Drag-and-drop drop target: set a SPECIFIC hotbar slot to a palette entry (native DnD path).
+func _set_hotbar_slot(slot: int, pal_idx: int) -> void:
+	if slot < 0 or slot > 8 or pal_idx < 0 or pal_idx >= palette.size():
+		return
+	hotbar[slot] = pal_idx
+	if slot == active_slot:
+		_refresh_held_item()
+	_rebuild_hotbar_ui()
+	_refresh_status()
+	_update_preview_mesh()
+
+
+## Drag-and-drop between two hotbar slots (swap).
+func _swap_hotbar_slots(a: int, b: int) -> void:
+	if a < 0 or a > 8 or b < 0 or b > 8 or a == b:
+		return
+	var tmp: int = hotbar[a]
+	hotbar[a] = hotbar[b]
+	hotbar[b] = tmp
+	_refresh_held_item()
 	_rebuild_hotbar_ui()
 	_refresh_status()
 	_update_preview_mesh()
@@ -1230,6 +1794,7 @@ func _toggle_inventory() -> void:
 
 func _select_slot(i: int) -> void:
 	active_slot = clampi(i, 0, 8)
+	_refresh_held_item()
 	_rebuild_hotbar_ui()
 	_refresh_status()
 	_update_preview_mesh()
@@ -1249,16 +1814,21 @@ func _refresh_status() -> void:
 	if _status == null:
 		return
 	var entry: Dictionary = palette[hotbar[active_slot]]
+	var kind := String(entry.get("kind", "block"))
 	var lines := []
-	lines.append("%s: %s   (slot %d)   |   world: %s   |   L place · R remove · 1-9 slots · E inventory · WASD+Space/Shift fly" % [
-		"Asset" if String(entry.get("kind", "block")) == "asset" else "Block",
-		String(entry["name"]), active_slot + 1, world_name])
-	if selected_id != "" and objects.has(selected_id):
+	var label := "Tool" if kind == "tool" else ("Asset" if kind == "asset" else "Block")
+	if kind == "tool":
+		lines.append("%s: %s   (slot %d)   |   world: %s   |   LEFT use · MIDDLE pick · 1-9 slots · E inventory · WASD+Space/Shift fly" % [
+			label, String(entry["name"]), active_slot + 1, world_name])
+	else:
+		lines.append("%s: %s   (slot %d)   |   world: %s   |   RIGHT place · LEFT destroy · MIDDLE pick · 1-9 slots · E inventory · WASD fly" % [
+			label, String(entry["name"]), active_slot + 1, world_name])
+	if _debug_verbs and selected_id != "" and objects.has(selected_id):
 		var rec: Dictionary = objects[selected_id]
-		lines.append("Selected: %s (%s)%s   |   G grab · R rotate · +/- scale · X delete · B behaviors · N note" % [
+		lines.append("[debug] Selected: %s (%s)%s   |   G grab · R rotate · +/- scale · X delete · B behaviors · N note" % [
 			selected_id, String(rec["asset"]), "  [GRABBED — click to drop]" if _grabbing else ""])
 	else:
-		lines.append("F select object · N note here · F5 save world · [ ] switch world")
+		lines.append("F5 save world · [ ] switch world · \\ toggle debug verbs%s" % ("  [DEBUG VERBS ON]" if _debug_verbs else ""))
 	if _time < _flash_until and _flash_text != "":
 		lines.append(">> " + _flash_text)
 	_status.text = "\n".join(lines)
@@ -1269,6 +1839,11 @@ func _update_preview() -> void:
 	# Hide the placement ghost during a --shot proof run: it floats ~half-reach in FRONT of the camera,
 	# so in the proof PNG it renders huge and obscures the actual build. Proofs show the build, not UI ghosts.
 	if _did_shot or _inv_open or _cam == null:
+		if _preview != null:
+			_preview.visible = false
+		return
+	# Holding a TOOL => no block-placement ghost (the tool draws its own preview, e.g. the note orb).
+	if Items.is_tool(palette[hotbar[active_slot]]):
 		if _preview != null:
 			_preview.visible = false
 		return
@@ -1287,7 +1862,10 @@ func _update_preview_mesh() -> void:
 	if _preview == null:
 		return
 	var entry: Dictionary = palette[hotbar[active_slot]]
-	if String(entry.get("kind", "block")) == "asset":
+	var kind := String(entry.get("kind", "block"))
+	if kind == "tool":
+		return                                       # tools have no placement ghost (handled in _update_preview)
+	if kind == "asset":
 		# Assets preview as a unit ghost box (the real bounds are unknown until the lazy load lands).
 		var bm := BoxMesh.new()
 		bm.size = Vector3.ONE * 0.9
