@@ -1,0 +1,417 @@
+{
+	"format": "sandbox.world/v2",
+	"name": "nature_gallery",
+	"description": "Every imported asset (all 34, both kits) lined up in a grid - the all-assets showcase and the scene-to-scene preload-swap demo.",
+	"grid_size": 1.0,
+	"blocks": [],
+	"objects": [
+		{
+			"id": "obj_1",
+			"asset": "kenney_nature__bed",
+			"position": [
+				-14.0,
+				-0.5,
+				-6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_2",
+			"asset": "kenney_nature__bed_floor",
+			"position": [
+				-10.0,
+				-0.5,
+				-6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_3",
+			"asset": "kenney_nature__bridge_center_stone",
+			"position": [
+				-6.0,
+				-0.5,
+				-6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_4",
+			"asset": "kenney_nature__bridge_center_stoneround",
+			"position": [
+				-2.0,
+				-0.5,
+				-6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_5",
+			"asset": "kenney_nature__bridge_center_wood",
+			"position": [
+				2.0,
+				-0.5,
+				-6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_6",
+			"asset": "kenney_nature__bridge_center_woodround",
+			"position": [
+				6.0,
+				-0.5,
+				-6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_7",
+			"asset": "kenney_nature__bridge_side_stone",
+			"position": [
+				10.0,
+				-0.5,
+				-6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_8",
+			"asset": "kenney_nature__bridge_side_stoneround",
+			"position": [
+				14.0,
+				-0.5,
+				-6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_9",
+			"asset": "kenney_nature__bridge_side_wood",
+			"position": [
+				-14.0,
+				-0.5,
+				-2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_10",
+			"asset": "kenney_nature__bridge_side_woodround",
+			"position": [
+				-10.0,
+				-0.5,
+				-2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_11",
+			"asset": "kenney_nature__bridge_stone",
+			"position": [
+				-6.0,
+				-0.5,
+				-2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_12",
+			"asset": "kenney_nature__bridge_stonenarrow",
+			"position": [
+				-2.0,
+				-0.5,
+				-2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_13",
+			"asset": "kenney_nature__bridge_stoneround",
+			"position": [
+				2.0,
+				-0.5,
+				-2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_14",
+			"asset": "kenney_nature__bridge_stoneroundnarrow",
+			"position": [
+				6.0,
+				-0.5,
+				-2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_15",
+			"asset": "kenney_nature__bridge_wood",
+			"position": [
+				10.0,
+				-0.5,
+				-2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_16",
+			"asset": "kenney_nature__bridge_woodnarrow",
+			"position": [
+				14.0,
+				-0.5,
+				-2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_17",
+			"asset": "kenney_nature__bridge_woodround",
+			"position": [
+				-14.0,
+				-0.5,
+				2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_18",
+			"asset": "kenney_nature__bridge_woodroundnarrow",
+			"position": [
+				-10.0,
+				-0.5,
+				2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_19",
+			"asset": "kenney_nature__cactus_short",
+			"position": [
+				-6.0,
+				-0.5,
+				2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_20",
+			"asset": "kenney_nature__cactus_tall",
+			"position": [
+				-2.0,
+				-0.5,
+				2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_21",
+			"asset": "kenney_nature__campfire_bricks",
+			"position": [
+				2.0,
+				-0.5,
+				2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_22",
+			"asset": "kenney_nature__campfire_logs",
+			"position": [
+				6.0,
+				-0.5,
+				2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_23",
+			"asset": "kenney_nature__campfire_planks",
+			"position": [
+				10.0,
+				-0.5,
+				2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_24",
+			"asset": "kenney_nature__campfire_stones",
+			"position": [
+				14.0,
+				-0.5,
+				2.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_25",
+			"asset": "quaternius_nature__pine_-_free_model_by_quaternius_699sfulcn2",
+			"position": [
+				-14.0,
+				-0.5,
+				6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_26",
+			"asset": "quaternius_nature__pine_-_free_model_by_quaternius_79gmllnweb",
+			"position": [
+				-10.0,
+				-0.5,
+				6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_27",
+			"asset": "quaternius_nature__pine_-_free_model_by_quaternius_igsu0cpobz",
+			"position": [
+				-6.0,
+				-0.5,
+				6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_28",
+			"asset": "quaternius_nature__pine_-_free_model_by_quaternius_zt62gcekxz",
+			"position": [
+				-2.0,
+				-0.5,
+				6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_29",
+			"asset": "quaternius_nature__rock_path_square_wide_-_free_model_by_quaternius_8wdmuvrsya",
+			"position": [
+				2.0,
+				-0.5,
+				6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_30",
+			"asset": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_7pdbpelkqr",
+			"position": [
+				6.0,
+				-0.5,
+				6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_31",
+			"asset": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_8orakn9m0x",
+			"position": [
+				10.0,
+				-0.5,
+				6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_32",
+			"asset": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_9awlx82xuf",
+			"position": [
+				14.0,
+				-0.5,
+				6.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_33",
+			"asset": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_edspjnecm7",
+			"position": [
+				-14.0,
+				-0.5,
+				10.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_34",
+			"asset": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_gvtsmmuzv7",
+			"position": [
+				-10.0,
+				-0.5,
+				10.0
+			],
+			"yaw_deg": 180.0,
+			"scale": 1.0,
+			"behaviors": []
+		}
+	]
+}
