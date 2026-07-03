@@ -175,6 +175,11 @@ func _initialize() -> void:
 	ok = _check("variant genome is lineage-ready (parent = base, origin inject)",
 		var1.get("parent_ids") == [g_a.id] and String(var1.get("origin")) == "inject") and ok
 
+	# --- 4.5 the surface scripts COMPILE (a parse error returns null — catches missing helpers
+	# the class-cache pass does not, since scene scripts are only compiled on load) ---------------
+	ok = _check("evolution_3d.gd compiles", load("res://aperture/evolution_3d.gd") != null) and ok
+	ok = _check("aperture_3d.gd compiles", load("res://aperture/aperture_3d.gd") != null) and ok
+
 	# --- 5. live guards ----------------------------------------------------------------------------
 	ok = _check("live shared branches.jsonl gained no rows",
 		_line_count(EvolverSubstrate.branches_path(EvolverSubstrate.DEFAULT_STATE_DIR)) == live_branches_before) and ok

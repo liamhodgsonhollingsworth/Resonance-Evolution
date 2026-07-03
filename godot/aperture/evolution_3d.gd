@@ -121,6 +121,21 @@ func _apply_http_index(text: String) -> bool:
 			branches.append(br)
 	return true
 
+## Rewrite a raw row's media URLs back to local paths IN MEMORY (mirror-inverse of the server's
+## rewrite_local_media — the wire shape differs, the identity is the local file).
+func _media_to_local(raw: Dictionary) -> void:
+	var media = raw.get("media")
+	if typeof(media) != TYPE_DICTIONARY:
+		return
+	if media.get("image_url") != null:
+		media["image_url"] = EvolverSubstrate.media_url_to_local(String(media.get("image_url")))
+	var imgs = media.get("images")
+	if typeof(imgs) == TYPE_ARRAY:
+		var out: Array = []
+		for u in imgs:
+			out.append(EvolverSubstrate.media_url_to_local(String(u)))
+		media["images"] = out
+
 func _load_from_files(via: String) -> void:
 	actions_channel = "file"
 	var rows := EvolverSubstrate.evolver_rows(
