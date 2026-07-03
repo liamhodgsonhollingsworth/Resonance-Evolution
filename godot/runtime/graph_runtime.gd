@@ -106,6 +106,7 @@ func _init() -> void:
 	# for the sandbox's _apply_material seam) — see primitives/prim_texture_apply.gd.
 	register("TextureApply", PrimTextureApply)
 	register("MathPaint", PrimMathPaint)
+	register("LSystem", PrimLSystem)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
