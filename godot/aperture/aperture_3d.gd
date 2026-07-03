@@ -141,8 +141,9 @@ func _build_panels() -> void:
 		var ang := -span * 0.5 + span * (float(i) + 0.5) / float(n)
 		var panel := _make_panel(card)
 		panel.position = Vector3(sin(ang) * radius, 1.9, -cos(ang) * radius)
+		add_child(panel)  # must be inside the tree before look_at
 		panel.look_at(Vector3(0, 1.9, 0), Vector3.UP)
-		add_child(panel)
+		panel.rotate_object_local(Vector3.UP, PI)  # look_at faces -Z at target; flip the face outward
 		_panels[String(card.get("id"))] = panel
 
 func _make_panel(card: Dictionary) -> Node3D:
