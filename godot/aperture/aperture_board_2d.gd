@@ -66,6 +66,7 @@ const POLL_INTERVAL := 10.0         # POLL_INTERVAL_MS
 ##   mode           "auto" (http, file fallback) | "http" | "file"
 ##   base_url       the web board's server origin
 ##   inbox_path/feedback_path/bookmarks_path   file-mode substrate paths
+##   notes_path                                file-mode per-card note substrate (notes.jsonl)
 ##   board_json_path                           the curated board json (file mode)
 var config: Dictionary = {
 	"mode": "auto",
@@ -73,6 +74,7 @@ var config: Dictionary = {
 	"inbox_path": "G:/Wavelet/Alethea-cc/state/aperture/inbox/inbox.jsonl",
 	"feedback_path": "G:/Wavelet/Alethea-cc/state/aperture/feedback.jsonl",
 	"bookmarks_path": "G:/Wavelet/Alethea-cc/state/aperture/bookmarks.jsonl",
+	"notes_path": "G:/Wavelet/Alethea-cc/state/aperture/notes/notes.jsonl",
 	"board_json_path": "G:/Wavelet/repos/Resonance-Website/static/aperture/aperture_board.json",
 }
 
@@ -324,6 +326,14 @@ func _column_width() -> float:
 func refresh() -> void:
 	if _root_vbox == null:
 		return          # UI not built yet (_ready is deferred when added during tree bootstrap)
+	# BOOT SETTLE FIX (input-fix arc r2): _build_ui builds columns before the board's real size is
+	# known (deferred _ready → size.x can be 0), so the FIRST grid layout used the wrong column count
+	# and then re-laid-out once the resize signal fired — a ~1s "settle" during which tiles jumped.
+	# Reconcile the column count to the actual width HERE, before any tile is placed, so the grid is
+	# built once at the final geometry and never re-settles. (No-op when already correct.)
+	var want := _column_count_for(min(size.x, MAX_WIDTH))
+	if want != _columns.size():
+		_rebuild_columns()
 	var cards := await _fetch_cards()
 	var board_cards := await _fetch_board_cards()
 	var composed := ApertureBoardLogic.compose(cards, board_cards, _skipped)
@@ -618,7 +628,9 @@ func _estimate_height(card: Dictionary) -> float:
 	var w := _column_width()
 	var h := 44.0
 	if (card.get("images", []) as Array).size() > 0:
-		h += w * 0.66
+		h += w * 0.6          # matches the RESERVED image-slot height (_column_width()*0.6) exactly —
+		                       # the slot never changes after build (r2), so the greedy-masonry estimate
+		                       # stays accurate for the tile's whole lifetime (no post-load drift)
 	var chars := String(card.get("title", "")).length() + String(card.get("summary", "")).length() \
 		+ String(card.get("subtitle", "")).length()
 	h += ceil(chars / max(1.0, w / 7.0)) * 19.0
@@ -745,12 +757,17 @@ func _build_tile(card: Dictionary, opts: Dictionary) -> Control:
 			btn.pressed.connect(func(): _decide(card, String(act.get("id")), panel))
 			bar.add_child(btn)
 
-	# ---- overlay: hover ✕ skip (top-right) + ☆ bookmark (top-left) ----
+	# ---- overlay: hover ✕ skip (top-right) + ✎ feedback (left of ✕) + ☆ bookmark (top-left) ----
 	var overlay := Control.new()
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(overlay)
 	var skip_btn: Button = null
 	var bm_btn: Button = null
+	var note_btn: Button = null
+	# The inline per-card feedback box (built once, hidden until ✎). It writes to the SAME notes
+	# substrate the web detail-page textarea writes (see _open_feedback_box / _submit_card_note).
+	var note_box := _build_note_box(card)
+	panel.add_child(note_box)
 	if not decision:
 		skip_btn = _round_button("✕", PALETTE["accent.red"])
 		skip_btn.tooltip_text = "Skip / remove this"
@@ -762,6 +779,17 @@ func _build_tile(card: Dictionary, opts: Dictionary) -> Control:
 		skip_btn.offset_right = -6
 		skip_btn.offset_top = 6
 		skip_btn.offset_bottom = 30
+		# ✎ per-card feedback — opens the inline note box; sits just left of ✕.
+		note_btn = _round_button("✎", PALETTE["accent.cool"])
+		note_btn.tooltip_text = "Leave feedback on this card"
+		note_btn.pressed.connect(func(): _toggle_feedback_box(note_box))
+		overlay.add_child(note_btn)
+		note_btn.anchor_left = 1.0
+		note_btn.anchor_right = 1.0
+		note_btn.offset_left = -58
+		note_btn.offset_right = -34
+		note_btn.offset_top = 6
+		note_btn.offset_bottom = 30
 		bm_btn = _round_button("☆", PALETTE["accent.gold"])
 		bm_btn.tooltip_text = "Save this"
 		bm_btn.pressed.connect(func(): _bookmark(card, bm_btn))
@@ -771,6 +799,7 @@ func _build_tile(card: Dictionary, opts: Dictionary) -> Control:
 		bm_btn.offset_top = 6
 		bm_btn.offset_bottom = 30
 		skip_btn.visible = false
+		note_btn.visible = false
 		bm_btn.visible = false
 
 	# hover: border-hover + reveal the controls (aperture.css .tile:hover)
@@ -778,6 +807,8 @@ func _build_tile(card: Dictionary, opts: Dictionary) -> Control:
 		panel.add_theme_stylebox_override("panel", _tile_style(is_notif, accent, true))
 		if skip_btn != null:
 			skip_btn.visible = true
+		if note_btn != null:
+			note_btn.visible = true
 		if bm_btn != null:
 			bm_btn.visible = true
 		panel.set_meta("hovered", true))
@@ -785,6 +816,9 @@ func _build_tile(card: Dictionary, opts: Dictionary) -> Control:
 		panel.add_theme_stylebox_override("panel", _tile_style(is_notif, accent, false))
 		if skip_btn != null:
 			skip_btn.visible = false
+		# the ✎ button stays visible while its box is open (so the box has an obvious owner)
+		if note_btn != null:
+			note_btn.visible = note_box.visible
 		if bm_btn != null:
 			bm_btn.visible = _bookmarked.has(_dom_id(card))   # a saved ★ stays visible
 		panel.set_meta("hovered", false))
@@ -888,6 +922,7 @@ func _actions() -> ApertureActions:
 		"base_url": config["base_url"],
 		"feedback_path": config["feedback_path"],
 		"bookmarks_path": config["bookmarks_path"],
+		"notes_path": config.get("notes_path", ""),
 	})
 
 ## The web DOM tile id (bookmarks are keyed on it: "tile_artifact_<apx>" / the board tile id).
@@ -971,6 +1006,123 @@ func _decide(card: Dictionary, action_id: String, tile: Control) -> void:
 		tile.get_parent().remove_child(tile)
 	tile.queue_free()
 
+# ---------------------------------------------------------------------------------------------------
+# per-card FEEDBACK box (✎) — the big feature (Liam 2026-07-03: "I want to give chat feedback for
+# individual cards ... lots of changes to make on individual aperture cards"). Writes to the SAME
+# per-card note substrate the web detail-page textarea writes (notes.jsonl, keyed on the full web
+# DOM tile id), so a note typed HERE is byte-indistinguishable from one typed on the web board.
+# ---------------------------------------------------------------------------------------------------
+
+## The note module_id — SAME derivation as the web board's tile.id (aperture_notes keys on the FULL
+## tile id, NOT the stripped skipId). For a pushed artifact: "tile_artifact_<apx>"; for a board
+## content tile: the tile's own id. This is _dom_id — reusing it keeps the two channels' keys aligned
+## with the web (bookmark + note both key on the DOM tile id; only skip strips the prefix).
+func _note_module_id(card: Dictionary) -> String:
+	return _dom_id(card)
+
+## Build the inline feedback box (hidden until ✎). It is a bottom-anchored panel holding a one-line
+## text entry + Send + Cancel. The controls are STOP-filtered so their input never bubbles to the
+## tile's click-through (typing / clicking Send must not also "open the card"). Kept minimal and
+## parity-shaped — the web equivalent is a textarea on the detail page; this is its in-board twin.
+func _build_note_box(card: Dictionary) -> Control:
+	var box := PanelContainer.new()
+	box.name = "FeedbackBox"
+	box.visible = false
+	box.mouse_filter = Control.MOUSE_FILTER_STOP        # the box captures its own clicks
+	var s := StyleBoxFlat.new()
+	s.bg_color = Color(6 / 255.0, 8 / 255.0, 13 / 255.0, 0.98)
+	s.set_corner_radius_all(8)
+	s.set_border_width_all(1)
+	s.border_color = COL_CARD_BORDER_HOVER
+	s.content_margin_left = 8
+	s.content_margin_right = 8
+	s.content_margin_top = 8
+	s.content_margin_bottom = 8
+	box.add_theme_stylebox_override("panel", s)
+	# bottom-anchored, full width, above the tile — an overlay, so it never reflows the caption
+	box.anchor_left = 0.0
+	box.anchor_right = 1.0
+	box.anchor_top = 1.0
+	box.anchor_bottom = 1.0
+	box.offset_left = 4
+	box.offset_right = -4
+	box.offset_top = -86
+	box.offset_bottom = -4
+	box.grow_vertical = Control.GROW_DIRECTION_BEGIN
+
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 6)
+	box.add_child(v)
+	var lbl := Label.new()
+	lbl.text = "Feedback on this card"
+	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_color_override("font_color", COL_INK_SOFT)
+	v.add_child(lbl)
+	var edit := LineEdit.new()
+	edit.name = "FeedbackEdit"
+	edit.placeholder_text = "Type a change / note…"
+	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	edit.add_theme_font_size_override("font_size", 12)
+	v.add_child(edit)
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 6)
+	v.add_child(bar)
+	var status := Label.new()
+	status.name = "FeedbackStatus"
+	status.add_theme_font_size_override("font_size", 10)
+	status.add_theme_color_override("font_color", COL_INK_FAINT)
+	status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.add_child(status)
+	var send := Button.new()
+	send.text = "Send"
+	send.add_theme_font_size_override("font_size", 11)
+	_style_action_button(send, PALETTE["accent.green"])
+	bar.add_child(send)
+	var cancel := Button.new()
+	cancel.text = "Cancel"
+	cancel.add_theme_font_size_override("font_size", 11)
+	_style_action_button(cancel, COL_INK_SOFT)
+	bar.add_child(cancel)
+
+	var submit := func(): _submit_card_note(card, edit, status)
+	edit.text_submitted.connect(func(_t): submit.call())
+	send.pressed.connect(submit)
+	cancel.pressed.connect(func(): _close_feedback_box(box))
+	return box
+
+## Toggle the box; opening focuses the field so Liam can type immediately.
+func _toggle_feedback_box(box: Control) -> void:
+	if box.visible:
+		_close_feedback_box(box)
+	else:
+		_open_feedback_box(box)
+
+func _open_feedback_box(box: Control) -> void:
+	box.visible = true
+	var edit := box.find_child("FeedbackEdit", true, false) as LineEdit
+	if edit != null:
+		edit.grab_focus()
+
+func _close_feedback_box(box: Control) -> void:
+	box.visible = false
+
+## Write the per-card note — the SAME channel/schema the web detail-page textarea uses (routed
+## through ApertureActions.note: http POST /api/aperture/note or the file-mode notes.jsonl append).
+func _submit_card_note(card: Dictionary, edit: LineEdit, status: Label) -> void:
+	var text := edit.text
+	if text.strip_edges() == "":
+		if status != null:
+			status.text = "type something first"
+		return
+	var res := _actions().note(_note_module_id(card), text, String(card.get("title", "")))
+	if bool(res.get("ok", false)):
+		if status != null:
+			status.text = "sent ✓"
+		edit.clear()
+	else:
+		if status != null:
+			status.text = "send failed: " + String(res.get("error", res.get("status", "?")))
+
 ## openUrl parity: pushed artifacts open their media.link (no fallback); quotes resolve to the
 ## author's page; board content tiles always reach an explorable destination. A resonance://
 ## godot SCENE LINK launches the linked scene in-engine (the same window the web surface's
@@ -1030,11 +1182,14 @@ func _load_tile_images(tile: Control, rect: TextureRect, card: Dictionary) -> vo
 		var src := ApertureBoardLogic.resolve_image_source(String(images[i]), String(config["base_url"]))
 		match String(src.get("type", "none")):
 			"local":
-				var img := Image.new()
-				if img.load(String(src["path"])) == OK:
-					_apply_image(entry, i, ImageTexture.create_from_image(img))
-				elif i == 0:
-					_degrade_to_text(tile, rect)
+				# BOOT-FREEZE FIX (input-fix arc r2, 2026-07-03): a local Image.load() is a blocking
+				# disk+decode on the MAIN thread. Doing it inline inside _render_grid (once per image
+				# card) is what stalled the window to "Not Responding" at boot — the render loop could
+				# not return to process input until every local image had decoded. Defer each local
+				# load to its own idle step so _render_grid returns immediately (text + reserved image
+				# slot visible), then the images decode one-per-frame and fade into their fixed slots
+				# (no reflow — see _apply_image). Board is interactive within a frame of the grid build.
+				call_deferred("_load_local_image_deferred", entry, i, String(src["path"]))
 			"http":
 				_img_queue.append({ "url": String(src["url"]), "entry": entry, "slot": i })
 				_pump_image_queue()
@@ -1042,27 +1197,54 @@ func _load_tile_images(tile: Control, rect: TextureRect, card: Dictionary) -> vo
 				if i == 0:
 					_degrade_to_text(tile, rect)
 
-func _apply_image(entry: Dictionary, slot: int, tex: Texture2D) -> void:
-	var rect := entry["rect"] as TextureRect
+## Deferred single local-image decode (see _load_tile_images boot-freeze note). Runs one image per
+## idle callback off the render path; guards a freed tile (skip/undo may have removed it meanwhile).
+func _load_local_image_deferred(entry: Dictionary, slot: int, path: String) -> void:
+	var rect := entry.get("rect") as TextureRect
 	if rect == null or not is_instance_valid(rect):
+		return
+	var img := Image.new()
+	if img.load(path) == OK:
+		_apply_image(entry, slot, ImageTexture.create_from_image(img))
+	elif slot == 0:
+		_degrade_to_text(entry.get("tile"), rect)
+
+## Apply a decoded texture into its reserved image slot. CRITICAL (input-fix arc r2, 2026-07-03):
+## the image slot's height was RESERVED at build time (_column_width()*0.6) and is NEVER changed
+## here. The first port re-set custom_minimum_size to the image's NATURAL aspect on arrival, which
+## reflowed the whole masonry column the instant each of 40+ streamed images landed — cards jumped
+## under the cursor mid-click, so a ✕ / card click hit the WRONG card or missed entirely ("still
+## cannot use the x buttons", 2026-07-03). Now the reserved box is fixed and STRETCH_KEEP_ASPECT_
+## CENTERED letterboxes the image inside it: images fade in WITHOUT moving any tile. Zero layout
+## thrash on arrival = the grid is click-stable from the first frame.
+func _apply_image(entry: Dictionary, slot: int, tex: Texture2D) -> void:
+	# is_instance_valid on the RAW stored value BEFORE the cast — casting a freed instance with `as`
+	# itself raises "Trying to cast a freed object" (the error fires before any null-check), so a
+	# late image job whose tile was skipped/rebuilt away must be filtered here, not after the cast.
+	var raw = entry.get("rect")
+	if not is_instance_valid(raw):
+		return
+	var rect := raw as TextureRect
+	if rect == null:
 		return
 	while (entry["textures"] as Array).size() <= slot:
 		(entry["textures"] as Array).append(null)
 	entry["textures"][slot] = tex
 	if slot == 0 or rect.texture == null:
 		rect.texture = tex
-		# object-fit contain at natural aspect: height follows the column width
-		var w := _column_width()
-		var t2 := tex.get_size()
-		if t2.x > 0:
-			rect.custom_minimum_size = Vector2(0, w * t2.y / t2.x)
+		# NOTE: intentionally NO custom_minimum_size change — the slot stays at its reserved height
+		# so the tile never resizes and the column never reflows (see the header note).
 
 ## buildTileImg's error fallback parity: a genuinely unloadable image degrades the tile to the
-## text style (never a blank tile).
-func _degrade_to_text(tile: Control, rect: TextureRect) -> void:
-	var wrap := rect.get_parent()
-	if wrap != null and is_instance_valid(wrap):
-		wrap.visible = false
+## text style (never a blank tile). Freed-object-safe: an in-flight http job can complete AFTER its
+## tile was skipped/undone/rebuilt away — `rect` (and its parent) may be a freed instance, so guard
+## before touching it (the probe surfaced "Trying to cast a freed object" from exactly this path).
+## Keep the reserved image slot present (empty box, letterboxed bg) rather than hiding the wrapper:
+## hiding it would resize the tile and REFLOW the column — the very thing r2 removed to keep clicks
+## landing on the right card. A failed image just shows its dark reserved slot; no layout jump.
+func _degrade_to_text(tile, rect: TextureRect) -> void:
+	# no-op on purpose: the reserved slot stays, so no reflow. Signature kept for call-site parity.
+	pass
 
 func _pump_image_queue() -> void:
 	while _img_workers < IMG_WORKERS_MAX and not _img_queue.is_empty():
@@ -1074,15 +1256,22 @@ func _run_image_job(job: Dictionary) -> void:
 	var res := await _http_get(String(job["url"]))
 	_img_workers -= 1
 	_pump_image_queue()
+	var entry: Dictionary = job["entry"]
+	var raw = entry.get("rect")
+	if not is_instance_valid(raw):
+		return          # the tile was freed while this fetch was in flight — drop the result (guard
+		                # BEFORE the `as` cast, which would itself raise on a freed instance)
+	var rect := raw as TextureRect
+	if rect == null:
+		return
 	if not bool(res.get("ok", false)):
-		var entry: Dictionary = job["entry"]
 		if int(job["slot"]) == 0:
-			_degrade_to_text(entry["tile"], entry["rect"])
+			_degrade_to_text(entry.get("tile"), rect)
 		return
 	var img := _decode_image(res["body"] as PackedByteArray)
 	if img == null:
 		return
-	_apply_image(job["entry"], int(job["slot"]), ImageTexture.create_from_image(img))
+	_apply_image(entry, int(job["slot"]), ImageTexture.create_from_image(img))
 
 func _decode_image(bytes: PackedByteArray) -> Image:
 	if bytes.size() < 4:
@@ -1108,9 +1297,15 @@ func _decode_image(bytes: PackedByteArray) -> Image:
 ## The ~4s cross-fade carousel (approximated as a texture swap; pause on hover — web parity).
 func _advance_carousels() -> void:
 	for entry in _carousels:
-		var rect := entry["rect"] as TextureRect
-		var tile := entry["tile"] as Control
-		if rect == null or not is_instance_valid(rect) or tile == null or not is_instance_valid(tile):
+		# is_instance_valid on the raw values BEFORE casting — a skipped/rebuilt tile leaves freed
+		# instances in _carousels, and `as` on a freed object raises "Trying to cast a freed object".
+		var raw_rect = entry.get("rect")
+		var raw_tile = entry.get("tile")
+		if not is_instance_valid(raw_rect) or not is_instance_valid(raw_tile):
+			continue
+		var rect := raw_rect as TextureRect
+		var tile := raw_tile as Control
+		if rect == null or tile == null:
 			continue
 		if tile.has_meta("hovered") and bool(tile.get_meta("hovered")):
 			continue

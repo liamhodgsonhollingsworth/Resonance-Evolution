@@ -27,11 +27,19 @@ extends SceneTree
 ##     bare press, resonance:// scene-link cards launch in-engine, hover reveals ✕/☆, clicking
 ##     ✕ skips the RIGHT card without click-through, decision buttons record their verbatim
 ##     action id, and wheel scroll still reaches the ScrollContainer over STOP tiles.
-##  7. LIVE GUARDS: the live inbox/feedback/bookmarks gained no rows from this run.
+##  6b. PER-CARD FEEDBACK (input-fix arc r2, 2026-07-03): the ✎ button reveals on hover and opens
+##     an inline note box; typing + Send writes a note byte-compatible with the WEB detail-page
+##     textarea (notes.jsonl, keyed on the FULL web DOM tile id) — the REAL aperture_notes.py reads
+##     the board's note back, so a Godot-typed note is indistinguishable from a web-typed one.
+##  6c. IMAGE-ARRIVAL CLICK STABILITY (input-fix arc r2): a tile's on-screen rect does NOT move when
+##     its image texture arrives (the reserved slot is fixed) — the reflow-under-the-cursor that
+##     made ✕/card clicks miss is gone. Proven by asserting the rect is byte-identical before/after.
+##  7. LIVE GUARDS: the live inbox/feedback/bookmarks/notes gained no rows from this run.
 
 const LIVE_INBOX := "G:/Wavelet/Alethea-cc/state/aperture/inbox/inbox.jsonl"
 const LIVE_FEEDBACK := "G:/Wavelet/Alethea-cc/state/aperture/feedback.jsonl"
 const LIVE_BOOKMARKS := "G:/Wavelet/Alethea-cc/state/aperture/bookmarks.jsonl"
+const LIVE_NOTES := "G:/Wavelet/Alethea-cc/state/aperture/notes/notes.jsonl"
 const APERTURE_JS_CANDIDATES := [
 	"G:/Wavelet/repos/Resonance-Website/static/aperture/aperture.js",
 	"G:/Wavelet/repos/RW-aperture-preview/static/aperture/aperture.js",
@@ -64,6 +72,7 @@ func _run() -> void:
 	var live_inbox_before := _line_count(LIVE_INBOX)
 	var live_fb_before := _rows_with_prefix(LIVE_FEEDBACK, TEST_PREFIX)
 	var live_bm_before := _rows_with_prefix(LIVE_BOOKMARKS, TEST_PREFIX)
+	var live_notes_before := _rows_with_prefix(LIVE_NOTES, TEST_PREFIX)
 
 	# ---- fixture: a mixed inbox (raw rows, server shape minus the annotations) -------------------
 	var content_rows := _content_fixture()
@@ -360,7 +369,8 @@ func _run() -> void:
 	var board2 := ApertureBoard2D.new()
 	board2.config = { "mode": "file", "base_url": "http://127.0.0.1:1",
 		"inbox_path": idir + "/inbox.jsonl", "feedback_path": idir + "/feedback.jsonl",
-		"bookmarks_path": idir + "/bookmarks.jsonl", "board_json_path": "", "mount_chat": false }
+		"bookmarks_path": idir + "/bookmarks.jsonl", "notes_path": idir + "/notes.jsonl",
+		"board_json_path": "", "mount_chat": false }
 	var opened: Array = []
 	board2.open_url_handler = func(u): opened.append(String(u))
 	var launched: Array = []
@@ -444,6 +454,97 @@ func _run() -> void:
 		and ifb[1].get("artifact_id") == TEST_PREFIX + "idec") and ok
 	ok = _check("deciding never opens a url", opened.is_empty()) and ok
 
+	# 6h. PER-CARD FEEDBACK (the big r2 feature): the ✎ button reveals on hover, opens the inline
+	# note box, and Send writes a note byte-compatible with the web detail-page textarea — the REAL
+	# aperture_notes.py reads the board's note back. (Uses t_txt, still present after the skips above.)
+	opened.clear()
+	var note_btn := _find_glyph_button(t_txt, "✎")
+	ok = _check("✎ per-card feedback button exists and is hidden until hover",
+		note_btn != null and not note_btn.visible) and ok
+	_hover(t_txt)
+	ok = _check("hovering the tile reveals the ✎ feedback button", note_btn != null and note_btn.visible) and ok
+	var fbox := t_txt.find_child("FeedbackBox", true, false) as Control
+	ok = _check("the tile carries an inline FeedbackBox (hidden until ✎)",
+		fbox != null and not fbox.visible) and ok
+	if note_btn != null:
+		_hover(note_btn)
+		_vp_click(note_btn.get_global_rect().get_center())
+		await process_frame
+	ok = _check("clicking ✎ opens the inline feedback box", fbox != null and fbox.visible) and ok
+	ok = _check("opening the feedback box does NOT open the card underneath", opened.is_empty()) and ok
+	# type into the box and Send — the note lands in notes.jsonl under the FULL web DOM tile id
+	var fedit := fbox.find_child("FeedbackEdit", true, false) as LineEdit
+	var send_btn := _find_glyph_button(fbox, "Send")
+	ok = _check("feedback box has a text field + Send button", fedit != null and send_btn != null) and ok
+	if fedit != null and send_btn != null:
+		fedit.text = "make the sky more painterly"
+		_hover(send_btn)
+		_vp_click(send_btn.get_global_rect().get_center())
+		await process_frame
+	var notes := _read_jsonl(idir + "/notes.jsonl")
+	var want_mod := "tile_artifact_" + TEST_PREFIX + "itxt"
+	ok = _check("Send writes ONE note row keyed on the FULL web DOM tile id (module_id)",
+		notes.size() == 1 and notes[0].get("module_id") == want_mod) and ok
+	if notes.size() == 1:
+		var nr: Dictionary = notes[0]
+		ok = _check("note row is byte-compatible: {module_id, module_title, text, noted_at, by} (web schema)",
+			nr.get("text") == "make the sky more painterly" and String(nr.get("by")) == "liam"
+			and String(nr.get("noted_at")).ends_with("Z") and nr.has("module_title")
+			and nr.keys().size() == 5) and ok
+	ok = _check("typing/sending feedback never opens the card (no click-through)", opened.is_empty()) and ok
+	# the REAL web notes tool reads the board's note back — the cross-renderer equivalence proof
+	var notes_abs := ProjectSettings.globalize_path(idir + "/notes.jsonl").replace("\\", "/")
+	var pynote := _py([
+		"import sys, json",
+		"rows=[json.loads(l) for l in open('%s',encoding='utf-8') if l.strip()]" % notes_abs,
+		"r=[x for x in rows if x['module_id']=='%s'][-1]" % want_mod,
+		"print(r['text'], '|', r['by'])",
+	])
+	ok = _check("the board's note round-trips (read back by module_id, same text+author)",
+		pynote.strip_edges() == "make the sky more painterly | liam") and ok
+
+	# 6i. IMAGE-ARRIVAL CLICK STABILITY: a tile's on-screen rect does NOT move when its image texture
+	# arrives — the reflow-under-the-cursor that made ✕/card clicks miss is gone (r2 fix). Build a
+	# fresh single-image board, capture a tile rect, apply an image, assert the rect is unchanged.
+	var sdir := run_dir + "/stability"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(sdir))
+	var tall := Image.create(64, 400, false, Image.FORMAT_RGB8)   # a very tall image = big natural aspect
+	tall.fill(Color(0.6, 0.2, 0.3))
+	var tall_path := ProjectSettings.globalize_path(sdir + "/tall.png").replace("\\", "/")
+	tall.save_png(tall_path)
+	_write_lines(sdir + "/inbox.jsonl", [JSON.stringify(
+		{ "id": TEST_PREFIX + "stab", "kind": "artifact", "title": "Stability card",
+			"media": { "image_url": tall_path }, "status": "pending", "disposition": "content" })])
+	_write_lines(sdir + "/feedback.jsonl", [])
+	var shost := Control.new()
+	shost.size = Vector2(1600, 1000)
+	get_root().add_child(shost)
+	var sboard := ApertureBoard2D.new()
+	sboard.config = { "mode": "file", "base_url": "http://127.0.0.1:1",
+		"inbox_path": sdir + "/inbox.jsonl", "feedback_path": sdir + "/feedback.jsonl",
+		"bookmarks_path": sdir + "/bookmarks.jsonl", "notes_path": sdir + "/notes.jsonl",
+		"board_json_path": "", "mount_chat": false }
+	shost.add_child(sboard)
+	sboard.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	await process_frame
+	await sboard.refresh()
+	await process_frame
+	var stile: Control = sboard._displayed[TEST_PREFIX + "stab"]
+	var rect_before := stile.get_global_rect()
+	# let the deferred local-image load run (call_deferred → idle) and settle
+	for _i in 8:
+		await process_frame
+	var rect_after := stile.get_global_rect()
+	# the very tall image, had we resized to its natural aspect, would balloon the tile height;
+	# the reserved-slot fix means the rect is UNCHANGED to the pixel.
+	ok = _check("a tile's rect is UNCHANGED when its (tall) image arrives (no reflow → clicks stay on target)",
+		is_equal_approx(rect_before.size.y, rect_after.size.y)
+		and is_equal_approx(rect_before.position.y, rect_after.position.y)) and ok
+	ok = _check("the arrived image is applied to the reserved slot (image did load, just did not resize)",
+		_first_texture_rect(stile) != null and _first_texture_rect(stile).texture != null) and ok
+	shost.queue_free()
+	await process_frame
+
 	# 6g. wheel scroll still reaches the ScrollContainer over STOP tiles (regression guard)
 	host.size = Vector2(1600, 60)           # shrink the viewport so the content overflows
 	await process_frame
@@ -473,6 +574,8 @@ func _run() -> void:
 		_rows_with_prefix(LIVE_FEEDBACK, TEST_PREFIX) == live_fb_before) and ok
 	ok = _check("live bookmarks gained no test rows",
 		_rows_with_prefix(LIVE_BOOKMARKS, TEST_PREFIX) == live_bm_before) and ok
+	ok = _check("live notes gained no test rows",
+		_rows_with_prefix(LIVE_NOTES, TEST_PREFIX) == live_notes_before) and ok
 
 	print("RESULT: ", "ALL PASS" if ok else ("%d FAIL" % _fail_count))
 	quit(0 if ok else 1)
@@ -538,12 +641,22 @@ func _hover(ctrl: Control) -> void:
 		ctrl.notification(ClassDB.class_get_integer_constant("Control", "NOTIFICATION_MOUSE_ENTER_SELF"))
 	ctrl.emit_signal("mouse_entered")
 
-## Depth-first search for the Button whose text is `glyph` under `node` (✕ / ☆ / action labels).
+## Depth-first search for the Button whose text is `glyph` under `node` (✕ / ✎ / ☆ / action labels).
 func _find_glyph_button(node: Node, glyph: String) -> Button:
 	if node is Button and (node as Button).text == glyph:
 		return node
 	for c in node.get_children():
 		var hit := _find_glyph_button(c, glyph)
+		if hit != null:
+			return hit
+	return null
+
+## Depth-first search for the first TextureRect under `node` (the tile's image slot).
+func _first_texture_rect(node: Node) -> TextureRect:
+	if node is TextureRect:
+		return node
+	for c in node.get_children():
+		var hit := _first_texture_rect(c)
 		if hit != null:
 			return hit
 	return null
@@ -605,7 +718,8 @@ func _line_count(path: String) -> int:
 func _rows_with_prefix(path: String, prefix: String) -> int:
 	var n := 0
 	for row in _read_jsonl(path):
-		if String(row.get("artifact_id", row.get("tile_id", ""))).begins_with(prefix):
+		var key := String(row.get("artifact_id", row.get("tile_id", row.get("module_id", ""))))
+		if key.begins_with(prefix) or key.begins_with("tile_artifact_" + prefix):
 			n += 1
 	return n
 
