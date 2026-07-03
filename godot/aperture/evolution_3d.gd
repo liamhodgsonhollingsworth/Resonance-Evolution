@@ -83,10 +83,10 @@ func _fetch_index() -> void:
 			actions_channel = "http"
 			_rebuild_grid("http /api/aperture/evolver")
 		else:
-			_load_from_files("substrate file (server down)"))
+			_load_from_files("substrate file (evolver endpoint not live yet)"))
 	if req.request(String(cfg.get("base_url")) + "/api/aperture/evolver") != OK:
 		req.queue_free()
-		_load_from_files("substrate file (server down)")
+		_load_from_files("substrate file (evolver endpoint not live yet)")
 
 ## Parse the /api/aperture/evolver body — the SAME payload evolution.js renders. Media URLs come
 ## as /api/aperture/media?path=... ; map them back to local paths (identity is the local file).
