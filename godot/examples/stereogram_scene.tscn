@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://examples/stereogram_scene.gd" id="1_stereogram"]
+
+[node name="StereogramDemo" type="Control"]
+script = ExtResource("1_stereogram")
