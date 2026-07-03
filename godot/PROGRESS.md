@@ -475,3 +475,18 @@ foundations + evaluation harnesses, then EVOLVE toward criteria (not hand-code-t
 emits a generalizing capability + validator into a growing library (the ratchet). Build INSIDE the
 running software (hot-loaded data, no restart). Nothing imported/wired without Liam's approval. Liam
 authors behaviors; Claude builds capabilities. Nothing committed yet.
+
+**StereoMode — portable one→two-images renderer morph (stereo-renderer-mode lane, 2026-07-03,
+verified).** The scene itself, twice — NOT the SIRDS path (Liam's correction): `godot/renderers/
+stereo_mode.gd` (`StereoMode`) wraps ANY scene's active camera with zero scene changes (two
+SubViewports sharing the host World3D, eye cameras riding the source camera) and morphs the display
+with one slider t∈[0,1]: ipd_eff = t·ipd_m, per-eye screen rects lerp full-frame → layout targets.
+t=0 is byte-identical to the mono frame; disparity is linear in t (d_t = t·d_1); t=1 equals
+`StereoRig.eye_descriptors` field-exact, so the same geometry dict continues into VR (the #128
+OpenXR seam). Rects are DATA keyed by eye (cross default = left eye's image on the RIGHT half;
+parallel supported; any placement). Demo `godot/examples/stereo_mode_scene.tscn` hot-reloads
+`examples/stereo_mode_params.json`; `-- --shot` writes `godot/docs/stereo_mode_t{0,50,100}.png`.
+Test: `godot --headless --path godot -s res://headless_stereo_mode_test.gd` — 36 checks ALL PASS
+(morph anchors, rect morph + custom-rect repositioning, decoder-measured disparity at t=0.5/1,
+cross/parallel eye-swap region-exact, determinism, fit_camera anchor, live-wrapper hotload).
+Design note: `notes/design/stereo_mode_2026-07-03.md`.

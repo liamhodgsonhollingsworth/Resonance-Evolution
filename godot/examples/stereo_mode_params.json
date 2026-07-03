@@ -1,0 +1,292 @@
+{
+	"background": [
+		0.02,
+		0.02,
+		0.02
+	],
+	"fit_camera": true,
+	"geometry": {
+		"image_height_px": 600,
+		"image_width_px": 960,
+		"ipd_m": 0.22,
+		"screen_distance_m": 0.6,
+		"zfar_m": 100.0,
+		"znear_m": 0.05
+	},
+	"layout": {
+		"mode": "cross"
+	},
+	"scene": [
+		{
+			"params": {
+				"height": 2.4,
+				"radius": 0.35
+			},
+			"part": "cylinder",
+			"pos": [
+				-1.6,
+				1.2,
+				-2.0
+			]
+		},
+		{
+			"params": {
+				"radius": 0.5
+			},
+			"part": "sphere",
+			"pos": [
+				-1.6,
+				2.9,
+				-2.0
+			]
+		},
+		{
+			"params": {
+				"height": 2.4,
+				"radius": 0.35
+			},
+			"part": "cylinder",
+			"pos": [
+				1.6,
+				1.2,
+				-2.0
+			]
+		},
+		{
+			"params": {
+				"radius": 0.5
+			},
+			"part": "sphere",
+			"pos": [
+				1.6,
+				2.9,
+				-2.0
+			]
+		},
+		{
+			"params": {
+				"height": 2.4,
+				"radius": 0.35
+			},
+			"part": "cylinder",
+			"pos": [
+				-1.6,
+				1.2,
+				-6.0
+			]
+		},
+		{
+			"params": {
+				"radius": 0.5
+			},
+			"part": "sphere",
+			"pos": [
+				-1.6,
+				2.9,
+				-6.0
+			]
+		},
+		{
+			"params": {
+				"height": 2.4,
+				"radius": 0.35
+			},
+			"part": "cylinder",
+			"pos": [
+				1.6,
+				1.2,
+				-6.0
+			]
+		},
+		{
+			"params": {
+				"radius": 0.5
+			},
+			"part": "sphere",
+			"pos": [
+				1.6,
+				2.9,
+				-6.0
+			]
+		},
+		{
+			"params": {
+				"height": 2.4,
+				"radius": 0.35
+			},
+			"part": "cylinder",
+			"pos": [
+				-1.6,
+				1.2,
+				-10.0
+			]
+		},
+		{
+			"params": {
+				"radius": 0.5
+			},
+			"part": "sphere",
+			"pos": [
+				-1.6,
+				2.9,
+				-10.0
+			]
+		},
+		{
+			"params": {
+				"height": 2.4,
+				"radius": 0.35
+			},
+			"part": "cylinder",
+			"pos": [
+				1.6,
+				1.2,
+				-10.0
+			]
+		},
+		{
+			"params": {
+				"radius": 0.5
+			},
+			"part": "sphere",
+			"pos": [
+				1.6,
+				2.9,
+				-10.0
+			]
+		},
+		{
+			"params": {
+				"height": 2.4,
+				"radius": 0.35
+			},
+			"part": "cylinder",
+			"pos": [
+				-1.6,
+				1.2,
+				-14.0
+			]
+		},
+		{
+			"params": {
+				"radius": 0.5
+			},
+			"part": "sphere",
+			"pos": [
+				-1.6,
+				2.9,
+				-14.0
+			]
+		},
+		{
+			"params": {
+				"height": 2.4,
+				"radius": 0.35
+			},
+			"part": "cylinder",
+			"pos": [
+				1.6,
+				1.2,
+				-14.0
+			]
+		},
+		{
+			"params": {
+				"radius": 0.5
+			},
+			"part": "sphere",
+			"pos": [
+				1.6,
+				2.9,
+				-14.0
+			]
+		},
+		{
+			"params": {
+				"height": 2.0,
+				"radius": 0.9
+			},
+			"part": "cone",
+			"pos": [
+				0.0,
+				1.0,
+				-17.0
+			]
+		},
+		{
+			"params": {
+				"depth": 26.0,
+				"height": 0.2,
+				"width": 7.0
+			},
+			"part": "box",
+			"pos": [
+				0.0,
+				-0.1,
+				-8.0
+			]
+		}
+	],
+	"shots": [
+		0.0,
+		0.5,
+		1.0
+	],
+	"sky": {
+		"ambient_energy": 0.7,
+		"clouds": {
+			"coverage": 0.5,
+			"enabled": true,
+			"horizon_fade": 0.1,
+			"octaves": 5,
+			"opacity": 0.95,
+			"scale": 3.4,
+			"seed": 21,
+			"softness": 0.18,
+			"tex_width": 640,
+			"tint": [
+				1.0,
+				1.0,
+				1.0
+			]
+		},
+		"ground_color": [
+			0.55,
+			0.52,
+			0.47
+		],
+		"horizon_color": [
+			0.8,
+			0.88,
+			0.95
+		],
+		"sky_energy": 1.0,
+		"sun_angle_deg": 35.0,
+		"sun_azimuth_deg": -40.0,
+		"sun_color": [
+			1.0,
+			0.95,
+			0.84
+		],
+		"sun_energy": 1.2,
+		"top_color": [
+			0.32,
+			0.52,
+			0.84
+		]
+	},
+	"t": 1.0,
+	"view": {
+		"look_at": [
+			0.0,
+			1.4,
+			-8.0
+		],
+		"position": [
+			0.0,
+			2.0,
+			2.0
+		],
+		"yfov": 50.0
+	}
+}
