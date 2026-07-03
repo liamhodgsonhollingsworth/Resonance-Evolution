@@ -195,9 +195,11 @@ func _run() -> void:
 		"feedback_path": fb_p,
 		"bookmarks_path": bm_p,
 		"board_json_path": "",
+		"mount_chat": false,                # the chat panel is the peer lane's own tested scene
 	}
 	board.size = Vector2(1600, 1000)
 	get_root().add_child(board)
+	await process_frame          # let the deferred _ready build the UI first
 	await board.refresh()
 	var shown: Array = board._last_compose.get("grid", [])
 	var tile_count := 0

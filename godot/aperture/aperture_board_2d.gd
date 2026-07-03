@@ -168,14 +168,24 @@ func _build_ui() -> void:
 	_root_vbox.add_theme_constant_override("separation", GAP)
 	_margin.add_child(_root_vbox)
 
-	# ChatPanelSlot — EMBED POINT (coordination seam). The PEER agent's chat panel
-	# (godot/aperture/aperture_chat_panel.tscn/.gd) mounts here:
-	#     board.chat_panel_slot.add_child(preload("res://aperture/aperture_chat_panel.tscn").instantiate())
-	# This board deliberately builds NO chat UI and NO window-opening mechanism — those are the
-	# peer lane's scenes/files. The slot mirrors index.html's #aperture-chat position (pinned top).
+	# ChatPanelSlot — EMBED POINT (coordination seam). The PEER lane's chat panel
+	# (godot/aperture/aperture_chat_panel.tscn/.gd) mounts here; this board builds NO chat UI and
+	# NO window-opening mechanism of its own — those are the peer's scenes/files. The slot mirrors
+	# index.html's #aperture-chat position (pinned top). When the peer scene is present it is
+	# auto-mounted (fail-open when absent; config "mount_chat": false leaves the slot empty).
 	chat_panel_slot = MarginContainer.new()
 	chat_panel_slot.name = "ChatPanelSlot"
 	_root_vbox.add_child(chat_panel_slot)
+	var chat_scene := "res://aperture/aperture_chat_panel.tscn"
+	if bool(config.get("mount_chat", true)) and ResourceLoader.exists(chat_scene):
+		var ps: PackedScene = load(chat_scene)
+		if ps != null:
+			var panel := ps.instantiate()
+			if panel != null:
+				if "http_base" in panel:
+					panel.set("http_base", String(config["base_url"]))
+				chat_panel_slot.custom_minimum_size = Vector2(0, 150)
+				chat_panel_slot.add_child(panel)
 
 	_notif_row = VBoxContainer.new()
 	_notif_row.name = "NotificationsRow"          # <-> #aperture-notifications
@@ -245,6 +255,8 @@ func _column_width() -> float:
 # ---------------------------------------------------------------------------------------------------
 
 func refresh() -> void:
+	if _root_vbox == null:
+		return          # UI not built yet (_ready is deferred when added during tree bootstrap)
 	var cards := await _fetch_cards()
 	var board_cards := await _fetch_board_cards()
 	_render_all(ApertureBoardLogic.compose(cards, board_cards, _skipped))
