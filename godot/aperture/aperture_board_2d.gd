@@ -68,6 +68,7 @@ var _scroll: ScrollContainer
 var _margin: MarginContainer
 var _root_vbox: VBoxContainer
 var chat_panel_slot: MarginContainer          # ChatPanelSlot — the peer chat panel's embed point
+var _taskboard_row: VBoxContainer
 var _notif_row: VBoxContainer
 var _evolver_row: VBoxContainer
 var _masonry: HBoxContainer
@@ -168,6 +169,19 @@ func _build_ui() -> void:
 	_root_vbox.add_theme_constant_override("separation", GAP)
 	_margin.add_child(_root_vbox)
 
+	# Region order parity with index.html: taskboard entry card, evolver row, chat composer,
+	# notifications, then the bento grid.
+	_taskboard_row = VBoxContainer.new()
+	_taskboard_row.name = "TaskboardRow"          # <-> #aperture-taskboard
+	_taskboard_row.visible = false
+	_root_vbox.add_child(_taskboard_row)
+
+	_evolver_row = VBoxContainer.new()
+	_evolver_row.name = "EvolverRow"              # <-> #aperture-evolver-row
+	_evolver_row.add_theme_constant_override("separation", GAP)
+	_evolver_row.visible = false
+	_root_vbox.add_child(_evolver_row)
+
 	# ChatPanelSlot — EMBED POINT (coordination seam). The PEER lane's chat panel
 	# (godot/aperture/aperture_chat_panel.tscn/.gd) mounts here; this board builds NO chat UI and
 	# NO window-opening mechanism of its own — those are the peer's scenes/files. The slot mirrors
@@ -192,12 +206,6 @@ func _build_ui() -> void:
 	_notif_row.add_theme_constant_override("separation", GAP)
 	_notif_row.visible = false
 	_root_vbox.add_child(_notif_row)
-
-	_evolver_row = VBoxContainer.new()
-	_evolver_row.name = "EvolverRow"              # <-> #aperture-evolver-row
-	_evolver_row.add_theme_constant_override("separation", GAP)
-	_evolver_row.visible = false
-	_root_vbox.add_child(_evolver_row)
 
 	_masonry = HBoxContainer.new()
 	_masonry.name = "Bento"                       # <-> main#aperture.bento
@@ -260,6 +268,86 @@ func refresh() -> void:
 	var cards := await _fetch_cards()
 	var board_cards := await _fetch_board_cards()
 	_render_all(ApertureBoardLogic.compose(cards, board_cards, _skipped))
+	await _render_taskboard_entry()
+
+## The compact TASK BOARD entry card (taskboard.js parity): "Task board ❐", "N of Liam's verbatim
+## specs — click to open the board menu", live column counts. Reads the SAME endpoint; clicking
+## opens the SAME separate board page. Fails closed (hidden) when the endpoint is unreachable —
+## exactly like the web module. http mode only (the counts are server state).
+func _render_taskboard_entry() -> void:
+	if _taskboard_row == null:
+		return
+	for c in _taskboard_row.get_children():
+		_taskboard_row.remove_child(c)
+		c.queue_free()
+	_taskboard_row.visible = false
+	if _mode_in_use != "http":
+		return
+	var res := await _http_get(String(config["base_url"]) + "/api/aperture/taskboard")
+	if not bool(res.get("ok", false)):
+		return
+	var doc = JSON.parse_string((res["body"] as PackedByteArray).get_string_from_utf8())
+	if typeof(doc) != TYPE_DICTIONARY or not bool(doc.get("ok", false)):
+		return
+	var counts := { "review": 0, "working": 0, "queued": 0, "planning": 0 }
+	var total := 0
+	for card in doc.get("effective", []):
+		if typeof(card) != TYPE_DICTIONARY or bool(card.get("archived", false)):
+			continue
+		total += 1
+		var col := String(card.get("column", ""))
+		if counts.has(col):
+			counts[col] = int(counts[col]) + 1
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _entry_style())
+	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 6)
+	panel.add_child(v)
+	var head := HBoxContainer.new()
+	var title := Label.new()
+	title.text = "TASK BOARD"
+	title.add_theme_font_size_override("font_size", 13)
+	title.add_theme_color_override("font_color", COL_INK_STRONG)
+	head.add_child(title)
+	var sp := Control.new()
+	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(sp)
+	var glyph := Label.new()
+	glyph.text = "❐"
+	glyph.add_theme_color_override("font_color", COL_INK_SOFT)
+	head.add_child(glyph)
+	v.add_child(head)
+	var sub := Label.new()
+	sub.text = "%d of Liam's verbatim specs — click to open the board menu" % total
+	sub.add_theme_font_size_override("font_size", 12)
+	sub.add_theme_color_override("font_color", COL_LINK)
+	v.add_child(sub)
+	var chips := HBoxContainer.new()
+	chips.add_theme_constant_override("separation", 10)
+	var chip_colors := { "review": PALETTE["accent.gold"], "working": PALETTE["accent.green"],
+		"queued": PALETTE["accent.cool"], "planning": PALETTE["accent.violet"] }
+	for col_id in ["review", "working", "queued", "planning"]:
+		var chip := HBoxContainer.new()
+		chip.add_theme_constant_override("separation", 4)
+		var n := Label.new()
+		n.text = str(counts[col_id])
+		n.add_theme_font_size_override("font_size", 12)
+		n.add_theme_color_override("font_color", chip_colors[col_id])
+		chip.add_child(n)
+		var l := Label.new()
+		l.text = String(col_id).to_upper()
+		l.add_theme_font_size_override("font_size", 11)
+		l.add_theme_color_override("font_color", COL_INK_SOFT)
+		chip.add_child(l)
+		chips.add_child(chip)
+	v.add_child(chips)
+	panel.gui_input.connect(func(ev: InputEvent):
+		var mb := ev as InputEventMouseButton
+		if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			OS.shell_open(String(config["base_url"]) + "/static/aperture/taskboard/"))
+	_taskboard_row.add_child(panel)
+	_taskboard_row.visible = true
 
 func _fetch_cards() -> Array:
 	var mode := String(config.get("mode", "auto"))
@@ -519,14 +607,15 @@ func _build_tile(card: Dictionary, opts: Dictionary) -> Control:
 		title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	cv.add_child(title)
 
+	# caption order parity: renderArtifact puts the summary/abstract BEFORE the subtitle chip;
+	# renderContent (board tiles) and renderQuote put the subtitle first.
 	var subtitle := String(card.get("subtitle", ""))
 	var summary := String(card.get("summary", ""))
 	if summary == "":
 		summary = String(card.get("text", ""))
-	if subtitle != "" and subtitle != summary:
-		cv.add_child(_subtitle_line(("— %s" % subtitle) if is_quote else subtitle, accent, is_quote))
+	var body: Label = null
 	if summary != "" and not is_quote:
-		var body := Label.new()
+		body = Label.new()
 		body.text = summary
 		body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		body.add_theme_font_size_override("font_size", 14 if text_only else 13)
@@ -534,7 +623,19 @@ func _build_tile(card: Dictionary, opts: Dictionary) -> Control:
 		if not text_only and not is_notif:
 			body.max_lines_visible = 4                         # .tile__summary 4-line clamp
 			body.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		cv.add_child(body)
+	var sub_line: Control = null
+	if subtitle != "" and subtitle != summary:
+		sub_line = _subtitle_line(("— %s" % subtitle) if is_quote else subtitle, accent, is_quote)
+	if String(card.get("source", "")) == "inbox":
+		if body != null:
+			cv.add_child(body)
+		if sub_line != null:
+			cv.add_child(sub_line)
+	else:
+		if sub_line != null:
+			cv.add_child(sub_line)
+		if body != null:
+			cv.add_child(body)
 
 	# ---- decision action buttons (banner decision cards; verbatim action ids) ----
 	if decision and is_notif:
