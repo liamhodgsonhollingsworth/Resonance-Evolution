@@ -107,6 +107,10 @@ func _init() -> void:
 	register("TextureApply", PrimTextureApply)
 	register("MathPaint", PrimMathPaint)
 	register("LSystem", PrimLSystem)
+	# The Godot Aperture 3D surface (godot/aperture/): inbox READ + action WRITE over the
+	# same substrate/channels the web board uses - see prim_aperture_inbox/action.gd.
+	register("ApertureInbox", PrimApertureInbox)
+	register("ApertureAction", PrimApertureAction)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
