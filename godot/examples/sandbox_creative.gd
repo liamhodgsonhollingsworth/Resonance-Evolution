@@ -1,9 +1,31 @@
 extends Node3D
-## CREATIVE-MODE BUILDABLE SANDBOX (MVP) — a Minecraft-creative-style buildable world in the RE engine.
-## Liam's ask (2026-07-02): "give this instance a basic minecraft style visual inventory with the same
-## layout and controls as minecraft creative mode ... some basic blocks and placement systems ... a voxel
-## based system ... some basic 3D asset building blocks that are untextured but can be textured using tools
-## in the game engine."
+## CREATIVE-MODE BUILDABLE SANDBOX — a Minecraft-creative-style buildable world in the RE engine,
+## extended into a GENERAL-PURPOSE WORLD BUILDER (spec apx_e5c6f8dc, 2026-07-03).
+##
+## Liam's original ask (2026-07-02): "give this instance a basic minecraft style visual inventory with
+## the same layout and controls as minecraft creative mode ... some basic blocks and placement systems
+## ... a voxel based system ... some basic 3D asset building blocks that are untextured but can be
+## textured using tools in the game engine."
+##
+## Liam's world-builder spec (2026-07-03, card apx_e5c6f8dc — each capability below traces to it):
+##   • ALL IMPORTED ASSETS: "include not just the assets that you loaded there but also the other ones
+##     that were found and imported for other experiments" → every asset in godot/assets/manifest.json
+##     appears in the creative inventory (per-kit tabs), alongside the original block palette.
+##   • LAZY LOADING: "efficient for having any number of assets by not having them loaded when the game
+##     starts up and instead loading them when they are needed, or starting the sandbox with a
+##     preselected arrangement that are preloaded and changing that as I move from scene to scene" →
+##     runtime/asset_library.gd loads GLBs on demand (background thread + placeholder), each world
+##     carries its derived preload set, and switching worlds evicts what the new one does not use.
+##   • PLACE + REARRANGE: "not only placing objects but also rearranging them" → F selects the object
+##     under the crosshair; G grabs it (follows the build ray, click drops); R/Shift+R rotates; +/-
+##     scales; X deletes. Worlds persist as APPEND-ONLY versioned data files (runtime/world_store.gd).
+##   • BEHAVIOR ADD/CHANGE: "adding and changing their behavior" → composable DATA behaviors
+##     (runtime/sandbox_behaviors.gd: spin/orbit/bob/follow/light); B toggles them on the selection.
+##   • NOTES → CLAUDE CODE: "leaving notes and comments on specific things which can get handed off to
+##     claude code" → N leaves a note on the selected object (or crosshair spot); notes append to
+##     G:/Wavelet/Alethea-cc/state/sandbox/notes.jsonl with world/object/asset/position context.
+##   (The UI beyond these minimal key-driven affordances is deliberately NOT designed here — the spec
+##    ends "ask me how I want the UI for this system to work"; that Q/A happens before any UI build.)
 ##
 ## WHAT THIS IS (and is NOT):
 ##   • A SIMPLE, IN-ENGINE, universal grid-snapped placement sandbox — NO external voxel library ported.
@@ -18,53 +40,80 @@ extends Node3D
 ##     "cube + all the parts-catalog shapes" are the palette. ORIGINAL/GENERIC blocks — no MC assets/textures.
 ##   • Blocks start UNTEXTURED (a plain material). The per-block `material`/`texture` slot is wired as DATA
 ##     (see BlockRecord below + _apply_material) — this is the CLEAN SEAM the deep node-based LIVE-TEXTURING
-##     system attaches to later (a FABLE-5 handoff piece; NOT built here).
+##     system attaches to later.
 ##
 ## HOTLOADABLE + OPENABLE (the live_demo / painterly_scene watcher pattern):
 ##   Open live (stays open, first-person creative build):
 ##     <Godot> --path godot res://examples/sandbox_creative.tscn
 ##   Headless proof PNG of a pre-seeded build, then quit:
 ##     <Godot> --path godot res://examples/sandbox_creative.tscn -- --shot
-##   The world + settings HOT-RELOAD from godot/examples/sandbox_params.json by CONTENT (LiveHost-style):
-##   edit the file and SAVE and the seeded blocks / fly speed / grid size re-apply live, no restart. This
-##   is the "openable object you edit as DATA" seam — Claude Code (or Liam) can rewrite the world on disk.
+##   Startup/memory numbers (headless-safe):
+##     <Godot> --headless --path godot res://examples/sandbox_creative.tscn -- --bench [--eager]
+##   TWO hot-reload seams, both content-watched (LiveHost-style), no restart:
+##     1. godot/examples/sandbox_params.json — settings (fly speed, grid, active world selection).
+##     2. the ACTIVE WORLD's latest version file in the world store — edit it (or save a NEW version:
+##        the store is append-only) and the running scene re-seeds live. This is the seam Claude Code
+##        uses to iterate a world on disk while it stays open.
 ##   (<Godot> = C:\Users\Liam\godot\Godot_v4.6.3-stable_win64_console.exe for stdout.)
 ##
-## CONTROLS (Minecraft creative parity):
+## CONTROLS (Minecraft creative parity + the world-builder verbs):
 ##   Move        : W A S D            (relative to look direction, flattened to horizontal)
 ##   Up / Down   : Space / Shift
 ##   Look        : move mouse (pointer captured; ESC releases; click canvas to recapture)
 ##   Faster      : hold Ctrl (sprint)
 ##   Select slot : 1 .. 9 (or mouse wheel)
-##   Place block : LEFT click  (on the grid cell adjacent to the face you're pointing at)
-##   Remove block: RIGHT click (the block you're pointing at)
-##   Inventory   : E  (opens the paged block picker + category tabs; click a block → active hotbar slot)
+##   Place       : LEFT click  (block OR asset, per the active hotbar entry)
+##   Remove      : RIGHT click (the block or placed object you're pointing at)
+##   Inventory   : E  (paged block+asset picker with category tabs; click → active hotbar slot)
+##   Select obj  : F  (the placed object under the crosshair; F again deselects)
+##   Grab / drop : G  (selected object follows the build ray; LEFT click or G drops it)
+##   Rotate      : R / Shift+R  (±15° yaw on the selection)
+##   Scale       : + / -        (×1.1 / ÷1.1 on the selection)
+##   Delete obj  : X            (the selection)
+##   Behaviors   : B  (panel; 1..5 toggle spin/orbit/bob/follow/light on the selection)
+##   Note        : N  (type a note on the selection — or the crosshair spot — Enter saves)
+##   Save world  : F5 (append-only: writes version N+1, never overwrites)
+##   Switch world: [ / ]  (previous / next world; preloads swap scene-to-scene)
 
 const GodotSceneRenderer := preload("res://renderers/godot_scene_renderer.gd")
+const AssetLibraryScript := preload("res://runtime/asset_library.gd")
+const Behaviors := preload("res://runtime/sandbox_behaviors.gd")
+const WorldStoreScript := preload("res://runtime/world_store.gd")
 
-const PARAMS_PATH := "res://examples/sandbox_params.json"     # the file Liam/Claude edit to iterate the world
+const PARAMS_PATH := "res://examples/sandbox_params.json"     # the file Liam/Claude edit to iterate settings
 const SHOT_PATH := "res://docs/sandbox_creative.png"          # headless proof PNG (committed under docs/)
+const DEFAULT_NOTES_PATH := "G:/Wavelet/Alethea-cc/state/sandbox/notes.jsonl"
 
 const GRID := 1.0                                             # default grid cell size (overridable via params)
 const REACH := 8.0                                            # how far the build ray reaches, in cells
 
 # ── the WORLD as DATA ────────────────────────────────────────────────────────────────────────────────
-# A plain Dictionary keyed by Vector3i grid coord → a block record. This IS the "voxel-ish" store: simple,
-# readable, universal. Each record carries the block's shape + params + the MATERIAL/TEXTURE SEAM (see below).
+# Two layers, both pure data:
+#   blocks : Dictionary keyed by Vector3i grid coord → block record (the voxel layer, unchanged).
+#   objects: Dictionary keyed by obj id → object record (the free-asset layer: any manifest asset,
+#            grid-snapped on placement, freely rearrangeable, with composable behaviors).
 var world: Dictionary = {}                                    # Vector3i -> block record {type, shape, params, material, node}
+var objects: Dictionary = {}                                  # "obj_N" -> {id, asset, base_pos, yaw_deg, scale, behaviors, node, loaded, aabb}
 var grid_size := GRID
+var world_name := "starter"                                   # the active world (arrangement)
+var _obj_seq := 0                                             # monotonic object-id counter (kept above loaded ids)
 
-# The BLOCK PALETTE — the engine's primitive vocabulary as generic, untextured building blocks. Each entry
-# is pure DATA: a shape name (fed to GodotSceneRenderer._primitive_mesh), default params, a display color
-# (so untextured blocks are visually distinguishable), and a category (the inventory tabs). NO MC assets.
-var palette: Array = []                                       # filled in _build_palette()
+# The BLOCK PALETTE — the engine's primitive vocabulary as generic, untextured building blocks, PLUS
+# (appended in _ready) every manifest asset as kind:"asset" entries under per-kit category tabs.
+var palette: Array = []                                       # filled in _build_palette / _extend_palette_with_assets
 var hotbar: Array = []                                        # 9 palette indices (the MC hotbar)
 var active_slot := 0                                          # 0..8
+
+# ── modules ─────────────────────────────────────────────────────────────────────────────────────────
+var assets: Node = null                                       # AssetLibrary (lazy loader; child node)
+var store = null                                              # WorldStore (RefCounted)
 
 # ── nodes ──────────────────────────────────────────────────────────────────────────────────────────
 var _cam: Camera3D
 var _blocks_root: Node3D
+var _objects_root: Node3D
 var _preview: MeshInstance3D                                  # ghost of the block about to be placed
+var _sel_marker: MeshInstance3D                               # translucent box around the selection
 var _hud: CanvasLayer
 var _hotbar_ui: HBoxContainer
 var _inv_panel: Panel
@@ -73,6 +122,11 @@ var _inv_tabs: HBoxContainer
 var _inv_title: Label
 var _crosshair: Control
 var _status: Label
+var _behavior_panel: Panel
+var _behavior_list: Label
+var _note_panel: Panel
+var _note_edit: LineEdit
+var _note_target_label: Label
 
 # ── camera / movement state ──────────────────────────────────────────────────────────────────────────
 var _yaw := 0.0
@@ -83,47 +137,89 @@ var mouse_sens := 0.0025
 var _inv_open := false
 var _did_shot := false
 
+# ── selection / rearrange state ──────────────────────────────────────────────────────────────────────
+var selected_id := ""                                         # the selected object ("" = none)
+var _grabbing := false                                        # selection follows the build ray until dropped
+var _behavior_open := false
+var _note_open := false
+var _time := 0.0                                              # behavior clock (seconds since scene start)
+
 # hotload watcher state (the painterly_scene / live_demo pattern: content-change → re-apply)
 var _params_mtime := -1
+var _world_watch_path := ""                                   # latest version file of the active world
+var _world_watch_hash := ""
+var _world_poll_accum := 0.0
 var _headless := false
+
+# persistence config (params/env-overridable so tests never touch the real store)
+var worlds_dir_override := ""
+var notes_path := DEFAULT_NOTES_PATH
 
 
 func _ready() -> void:
+	var t0 := Time.get_ticks_msec()
 	_headless = DisplayServer.get_name() == "headless"
 	_build_palette()
 	_default_hotbar()
 	_build_world_nodes()
 	_build_env()
+	# The lazy asset library: reads ONLY the manifest at startup (metadata; no GLB bytes).
+	assets = AssetLibraryScript.new()
+	assets.name = "AssetLibrary"
+	add_child(assets)
+	assets.load_manifest()
+	assets.asset_ready.connect(_on_asset_ready)
+	_extend_palette_with_assets()
 	if not _headless:
 		_build_hud()
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	# Load the world + settings from the params file (writes a seed file on first run so there is something
-	# to edit), then place the seeded blocks. This is the openable/hotloadable DATA seam.
+	# Settings from the params file (writes a seed file on first run so there is something to edit).
 	var cfg := _load_params()
 	_apply_settings(cfg)
-	_seed_world(cfg)
 	_params_mtime = _mtime(PARAMS_PATH)
+	# The world store (append-only versioned arrangements, OUTSIDE the repo). Committed seed worlds
+	# are copied in on first touch; the params file picks the starting world.
+	var wdir := _resolve_worlds_dir(cfg)
+	store = WorldStoreScript.new(wdir)
+	store.seed_from()
+	world_name = String(cfg.get("world", "starter"))
+	if not _load_active_world():
+		# Fallback (no store world): seed from the params `blocks` list — the original behavior.
+		_seed_world(cfg)
 	# Position the camera to survey the seeded build.
 	var start: Array = cfg.get("camera_start", [6.0, 6.0, 12.0])
 	_cam.position = Vector3(start[0], start[1], start[2])
 	_look_toward(Vector3(0.0, 1.0, 0.0))
+	if _bench_requested():
+		await _run_bench(t0)
+		return
 	if _shot_requested():
 		await _take_shot()
 
 
 func _process(delta: float) -> void:
-	# HOT-RELOAD watcher: if sandbox_params.json changed on disk, re-apply the world + settings live.
+	_time += delta
+	# HOT-RELOAD watcher 1: settings + world selection (sandbox_params.json).
 	if not _did_shot:
 		var m := _mtime(PARAMS_PATH)
 		if m != _params_mtime:
 			_params_mtime = m
 			var cfg := _load_params()
 			_apply_settings(cfg)
-			_seed_world(cfg, true)
+			var w := String(cfg.get("world", world_name))
+			if w != world_name:
+				_switch_world(w)
+		# HOT-RELOAD watcher 2: the active world's latest version file (Claude-Code-iterates seam).
+		_world_poll_accum += delta
+		if _world_poll_accum >= 0.5:
+			_world_poll_accum = 0.0
+			_poll_world_file()
+	_tick_objects(delta)
 	if _headless:
 		return
 	_update_movement(delta)
 	_update_preview()
+	_update_selection_marker()
 
 
 # ══ CREATIVE-MODE CAMERA + CONTROLS ═══════════════════════════════════════════════════════════════════
@@ -136,6 +232,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	# rendered from a 40-block params file; sandbox-live-verify pass, 2026-07-02).
 	if _did_shot:
 		return
+	# While the note editor is open, keys belong to the LineEdit; only ESC (cancel) is handled here.
+	if _note_open:
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+			_close_note(false)
+		return
 	# Mouse-look (only while the pointer is captured and the inventory is closed).
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_yaw -= event.relative.x * mouse_sens
@@ -143,12 +244,54 @@ func _unhandled_input(event: InputEvent) -> void:
 		_apply_camera_rotation()
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
+		# The behavior panel owns the number keys while open (1..5 toggle, B/ESC close).
+		if _behavior_open:
+			if event.keycode >= KEY_1 and event.keycode <= KEY_5:
+				_toggle_behavior_by_index(event.keycode - KEY_1)
+				return
+			if event.keycode == KEY_B or event.keycode == KEY_ESCAPE:
+				_toggle_behavior_panel()
+				return
+			return
 		match event.keycode:
 			KEY_E:
 				_toggle_inventory()
 				return
 			KEY_ESCAPE:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+				return
+			KEY_F:
+				_toggle_select()
+				return
+			KEY_G:
+				_toggle_grab()
+				return
+			KEY_R:
+				_rotate_selected(-15.0 if event.shift_pressed else 15.0)
+				return
+			KEY_EQUAL, KEY_KP_ADD:
+				_scale_selected(1.1)
+				return
+			KEY_MINUS, KEY_KP_SUBTRACT:
+				_scale_selected(1.0 / 1.1)
+				return
+			KEY_X:
+				_delete_selected()
+				return
+			KEY_B:
+				_toggle_behavior_panel()
+				return
+			KEY_N:
+				_open_note()
+				return
+			KEY_F5:
+				_save_world()
+				return
+			KEY_BRACKETLEFT:
+				_cycle_world(-1)
+				return
+			KEY_BRACKETRIGHT:
+				_cycle_world(1)
 				return
 		# Number keys 1..9 select the hotbar slot (MC parity).
 		if event.keycode >= KEY_1 and event.keycode <= KEY_9:
@@ -161,10 +304,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			MOUSE_BUTTON_LEFT:
 				if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 					Input.mouse_mode = Input.MOUSE_MODE_CAPTURED     # click to recapture after ESC
+				elif _grabbing:
+					_toggle_grab()                                   # click DROPS the grabbed object
 				else:
-					_place_block()
+					_place_active()
 			MOUSE_BUTTON_RIGHT:
-				_remove_block()
+				_remove_target()
 			MOUSE_BUTTON_WHEEL_UP:
 				_select_slot(wrapi(active_slot - 1, 0, 9))
 			MOUSE_BUTTON_WHEEL_DOWN:
@@ -218,7 +363,7 @@ func _look_toward(target: Vector3) -> void:
 # removes the target cell. If the ray hits nothing, LEFT-click places at a fixed reach distance on the
 # ground plane (y grid 0) so you can start a build in empty space.
 
-## Returns { hit:bool, cell:Vector3i (the block hit), place:Vector3i (empty cell to place into) }.
+## Returns { hit:bool, cell:Vector3i (the block hit), place:Vector3i (empty cell to place into), t:float }.
 func _raycast_grid() -> Dictionary:
 	var origin := _cam.global_position
 	var fwd := -_cam.global_transform.basis.z
@@ -229,28 +374,37 @@ func _raycast_grid() -> Dictionary:
 		var p := origin + fwd * t
 		var cell := _world_to_cell(p)
 		if world.has(cell):
-			return { "hit": true, "cell": cell, "place": prev_cell }
+			return { "hit": true, "cell": cell, "place": prev_cell, "t": t }
 		prev_cell = cell
 		t += step
 	# No block hit: aim at a point half the reach out; place on that cell (its own coord), snapped.
 	var far := origin + fwd * (REACH * grid_size * 0.5)
-	return { "hit": false, "cell": _world_to_cell(far), "place": _world_to_cell(far) }
+	return { "hit": false, "cell": _world_to_cell(far), "place": _world_to_cell(far), "t": REACH * grid_size * 0.5 }
 
 
-func _place_block() -> void:
+## LEFT click: place whatever the active hotbar entry is — a block (voxel layer) or an asset (object layer).
+func _place_active() -> void:
+	var entry: Dictionary = palette[hotbar[active_slot]]
 	var rc := _raycast_grid()
 	var cell: Vector3i = rc["place"]
+	if String(entry.get("kind", "block")) == "asset":
+		_place_object(String(entry["asset_id"]), _object_pos_for_cell(cell))
+		return
 	if world.has(cell):
 		return
-	var pal_idx: int = hotbar[active_slot]
-	_set_block(cell, pal_idx)
+	_set_block(cell, hotbar[active_slot])
 
 
-func _remove_block() -> void:
+## RIGHT click: remove the block OR the placed object under the crosshair — whichever the ray reaches first.
+func _remove_target() -> void:
 	var rc := _raycast_grid()
-	if not rc["hit"]:
+	var block_t: float = rc["t"] if rc["hit"] else INF
+	var pick := _pick_object()
+	if pick["id"] != "" and pick["t"] < block_t:
+		_delete_object(String(pick["id"]))
 		return
-	_erase_block(rc["cell"])
+	if rc["hit"]:
+		_erase_block(rc["cell"])
 
 
 ## Place a palette block at a grid cell. This is the ONE write path into the world Dictionary + the scene:
@@ -259,6 +413,8 @@ func _remove_block() -> void:
 ## seeded/params block can carry a file or PROCEDURAL texture descriptor (see _apply_material).
 func _set_block(cell: Vector3i, pal_idx: int, material_override: Dictionary = {}) -> void:
 	if pal_idx < 0 or pal_idx >= palette.size():
+		return
+	if String((palette[pal_idx] as Dictionary).get("kind", "block")) != "block":
 		return
 	if world.has(cell):
 		_erase_block(cell)
@@ -305,7 +461,6 @@ func _erase_block(cell: Vector3i) -> void:
 # Liam asked. The seam is intentionally the SINGLE choke point: a later node-based live-texturing system
 # only has to write a richer `material` descriptor (albedo_texture / roughness / normal_map / a node-graph
 # handle) into the record and call _apply_material — the placement/removal/world code above never changes.
-# This function is the documented FABLE-5 handoff attachment point.
 func _apply_material(mi: MeshInstance3D, material_desc: Dictionary) -> void:
 	var mat := StandardMaterial3D.new()
 	var albedo = material_desc.get("albedo", [0.75, 0.75, 0.78])
@@ -336,6 +491,508 @@ func _world_to_cell(p: Vector3) -> Vector3i:
 func _cell_to_world(c: Vector3i) -> Vector3:
 	return Vector3(c.x * grid_size, c.y * grid_size, c.z * grid_size)
 
+## Where an ASSET placed into a cell stands: on the cell's floor plane (base-origin models sit on
+## top of the block below / the ground plate, instead of floating at the cell centre).
+func _object_pos_for_cell(c: Vector3i) -> Vector3:
+	return _cell_to_world(c) + Vector3(0.0, -0.5 * grid_size, 0.0)
+
+
+# ══ THE OBJECT LAYER — any manifest asset, placed / rearranged / behaved / noted ══════════════════════
+# Each placed object is DATA: {id, asset, base_pos, yaw_deg, scale, behaviors, node, loaded, aabb}.
+# The node is a container Node3D; its "body" child is a placeholder box until the (lazily loaded)
+# asset instance swaps in — placement never waits on IO.
+
+func _place_object(asset_id: String, pos: Vector3, yaw_deg := 0.0, scale := 1.0,
+		behaviors: Array = [], forced_id := "") -> String:
+	if assets == null or not assets.has_asset(asset_id):
+		return ""
+	var id := forced_id
+	if id == "":
+		_obj_seq += 1
+		id = "obj_%d" % _obj_seq
+	else:
+		var n := int(id.trim_prefix("obj_"))
+		_obj_seq = maxi(_obj_seq, n)
+	var node := Node3D.new()
+	node.name = id
+	_objects_root.add_child(node)
+	var record := {
+		"id": id, "asset": asset_id,
+		"base_pos": pos, "yaw_deg": yaw_deg, "scale": scale,
+		"behaviors": behaviors.duplicate(true),
+		"node": node, "loaded": false,
+		"aabb": AABB(Vector3(-0.5, 0.0, -0.5), Vector3(1.0, 1.0, 1.0)),
+	}
+	objects[id] = record
+	_attach_body(record)
+	Behaviors.tick(record, node, { "t": _time, "delta": 0.0 })
+	return id
+
+
+## Placeholder-or-instance: swap in the real asset when the library has it, else a translucent box
+## (and request the load — `asset_ready` will swap it the moment it lands).
+func _attach_body(record: Dictionary) -> void:
+	var node: Node3D = record["node"]
+	var old: Node = node.get_node_or_null("body")
+	if old != null:
+		old.name = "body_old"
+		old.queue_free()
+	var asset_id := String(record["asset"])
+	var inst: Node3D = assets.instantiate(asset_id)
+	if inst != null:
+		inst.name = "body"
+		node.add_child(inst)
+		record["loaded"] = true
+		record["aabb"] = _combined_aabb(inst)
+	else:
+		var ph := MeshInstance3D.new()
+		ph.name = "body"
+		var bm := BoxMesh.new()
+		bm.size = Vector3.ONE * 0.9
+		ph.mesh = bm
+		ph.position = Vector3(0.0, 0.45, 0.0)
+		var m := StandardMaterial3D.new()
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.albedo_color = Color(0.6, 0.7, 0.9, 0.45)
+		ph.material_override = m
+		node.add_child(ph)
+		record["loaded"] = false
+		record["aabb"] = AABB(Vector3(-0.5, 0.0, -0.5), Vector3(1.0, 1.0, 1.0))
+		assets.request(asset_id)
+
+
+func _on_asset_ready(asset_id: String) -> void:
+	for id in objects:
+		var rec: Dictionary = objects[id]
+		if String(rec["asset"]) == asset_id and not bool(rec["loaded"]):
+			_attach_body(rec)
+
+
+func _delete_object(id: String) -> void:
+	if not objects.has(id):
+		return
+	var rec: Dictionary = objects[id]
+	var n = rec.get("node", null)
+	if n != null and is_instance_valid(n):
+		if n.get_parent() != null:
+			n.get_parent().remove_child(n)
+		n.queue_free()
+	objects.erase(id)
+	if selected_id == id:
+		selected_id = ""
+		_grabbing = false
+	_refresh_status()
+
+
+func _clear_objects() -> void:
+	for id in objects.keys():
+		var rec: Dictionary = objects[id]
+		var n = rec.get("node", null)
+		if n != null and is_instance_valid(n):
+			n.queue_free()
+	objects.clear()
+	selected_id = ""
+	_grabbing = false
+
+
+## Tick every object's behavior stack (also lands static objects on their base transform).
+func _tick_objects(delta: float) -> void:
+	var ctx := {
+		"t": _time, "delta": delta,
+		"player_pos": _cam.global_position if _cam != null else Vector3.INF,
+	}
+	for id in objects:
+		var rec: Dictionary = objects[id]
+		# While grabbed, the object follows the build ray (grid-snapped) instead of its behaviors.
+		if _grabbing and id == selected_id and not _headless:
+			var rc := _raycast_grid()
+			rec["base_pos"] = _object_pos_for_cell(rc["place"])
+		Behaviors.tick(rec, rec.get("node"), ctx)
+
+
+# ── picking / selection / rearranging ─────────────────────────────────────────────────────────────────
+
+## Nearest placed object along the camera ray (slab ray-vs-AABB in world space).
+## Returns { id:String ("" = none), t:float }.
+func _pick_object() -> Dictionary:
+	if _cam == null:
+		return { "id": "", "t": INF }
+	var origin := _cam.global_position
+	var dir := -_cam.global_transform.basis.z
+	var best_id := ""
+	var best_t := INF
+	for id in objects:
+		var rec: Dictionary = objects[id]
+		var node = rec.get("node")
+		if node == null or not is_instance_valid(node):
+			continue
+		var aabb: AABB = (node as Node3D).global_transform * (rec["aabb"] as AABB)
+		var t := _ray_aabb(origin, dir, aabb.grow(0.05))
+		if t >= 0.0 and t < best_t and t <= REACH * grid_size * 2.0:
+			best_t = t
+			best_id = id
+	return { "id": best_id, "t": best_t }
+
+
+## Slab-method ray/AABB intersection. Returns entry distance t (>=0) or -1.0 on miss.
+func _ray_aabb(origin: Vector3, dir: Vector3, aabb: AABB) -> float:
+	var tmin := -INF
+	var tmax := INF
+	for axis in 3:
+		var o := origin[axis]
+		var d := dir[axis]
+		var lo := aabb.position[axis]
+		var hi := aabb.position[axis] + aabb.size[axis]
+		if absf(d) < 1e-8:
+			if o < lo or o > hi:
+				return -1.0
+		else:
+			var t1 := (lo - o) / d
+			var t2 := (hi - o) / d
+			tmin = maxf(tmin, minf(t1, t2))
+			tmax = minf(tmax, maxf(t1, t2))
+			if tmin > tmax:
+				return -1.0
+	if tmax < 0.0:
+		return -1.0
+	return maxf(tmin, 0.0)
+
+
+func _toggle_select() -> void:
+	if _grabbing:
+		return
+	var pick := _pick_object()
+	var id := String(pick["id"])
+	selected_id = "" if (id == selected_id or id == "") else id
+	_refresh_status()
+
+
+func _toggle_grab() -> void:
+	if selected_id == "" or not objects.has(selected_id):
+		_grabbing = false
+		return
+	_grabbing = not _grabbing
+	_refresh_status()
+
+
+func _rotate_selected(deg: float) -> void:
+	if selected_id == "" or not objects.has(selected_id):
+		return
+	var rec: Dictionary = objects[selected_id]
+	rec["yaw_deg"] = fmod(float(rec["yaw_deg"]) + deg, 360.0)
+	_refresh_status()
+
+
+func _scale_selected(factor: float) -> void:
+	if selected_id == "" or not objects.has(selected_id):
+		return
+	var rec: Dictionary = objects[selected_id]
+	rec["scale"] = clampf(float(rec["scale"]) * factor, 0.1, 10.0)
+	_refresh_status()
+
+
+func _delete_selected() -> void:
+	if selected_id != "":
+		_delete_object(selected_id)
+
+
+func _update_selection_marker() -> void:
+	if _sel_marker == null:
+		return
+	if selected_id == "" or not objects.has(selected_id):
+		_sel_marker.visible = false
+		return
+	var rec: Dictionary = objects[selected_id]
+	var node = rec.get("node")
+	if node == null or not is_instance_valid(node):
+		_sel_marker.visible = false
+		return
+	var aabb: AABB = ((node as Node3D).global_transform * (rec["aabb"] as AABB)).grow(0.08)
+	_sel_marker.visible = true
+	_sel_marker.position = aabb.get_center()
+	(_sel_marker.mesh as BoxMesh).size = aabb.size
+
+
+## Local-space combined AABB of every mesh under a node (relative to that node).
+func _combined_aabb(root: Node3D) -> AABB:
+	var merged := AABB()
+	var found := false
+	var stack: Array = [[root, Transform3D.IDENTITY]]
+	while not stack.is_empty():
+		var top: Array = stack.pop_back()
+		var n: Node = top[0]
+		var xf: Transform3D = top[1]
+		var here := xf
+		if n is Node3D and n != root:
+			here = xf * (n as Node3D).transform
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
+			var a := here * (n as MeshInstance3D).mesh.get_aabb()
+			merged = a if not found else merged.merge(a)
+			found = true
+		for c in n.get_children():
+			stack.append([c, here])
+	return merged if found else AABB(Vector3(-0.5, 0.0, -0.5), Vector3.ONE)
+
+
+# ── behaviors panel (B): toggle composable behaviors on the selection ─────────────────────────────────
+
+func _toggle_behavior_panel() -> void:
+	if _headless or _behavior_panel == null:
+		return
+	if not _behavior_open and (selected_id == "" or not objects.has(selected_id)):
+		_flash_status("select an object first (F), then B for behaviors")
+		return
+	_behavior_open = not _behavior_open
+	_behavior_panel.visible = _behavior_open
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if _behavior_open else Input.MOUSE_MODE_CAPTURED
+	if _behavior_open:
+		_refresh_behavior_list()
+
+
+func _toggle_behavior_by_index(i: int) -> void:
+	if selected_id == "" or not objects.has(selected_id):
+		return
+	var types: Array = Behaviors.TYPES
+	if i < 0 or i >= types.size():
+		return
+	var rec: Dictionary = objects[selected_id]
+	rec["behaviors"] = Behaviors.toggle(rec.get("behaviors", []), String(types[i]))
+	_refresh_behavior_list()
+	_refresh_status()
+
+
+func _refresh_behavior_list() -> void:
+	if _behavior_list == null or selected_id == "" or not objects.has(selected_id):
+		return
+	var rec: Dictionary = objects[selected_id]
+	var lines := ["Behaviors on %s (%s):" % [selected_id, String(rec["asset"])], ""]
+	var types: Array = Behaviors.TYPES
+	for i in types.size():
+		var t := String(types[i])
+		var on := Behaviors.has_behavior(rec.get("behaviors", []), t)
+		lines.append("  [%d] %s %s" % [i + 1, "[x]" if on else "[ ]", t])
+	lines.append("")
+	lines.append("1..5 toggle  ·  B close")
+	_behavior_list.text = "\n".join(lines)
+
+
+# ── notes on things (N): the Claude Code handoff channel ──────────────────────────────────────────────
+# A note lands as one JSONL line in notes_path with everything a Claude Code session needs to act on it
+# cold: UTC timestamp, world + version, object id + asset id (or a bare location), world position, text.
+
+func _open_note() -> void:
+	if _headless or _note_panel == null:
+		return
+	_note_open = true
+	_note_panel.visible = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if _note_target_label != null:
+		_note_target_label.text = "Note on: %s" % _note_target_desc()
+	_note_edit.text = ""
+	_note_edit.grab_focus()
+
+
+func _note_target_desc() -> String:
+	if selected_id != "" and objects.has(selected_id):
+		return "%s (%s)" % [selected_id, String((objects[selected_id] as Dictionary)["asset"])]
+	var rc := _raycast_grid()
+	return "location %s" % str(_cell_to_world(rc["place"] if not rc["hit"] else rc["cell"]))
+
+
+func _close_note(save: bool) -> void:
+	_note_open = false
+	if _note_panel != null:
+		_note_panel.visible = false
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if not save:
+		return
+	var text := _note_edit.text.strip_edges() if _note_edit != null else ""
+	if text == "":
+		return
+	if _write_note(text):
+		_flash_status("note saved -> %s" % notes_path)
+	else:
+		_flash_status("NOTE FAILED to write %s" % notes_path)
+
+
+## Append one note line (JSONL). Standalone so headless tests call it directly. Returns success.
+func _write_note(text: String, obj_id_override := "", pos_override = null) -> bool:
+	var obj_id := obj_id_override if obj_id_override != "" else selected_id
+	var asset_id := ""
+	var pos: Vector3
+	if obj_id != "" and objects.has(obj_id):
+		var rec: Dictionary = objects[obj_id]
+		asset_id = String(rec["asset"])
+		pos = rec["base_pos"]
+	else:
+		obj_id = ""
+		if pos_override != null:
+			pos = pos_override
+		elif not _headless and _cam != null:
+			var rc := _raycast_grid()
+			pos = _cell_to_world(rc["place"] if not rc["hit"] else rc["cell"])
+		else:
+			pos = Vector3.ZERO
+	var entry := {
+		"ts": Time.get_datetime_string_from_system(true) + "Z",
+		"world": world_name,
+		"world_version": store.latest_version(world_name) if store != null else 0,
+		"object_id": obj_id,
+		"asset_id": asset_id,
+		"position": [pos.x, pos.y, pos.z],
+		"note": text,
+	}
+	var dir := notes_path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir):
+		DirAccess.make_dir_recursive_absolute(dir)
+	var f: FileAccess
+	if FileAccess.file_exists(notes_path):
+		f = FileAccess.open(notes_path, FileAccess.READ_WRITE)
+		if f != null:
+			f.seek_end()
+	else:
+		f = FileAccess.open(notes_path, FileAccess.WRITE)
+	if f == null:
+		return false
+	f.store_line(JSON.stringify(entry))
+	f.close()
+	return true
+
+
+# ══ WORLDS: load / save (append-only) / switch (preload swap) ═════════════════════════════════════════
+
+## Load the active world from the store (blocks + objects + preload set). False if absent.
+func _load_active_world() -> bool:
+	if store == null:
+		return false
+	var data: Dictionary = store.load_world(world_name)
+	if data.is_empty():
+		return false
+	_apply_world_data(data)
+	_world_watch_path = store.latest_path(world_name)
+	_world_watch_hash = _file_hash(_world_watch_path)
+	return true
+
+
+func _apply_world_data(data: Dictionary) -> void:
+	# blocks (clear + re-seed: the file is the source of truth for the seeded build)
+	_seed_world({ "blocks": data.get("blocks", []), "material_ops": data.get("material_ops", []) }, true)
+	# objects: preload the world's asset set (background), evict what this world does not use,
+	# then place records (placeholders swap in as loads land) — the scene-to-scene swap path.
+	_clear_objects()
+	var pre: Array = WorldStoreScript.preload_set_of(data)
+	if assets != null:
+		assets.evict_except(pre)
+		assets.preload_set(pre)
+	for o in data.get("objects", []):
+		if typeof(o) != TYPE_DICTIONARY or not o.has("asset"):
+			continue
+		var p = o.get("position", [0, 0, 0])
+		if typeof(p) != TYPE_ARRAY or (p as Array).size() < 3:
+			continue
+		_place_object(String(o["asset"]), Vector3(p[0], p[1], p[2]),
+			float(o.get("yaw_deg", 0.0)), float(o.get("scale", 1.0)),
+			o.get("behaviors", []) if typeof(o.get("behaviors")) == TYPE_ARRAY else [],
+			String(o.get("id", "")))
+	_refresh_status()
+
+
+## Serialize the live world back to pure data (the exact file shape the store persists).
+func _serialize_world() -> Dictionary:
+	var blocks := []
+	for cell in world:
+		var rec: Dictionary = world[cell]
+		blocks.append({
+			"cell": [cell.x, cell.y, cell.z],
+			"block": String(rec["type"]),
+			"material": (rec.get("material", {}) as Dictionary).duplicate(true),
+		})
+	var objs := []
+	for id in objects:
+		var rec: Dictionary = objects[id]
+		var bp: Vector3 = rec["base_pos"]
+		objs.append({
+			"id": id,
+			"asset": String(rec["asset"]),
+			"position": [bp.x, bp.y, bp.z],
+			"yaw_deg": float(rec["yaw_deg"]),
+			"scale": float(rec["scale"]),
+			"behaviors": (rec.get("behaviors", []) as Array).duplicate(true),
+		})
+	return {
+		"grid_size": grid_size,
+		"blocks": blocks,
+		"objects": objs,
+	}
+
+
+## F5 — APPEND-ONLY save: version N+1 in the store; prior versions are never touched.
+func _save_world() -> void:
+	if store == null:
+		return
+	var v: int = store.save_version(world_name, _serialize_world())
+	if v > 0:
+		_world_watch_path = store.latest_path(world_name)
+		_world_watch_hash = _file_hash(_world_watch_path)
+		_flash_status("saved %s v%d (append-only)" % [world_name, v])
+	else:
+		_flash_status("SAVE FAILED for %s" % world_name)
+
+
+## [ / ] — move scene to scene: the next world's preload set loads, the old one's assets evict.
+func _cycle_world(dir: int) -> void:
+	if store == null:
+		return
+	var names: Array = store.list_worlds()
+	if names.is_empty():
+		return
+	var idx := names.find(world_name)
+	idx = wrapi((idx if idx >= 0 else 0) + dir, 0, names.size())
+	_switch_world(String(names[idx]))
+
+
+func _switch_world(name: String) -> void:
+	world_name = name
+	if not _load_active_world():
+		# A brand-new name: start it empty (first F5 creates v1).
+		_seed_world({ "blocks": [] }, true)
+		_clear_objects()
+		_world_watch_path = ""
+		_world_watch_hash = ""
+	_flash_status("world: %s (v%d)" % [world_name, store.latest_version(world_name) if store != null else 0])
+
+
+## Watcher 2: reload when the active world's latest file CHANGES or a NEWER VERSION appears
+## (Claude Code saving v(N+1) hot-swaps the running scene — append-only compatible).
+func _poll_world_file() -> void:
+	if store == null:
+		return
+	var latest: String = store.latest_path(world_name)
+	if latest == "":
+		return
+	var h := _file_hash(latest)
+	if latest != _world_watch_path or (h != "" and h != _world_watch_hash):
+		_world_watch_path = latest
+		_world_watch_hash = h
+		var data: Dictionary = store.load_world(world_name)
+		if not data.is_empty():
+			_apply_world_data(data)
+
+
+func _file_hash(path: String) -> String:
+	if path == "" or not FileAccess.file_exists(path):
+		return ""
+	return FileAccess.get_file_as_string(path).sha256_text()
+
+
+func _resolve_worlds_dir(cfg: Dictionary) -> String:
+	if worlds_dir_override != "":
+		return worlds_dir_override
+	var env := OS.get_environment("SANDBOX_WORLDS_DIR")
+	if env != "":
+		return env
+	return String(cfg.get("worlds_dir", WorldStoreScript.DEFAULT_WORLDS_DIR))
+
 
 # ══ THE BLOCK PALETTE (untextured generic building blocks) ════════════════════════════════════════════
 # The engine's 13-shape primitive vocabulary, presented as generic untextured blocks in three categories
@@ -364,7 +1021,37 @@ func _build_palette() -> void:
 
 func _pal(name: String, shape: String, params: Dictionary, albedo: Array, category: String) -> Dictionary:
 	# `material` starts as a plain albedo colour (UNTEXTURED). This dict is the per-block live-texturing seam.
-	return { "name": name, "shape": shape, "params": params, "material": { "albedo": albedo }, "category": category }
+	return { "kind": "block", "name": name, "shape": shape, "params": params, "material": { "albedo": albedo }, "category": category }
+
+
+## EVERY imported asset joins the inventory as a kind:"asset" palette entry under a per-kit tab
+## (spec: "include ... the other ones that were found and imported for other experiments").
+## Metadata only — nothing loads until placement.
+func _extend_palette_with_assets() -> void:
+	if assets == null:
+		return
+	var kit_tints := {}
+	var tints := [[0.55, 0.75, 0.55], [0.55, 0.68, 0.80], [0.80, 0.70, 0.55], [0.75, 0.60, 0.75]]
+	for i in (assets.kits as Array).size():
+		kit_tints[assets.kits[i]] = tints[i % tints.size()]
+	for kit in assets.kits:
+		for a in assets.kit_assets(String(kit)):
+			palette.append({
+				"kind": "asset",
+				"name": String(a.get("name", a["id"])),
+				"asset_id": String(a["id"]),
+				"shape": "",
+				"params": {},
+				"material": { "albedo": kit_tints.get(kit, [0.6, 0.7, 0.6]) },
+				"category": _kit_label(String(kit)),
+			})
+
+func _kit_label(kit: String) -> String:
+	var words := kit.split("_")
+	var out := []
+	for w in words:
+		out.append(String(w).capitalize())
+	return " ".join(out)
 
 func _categories() -> Array:
 	var seen := {}
@@ -413,6 +1100,9 @@ func _build_hud() -> void:
 	_rebuild_hotbar_ui()
 	# The inventory panel (hidden until E).
 	_build_inventory_panel()
+	# The behavior panel (hidden until B) + the note editor (hidden until N).
+	_build_behavior_panel()
+	_build_note_panel()
 	_refresh_status()
 
 
@@ -454,9 +1144,9 @@ func _make_slot_button(pal_idx: int, active: bool, label: String) -> Button:
 func _build_inventory_panel() -> void:
 	_inv_panel = Panel.new()
 	_inv_panel.set_anchors_preset(Control.PRESET_CENTER)
-	_inv_panel.custom_minimum_size = Vector2(520, 380)
-	_inv_panel.size = Vector2(520, 380)
-	_inv_panel.position = Vector2(-260, -190)
+	_inv_panel.custom_minimum_size = Vector2(560, 420)
+	_inv_panel.size = Vector2(560, 420)
+	_inv_panel.position = Vector2(-280, -210)
 	_inv_panel.visible = false
 	_hud.add_child(_inv_panel)
 	var vb := VBoxContainer.new()
@@ -509,8 +1199,8 @@ func _populate_inventory(category: String) -> void:
 		if entry["category"] != category:
 			continue
 		var b := _make_slot_button(pal_idx, false, "")
-		b.custom_minimum_size = Vector2(72, 72)
-		b.add_theme_font_size_override("font_size", 12)
+		b.custom_minimum_size = Vector2(80, 72)
+		b.add_theme_font_size_override("font_size", 11)
 		var idx := pal_idx
 		b.pressed.connect(func(): _pick_into_hotbar(idx))
 		_inv_grid.add_child(b)
@@ -545,12 +1235,33 @@ func _select_slot(i: int) -> void:
 	_update_preview_mesh()
 
 
+var _flash_text := ""
+var _flash_until := 0.0
+
+func _flash_status(msg: String) -> void:
+	_flash_text = msg
+	_flash_until = _time + 4.0
+	_refresh_status()
+	print("[sandbox] %s" % msg)
+
+
 func _refresh_status() -> void:
 	if _status == null:
 		return
 	var entry: Dictionary = palette[hotbar[active_slot]]
-	_status.text = "Block: %s   (slot %d)   |   L-click place · R-click remove · 1-9 select · E inventory · WASD+Space/Shift fly" % [
-		String(entry["name"]), active_slot + 1]
+	var lines := []
+	lines.append("%s: %s   (slot %d)   |   world: %s   |   L place · R remove · 1-9 slots · E inventory · WASD+Space/Shift fly" % [
+		"Asset" if String(entry.get("kind", "block")) == "asset" else "Block",
+		String(entry["name"]), active_slot + 1, world_name])
+	if selected_id != "" and objects.has(selected_id):
+		var rec: Dictionary = objects[selected_id]
+		lines.append("Selected: %s (%s)%s   |   G grab · R rotate · +/- scale · X delete · B behaviors · N note" % [
+			selected_id, String(rec["asset"]), "  [GRABBED — click to drop]" if _grabbing else ""])
+	else:
+		lines.append("F select object · N note here · F5 save world · [ ] switch world")
+	if _time < _flash_until and _flash_text != "":
+		lines.append(">> " + _flash_text)
+	_status.text = "\n".join(lines)
 
 
 # ── the placement PREVIEW ghost (shows where the next block lands) ────────────────────────────────────
@@ -565,7 +1276,7 @@ func _update_preview() -> void:
 	var cell: Vector3i = rc["place"]
 	if _preview == null:
 		return
-	if world.has(cell):
+	if world.has(cell) or _grabbing:
 		_preview.visible = false
 		return
 	_preview.visible = true
@@ -576,7 +1287,13 @@ func _update_preview_mesh() -> void:
 	if _preview == null:
 		return
 	var entry: Dictionary = palette[hotbar[active_slot]]
-	_preview.mesh = GodotSceneRenderer._primitive_mesh(String(entry["shape"]), entry.get("params", {}))
+	if String(entry.get("kind", "block")) == "asset":
+		# Assets preview as a unit ghost box (the real bounds are unknown until the lazy load lands).
+		var bm := BoxMesh.new()
+		bm.size = Vector3.ONE * 0.9
+		_preview.mesh = bm
+	else:
+		_preview.mesh = GodotSceneRenderer._primitive_mesh(String(entry["shape"]), entry.get("params", {}))
 
 
 # ══ WORLD NODES + ENVIRONMENT ═════════════════════════════════════════════════════════════════════════
@@ -587,7 +1304,10 @@ func _build_world_nodes() -> void:
 	_blocks_root = Node3D.new()
 	_blocks_root.name = "Blocks"
 	add_child(_blocks_root)
-	# The translucent placement ghost.
+	_objects_root = Node3D.new()
+	_objects_root.name = "Objects"
+	add_child(_objects_root)
+	# The translucent placement ghost + the selection marker.
 	if not _headless:
 		_preview = MeshInstance3D.new()
 		var ghost := StandardMaterial3D.new()
@@ -597,6 +1317,15 @@ func _build_world_nodes() -> void:
 		_preview.visible = false
 		add_child(_preview)
 		_update_preview_mesh()
+		_sel_marker = MeshInstance3D.new()
+		_sel_marker.mesh = BoxMesh.new()
+		var selmat := StandardMaterial3D.new()
+		selmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		selmat.albedo_color = Color(1.0, 0.9, 0.2, 0.22)
+		selmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_sel_marker.material_override = selmat
+		_sel_marker.visible = false
+		add_child(_sel_marker)
 
 
 func _build_env() -> void:
@@ -632,10 +1361,50 @@ func _build_env() -> void:
 	add_child(floor_mi)
 
 
-# ══ PARAMS: the openable / hotloadable world DATA ═════════════════════════════════════════════════════
-# The world + settings live in godot/examples/sandbox_params.json — the ONE file Claude Code (or Liam)
-# edits to iterate the sandbox. Content-change → re-apply (the LiveHost pattern). On first run a seed file
-# is written so there is something to edit.
+# ── panels: behaviors (B) + note editor (N) ───────────────────────────────────────────────────────────
+func _build_behavior_panel() -> void:
+	_behavior_panel = Panel.new()
+	_behavior_panel.set_anchors_preset(Control.PRESET_CENTER)
+	_behavior_panel.custom_minimum_size = Vector2(340, 240)
+	_behavior_panel.size = Vector2(340, 240)
+	_behavior_panel.position = Vector2(-170, -120)
+	_behavior_panel.visible = false
+	_hud.add_child(_behavior_panel)
+	_behavior_list = Label.new()
+	_behavior_list.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_behavior_list.offset_left = 16; _behavior_list.offset_top = 12
+	_behavior_list.add_theme_font_size_override("font_size", 15)
+	_behavior_panel.add_child(_behavior_list)
+
+
+func _build_note_panel() -> void:
+	_note_panel = Panel.new()
+	_note_panel.set_anchors_preset(Control.PRESET_CENTER)
+	_note_panel.custom_minimum_size = Vector2(560, 110)
+	_note_panel.size = Vector2(560, 110)
+	_note_panel.position = Vector2(-280, -55)
+	_note_panel.visible = false
+	_hud.add_child(_note_panel)
+	var vb := VBoxContainer.new()
+	vb.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vb.offset_left = 12; vb.offset_top = 10; vb.offset_right = -12; vb.offset_bottom = -10
+	vb.add_theme_constant_override("separation", 6)
+	_note_panel.add_child(vb)
+	_note_target_label = Label.new()
+	_note_target_label.add_theme_font_size_override("font_size", 13)
+	vb.add_child(_note_target_label)
+	_note_edit = LineEdit.new()
+	_note_edit.placeholder_text = "note for Claude Code…  (Enter saves · ESC cancels)"
+	_note_edit.add_theme_font_size_override("font_size", 15)
+	vb.add_child(_note_edit)
+	_note_edit.text_submitted.connect(func(_t: String): _close_note(true))
+
+
+# ══ PARAMS: the openable / hotloadable settings DATA ══════════════════════════════════════════════════
+# Settings + the active-world selection live in godot/examples/sandbox_params.json. Content-change →
+# re-apply (the LiveHost pattern). On first run a seed file is written so there is something to edit.
+# (World CONTENT lives in the world store — watcher 2 — so the params file stays small and settings-only;
+# the legacy `blocks` list is still honored as a fallback when the store has no active world.)
 func _load_params() -> Dictionary:
 	if FileAccess.file_exists(PARAMS_PATH):
 		var data = JSON.parse_string(FileAccess.get_file_as_string(PARAMS_PATH))
@@ -653,11 +1422,15 @@ func _apply_settings(cfg: Dictionary) -> void:
 	grid_size = float(cfg.get("grid_size", GRID))
 	fly_speed = float(cfg.get("fly_speed", 8.0))
 	mouse_sens = float(cfg.get("mouse_sensitivity", 0.0025))
+	var np := OS.get_environment("SANDBOX_NOTES_PATH")
+	if np == "":
+		np = String(cfg.get("notes_path", DEFAULT_NOTES_PATH))
+	notes_path = np
 
 
-## Seed (or, on hotload, re-seed) the world from the params `blocks` list. Each entry is
+## Seed (or, on hotload, re-seed) the BLOCK layer from a `blocks` list. Each entry is
 ## {cell:[x,y,z], block:"Cube"} — a grid coord + a palette block NAME. On a live re-seed we clear the
-## world first so the params file is the source of truth for the seeded build.
+## world first so the incoming data is the source of truth for the seeded build.
 func _seed_world(cfg: Dictionary, is_reload := false) -> void:
 	if is_reload:
 		for cell in world.keys():
@@ -720,7 +1493,7 @@ func _apply_material_ops(ops) -> int:
 
 func _palette_index(name: String) -> int:
 	for i in palette.size():
-		if String(palette[i]["name"]) == name:
+		if String(palette[i]["name"]) == name and String((palette[i] as Dictionary).get("kind", "block")) == "block":
 			return i
 	return -1
 
@@ -755,8 +1528,40 @@ func _default_params() -> Dictionary:
 		"fly_speed": 8.0,
 		"mouse_sensitivity": 0.0025,
 		"camera_start": [6.0, 6.0, 12.0],
+		"world": "starter",
 		"blocks": blocks,
 	}
+
+
+# ══ BENCH ═════════════════════════════════════════════════════════════════════════════════════════════
+# --bench: print startup + memory numbers as one JSON line, then quit (headless-safe). --eager adds a
+# force-load of EVERY manifest asset first — the "what if everything loaded at startup" comparison that
+# quantifies what lazy loading saves.
+func _bench_requested() -> bool:
+	return "--bench" in OS.get_cmdline_user_args() or "--bench" in OS.get_cmdline_args()
+
+
+func _run_bench(t0: int) -> void:
+	var eager := ("--eager" in OS.get_cmdline_user_args()) or ("--eager" in OS.get_cmdline_args())
+	if eager:
+		for id in assets.manifest:
+			assets.request_sync(String(id))
+	else:
+		# Lazy mode still waits for the starting world's preload set (the honest "ready to build" time).
+		var deadline := Time.get_ticks_msec() + 30000
+		while assets.pending_count() > 0 and Time.get_ticks_msec() < deadline:
+			await get_tree().process_frame
+	var report := {
+		"mode": "eager" if eager else "lazy",
+		"startup_ms": Time.get_ticks_msec() - t0,
+		"manifest_assets": (assets.manifest as Dictionary).size(),
+		"assets_loaded": assets.loaded_count(),
+		"blocks": world.size(),
+		"objects": objects.size(),
+		"mem_static_mb": snappedf(float(OS.get_static_memory_usage()) / 1048576.0, 0.1),
+	}
+	print("[sandbox_bench] %s" % JSON.stringify(report))
+	get_tree().quit(0)
 
 
 # ══ HEADLESS PROOF ════════════════════════════════════════════════════════════════════════════════════
@@ -777,6 +1582,10 @@ func _take_shot() -> void:
 	if inv and not _headless and _inv_panel != null:
 		_toggle_inventory()
 		out_path = "res://docs/sandbox_creative_inventory.png"
+	# Wait for the world's lazy asset loads so the proof shows the real models, not placeholders.
+	var deadline := Time.get_ticks_msec() + 20000
+	while assets.pending_count() > 0 and Time.get_ticks_msec() < deadline:
+		await get_tree().process_frame
 	# Let the scene light + render a few frames before grabbing.
 	for _i in 6:
 		await get_tree().process_frame
@@ -784,7 +1593,7 @@ func _take_shot() -> void:
 	var img := get_viewport().get_texture().get_image()
 	DirAccess.make_dir_recursive_absolute("res://docs")
 	img.save_png(out_path)
-	print("[sandbox_creative] proof written: %s  (%d blocks placed)" % [out_path, world.size()])
+	print("[sandbox_creative] proof written: %s  (%d blocks, %d objects)" % [out_path, world.size(), objects.size()])
 	get_tree().quit(0)
 
 

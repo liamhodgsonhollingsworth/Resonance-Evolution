@@ -1,0 +1,410 @@
+{
+	"format": "sandbox.world/v2",
+	"name": "starter",
+	"description": "The default build: block plinth + arch + a few nature-kit assets (one blinking campfire light, one spinning cactus) proving the behavior seam.",
+	"grid_size": 1.0,
+	"blocks": [
+		{
+			"cell": [
+				-2,
+				0,
+				-2
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				-2,
+				0,
+				-1
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				-2,
+				0,
+				0
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				-2,
+				0,
+				1
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				-2,
+				0,
+				2
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				-1,
+				0,
+				-2
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				-1,
+				0,
+				-1
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				-1,
+				0,
+				0
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				-1,
+				0,
+				1
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				-1,
+				0,
+				2
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				0,
+				0,
+				-2
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				0,
+				0,
+				-1
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				0,
+				0,
+				0
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				0,
+				0,
+				1
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				0,
+				0,
+				2
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				1,
+				0,
+				-2
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				1,
+				0,
+				-1
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				1,
+				0,
+				0
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				1,
+				0,
+				1
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				1,
+				0,
+				2
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				2,
+				0,
+				-2
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				2,
+				0,
+				-1
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				2,
+				0,
+				0
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				2,
+				0,
+				1
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				2,
+				0,
+				2
+			],
+			"block": "Cube"
+		},
+		{
+			"cell": [
+				-2,
+				1,
+				-2
+			],
+			"block": "Pillar"
+		},
+		{
+			"cell": [
+				2,
+				1,
+				-2
+			],
+			"block": "Pillar"
+		},
+		{
+			"cell": [
+				-2,
+				2,
+				-2
+			],
+			"block": "Pillar"
+		},
+		{
+			"cell": [
+				2,
+				2,
+				-2
+			],
+			"block": "Pillar"
+		},
+		{
+			"cell": [
+				-2,
+				3,
+				-2
+			],
+			"block": "Pillar"
+		},
+		{
+			"cell": [
+				2,
+				3,
+				-2
+			],
+			"block": "Pillar"
+		},
+		{
+			"cell": [
+				-2,
+				4,
+				-2
+			],
+			"block": "Ball"
+		},
+		{
+			"cell": [
+				2,
+				4,
+				-2
+			],
+			"block": "Ball"
+		},
+		{
+			"cell": [
+				0,
+				2,
+				-2
+			],
+			"block": "Arch"
+		},
+		{
+			"cell": [
+				0,
+				1,
+				2
+			],
+			"block": "Stairs"
+		},
+		{
+			"cell": [
+				-1,
+				1,
+				0
+			],
+			"block": "Cone"
+		},
+		{
+			"cell": [
+				1,
+				1,
+				0
+			],
+			"block": "Pyramid"
+		},
+		{
+			"cell": [
+				0,
+				1,
+				1
+			],
+			"block": "Wedge"
+		},
+		{
+			"cell": [
+				-2,
+				1,
+				2
+			],
+			"block": "Torus"
+		},
+		{
+			"cell": [
+				2,
+				1,
+				2
+			],
+			"block": "Capsule"
+		}
+	],
+	"objects": [
+		{
+			"id": "obj_1",
+			"asset": "kenney_nature__campfire_logs",
+			"position": [
+				4,
+				-0.5,
+				4
+			],
+			"yaw_deg": 0.0,
+			"scale": 1.0,
+			"behaviors": [
+				{
+					"type": "light",
+					"params": {
+						"color": [
+							1.0,
+							0.72,
+							0.35
+						],
+						"energy": 2.5,
+						"period": 1.4
+					}
+				}
+			]
+		},
+		{
+			"id": "obj_2",
+			"asset": "kenney_nature__cactus_tall",
+			"position": [
+				-4,
+				-0.5,
+				3
+			],
+			"yaw_deg": 0.0,
+			"scale": 1.0,
+			"behaviors": [
+				{
+					"type": "spin",
+					"params": {
+						"speed_deg": 30.0
+					}
+				}
+			]
+		},
+		{
+			"id": "obj_3",
+			"asset": "quaternius_nature__twisted_tree_-_free_model_by_quaternius_7pdbpelkqr",
+			"position": [
+				6,
+				-0.5,
+				-4
+			],
+			"yaw_deg": 40.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_4",
+			"asset": "quaternius_nature__pine_-_free_model_by_quaternius_699sfulcn2",
+			"position": [
+				-6,
+				-0.5,
+				-5
+			],
+			"yaw_deg": 0.0,
+			"scale": 1.0,
+			"behaviors": []
+		},
+		{
+			"id": "obj_5",
+			"asset": "kenney_nature__bridge_wood",
+			"position": [
+				0,
+				-0.5,
+				6
+			],
+			"yaw_deg": 90.0,
+			"scale": 1.0,
+			"behaviors": []
+		}
+	]
+}
