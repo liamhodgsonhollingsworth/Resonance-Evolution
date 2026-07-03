@@ -106,7 +106,14 @@ func _init() -> void:
 	# for the sandbox's _apply_material seam) — see primitives/prim_texture_apply.gd.
 	register("TextureApply", PrimTextureApply)
 	register("MathPaint", PrimMathPaint)
+<<<<<<< HEAD
 	register("LSystem", PrimLSystem)
+=======
+	# The Godot Aperture 3D surface (godot/aperture/): inbox READ + action WRITE over the
+	# same substrate/channels the web board uses - see prim_aperture_inbox/action.gd.
+	register("ApertureInbox", PrimApertureInbox)
+	register("ApertureAction", PrimApertureAction)
+>>>>>>> 2fb6a65 (feat(aperture3d): Godot Aperture v1 — in-engine inbox surface + write equivalence + live wall)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
