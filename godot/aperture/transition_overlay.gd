@@ -84,7 +84,10 @@ func _process(delta: float) -> void:
 			if _rect == null:
 				_go_live()
 				return
-			var a := _rect.color.a - (delta / maxf(_fade_seconds, 0.01))
+			# Fade the black cover out. Cap the effective step so a single huge frame (a heavy scene's
+			# _ready) can't jump erratically; a floor keeps it always progressing so it never stalls.
+			var step := clampf(delta, 1.0 / 120.0, 1.0 / 20.0) / maxf(_fade_seconds, 0.01)
+			var a := _rect.color.a - step
 			_rect.color = Color(0, 0, 0, maxf(a, 0.0))
 			if a <= 0.0:
 				_go_live()
@@ -107,9 +110,10 @@ func _input(event: InputEvent) -> void:
 	if _leaving:
 		return
 	# ESC LEAVES the same-window destination and returns to the room. We do this from the overlay so no
-	# destination scene needs editing (read-only reuse). Only fire once the cover is gone (so ESC during
-	# the fade-in doesn't bounce straight back out).
-	if _phase != "live":
+	# destination scene needs editing (read-only reuse). Allowed as soon as the destination is up (any
+	# phase past the initial "cover"), so a keen ESC during the fade-in still leaves — leaving is never
+	# blocked. (During "cover" we are still fading TO black before the swap; ESC there is a no-op.)
+	if _phase == "cover":
 		return
 	if not (event is InputEventKey):
 		return
