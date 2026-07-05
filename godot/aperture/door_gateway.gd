@@ -58,7 +58,10 @@ func _ready() -> void:
 func poll_player(player_pos: Vector3) -> bool:
 	if target.is_empty():
 		return false
-	var d := Vector2(player_pos.x - global_position.x, player_pos.z - global_position.z).length()
+	# Use global_position when in the tree (doors may be nested under a Doors root), else the local
+	# position (headless tests drive this before adding the door to a scene tree).
+	var here := global_position if is_inside_tree() else position
+	var d := Vector2(player_pos.x - here.x, player_pos.z - here.z).length()
 	if _armed and d < ENTER_RADIUS:
 		_armed = false
 		entered.emit(target)
