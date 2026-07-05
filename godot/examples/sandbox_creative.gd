@@ -95,15 +95,31 @@ const SHOT_PATH := "res://docs/sandbox_creative.png"          # headless proof P
 const DEFAULT_NOTES_PATH := "G:/Wavelet/Alethea-cc/state/sandbox/notes.jsonl"
 
 const GRID := 1.0                                             # default grid cell size (overridable via params)
-const REACH := 8.0                                            # how far the build ray reaches, in cells
+const REACH := 8.0                                            # legacy voxel build-ray reach, in cells (seeds/hotload)
+
+# ── FREE PLACEMENT + REACH TUNING (Liam correction 2026-07-05) ─────────────────────────────────────────
+# Liam: "the grid system of assets as well as the highlighted preview location of the assets was not asked
+# for. Let me ... place items and assets anywhere". Runtime placement is FREE: the held block/asset spawns
+# at the EXACT raycast hit point under the crosshair (free position + orientation), NO grid snap and NO
+# grid-cell preview marker. Fine repositioning comes later via a queued wand tool (NOT built here).
+# `reach_distance` is the ONE tunable for how far place/destroy/grab/target reach, in metres (coordinator
+# control #2 — a single exported/params knob). The voxel layer (world dict / _raycast_grid / _set_block) is
+# KEPT for seeded + hotloaded worlds and backward compat, but the PLAYER's own placements go through the
+# free path into the object layer (which already supports arbitrary position + orientation).
+@export var reach_distance := 8.0                            # metres; place/destroy/grab/target reach (params-tunable)
 
 # ── the WORLD as DATA ────────────────────────────────────────────────────────────────────────────────
 # Two layers, both pure data:
 #   blocks : Dictionary keyed by Vector3i grid coord → block record (the voxel layer, unchanged).
 #   objects: Dictionary keyed by obj id → object record (the free-asset layer: any manifest asset,
 #            grid-snapped on placement, freely rearrangeable, with composable behaviors).
-var world: Dictionary = {}                                    # Vector3i -> block record {type, shape, params, material, node}
-var objects: Dictionary = {}                                  # "obj_N" -> {id, asset, base_pos, yaw_deg, scale, behaviors, node, loaded, aabb}
+var world: Dictionary = {}                                    # Vector3i -> block record {type, shape, params, material, node} (voxel: seeds/hotload)
+var objects: Dictionary = {}                                  # "obj_N" -> {id, asset|block, base_pos, yaw_deg, scale, behaviors, node, loaded, aabb}
+#   The object layer is the FREE-PLACEMENT layer (Liam 2026-07-05): a placed record carries EITHER an
+#   `asset` (a manifest GLB) OR a `block` (a primitive shape name from the palette) — both placed at an
+#   arbitrary world `base_pos` + `yaw_deg`, no grid. `pal_idx` records which palette entry made it (so
+#   MIDDLE-click pick can put it back in hand). This is how "place items and assets anywhere" is realized
+#   without a voxel grid, while the voxel `world` dict stays for backward-compatible seeded worlds.
 var grid_size := GRID
 var world_name := "starter"                                   # the active world (arrangement)
 var _obj_seq := 0                                             # monotonic object-id counter (kept above loaded ids)
@@ -124,6 +140,7 @@ var _blocks_root: Node3D
 var _objects_root: Node3D
 var _preview: MeshInstance3D                                  # ghost of the block about to be placed
 var _sel_marker: MeshInstance3D                               # translucent box around the selection
+var _target_outline: MeshInstance3D                           # OBJECT-target outline: the thing LMB destroy / MMB pick will act on
 var _hud: CanvasLayer
 var _hotbar_ui: HBoxContainer
 var _inv_panel: Panel
@@ -150,6 +167,10 @@ var _did_shot := false
 # ── selection / rearrange state ──────────────────────────────────────────────────────────────────────
 var selected_id := ""                                         # the selected object ("" = none)
 var _grabbing := false                                        # selection follows the build ray until dropped
+# The CURRENT crosshair TARGET (coordinator control #2): the object/block LMB-destroy / MMB-pick will act
+# on, outlined each frame so it is clear what a click hits. This is an OBJECT-target highlight (the actual
+# thing you point at) — NOT the grid-cell placement preview Liam rejected. { kind:"object"/"block"/"", id/cell }.
+var _target := { "kind": "" }
 var _behavior_open := false
 var _note_open := false
 var _time := 0.0                                              # behavior clock (seconds since scene start)
@@ -242,7 +263,9 @@ func _process(delta: float) -> void:
 	if _headless:
 		return
 	_update_movement(delta)
-	_update_preview()
+	_update_target()                             # what the crosshair points at (LMB destroy / MMB pick)
+	_update_target_outline()                     # outline that target (Liam correction: object-target, NOT grid preview)
+	_update_preview()                            # subtle placement-point dot at the free aim point
 	_update_selection_marker()
 	_tick_notes()                                # notes ride their (moving) targets
 	# The held tool draws its per-frame preview (the sticky-note orb at the aimed point).
@@ -423,24 +446,121 @@ func _raycast_grid() -> Dictionary:
 	return { "hit": false, "cell": _world_to_cell(far), "place": _world_to_cell(far), "t": REACH * grid_size * 0.5 }
 
 
-## MC PLACE (empty-hand RIGHT click): place whatever the active hotbar entry is — a block (voxel
-## layer) or an asset (object layer). (Tools are never placed; they act on click via the seam.)
+# ══ FREE-PLACEMENT RAYCAST (Liam correction 2026-07-05) ═══════════════════════════════════════════════
+# The FREE build ray: return the EXACT world hit point + surface normal under the crosshair (no grid snap),
+# picking the nearest of { a placed object's surface, a voxel block face, the ground plane }. If nothing is
+# within reach, fall back to a point `reach_distance` out along the look ray so you can start a build in the
+# air. This is what makes "place items and assets anywhere" real — the held item spawns at `point`.
+## Returns { hit:bool, point:Vector3, normal:Vector3, t:float }.
+func _raycast_free() -> Dictionary:
+	if _cam == null:
+		return { "hit": false, "point": Vector3.ZERO, "normal": Vector3.UP, "t": reach_distance }
+	var origin := _cam.global_position
+	var dir := (-_cam.global_transform.basis.z).normalized()
+	var reach := reach_distance
+	# nearest placed OBJECT surface (its exact AABB entry point)
+	var pick := _pick_object()
+	var obj_t: float = pick["t"] if pick["id"] != "" else INF
+	# nearest voxel BLOCK face
+	var rc := _raycast_grid()
+	var block_t: float = rc["t"] if rc["hit"] else INF
+	# the ground plane (y = floor plate), so a first placement in empty space lands ON the floor
+	var ground_t := INF
+	if absf(dir.y) > 1e-5:
+		var gy := -0.5 * grid_size
+		var gt := (gy - origin.y) / dir.y
+		if gt > 0.0:
+			ground_t = gt
+	var best_t: float = min(obj_t, min(block_t, ground_t))
+	if best_t <= reach and best_t < INF:
+		var point := origin + dir * best_t
+		var normal := Vector3.UP
+		if best_t == obj_t and objects.has(pick["id"]):
+			var rec: Dictionary = objects[pick["id"]]
+			var node = rec.get("node")
+			if node != null and is_instance_valid(node):
+				var world_aabb: AABB = (node as Node3D).global_transform * (rec["aabb"] as AABB)
+				normal = _aabb_face_normal(world_aabb, point)
+		elif best_t == block_t and rc["hit"]:
+			normal = _cell_face_normal(_cell_to_world(rc["cell"]), point)
+		else:
+			normal = Vector3.UP                       # ground plane
+		return { "hit": true, "point": point, "normal": normal, "t": best_t }
+	# nothing within reach: aim into the air at `reach_distance`
+	return { "hit": false, "point": origin + dir * reach, "normal": Vector3.UP, "t": reach }
+
+
+## MC PLACE (empty-hand RIGHT click): place whatever the active hotbar entry is — a block OR an asset —
+## FREELY at the exact aim point under the crosshair (no grid, Liam correction 2026-07-05). Both go into
+## the free OBJECT layer so they carry an arbitrary position + orientation. (Tools act via the seam.)
 func _place_active() -> void:
-	var entry: Dictionary = palette[hotbar[active_slot]]
+	var pal_idx: int = hotbar[active_slot]
+	var entry: Dictionary = palette[pal_idx]
 	if Items.is_tool_entry(entry):
 		return                                       # tools are not placed; they act on click
-	var rc := _raycast_grid()
-	var cell: Vector3i = rc["place"]
+	var rc := _raycast_free()
+	var pos: Vector3 = rc["point"]
+	# Face the placement away from the camera by default (a sensible free orientation) so a placed asset
+	# does not always point the same way; fine orientation comes later via the queued wand tool.
+	var yaw := rad_to_deg(atan2(-(-_cam.global_transform.basis.z).x, -(-_cam.global_transform.basis.z).z)) if _cam != null else 0.0
 	if String(entry.get("kind", "block")) == "asset":
-		_place_object(String(entry["asset_id"]), _object_pos_for_cell(cell))
-		return
-	if world.has(cell):
-		return
-	_set_block(cell, hotbar[active_slot])
+		_place_object(String(entry["asset_id"]), pos, yaw, 1.0, [], "", pal_idx)
+	else:
+		_place_block_free(pal_idx, pos, yaw)
 
 
-## MC DESTROY (empty-hand LEFT click): remove the block OR the placed object under the crosshair —
-## whichever the ray reaches first.
+## Free-place a primitive BLOCK as an object (a MeshInstance3D built from the palette shape) at an
+## arbitrary point + yaw. Mirrors _place_object but the body is a primitive mesh, not a GLB.
+func _place_block_free(pal_idx: int, pos: Vector3, yaw_deg := 0.0, forced_id := "") -> String:
+	if pal_idx < 0 or pal_idx >= palette.size():
+		return ""
+	var entry: Dictionary = palette[pal_idx]
+	if String(entry.get("kind", "block")) != "block":
+		return ""
+	var id := forced_id
+	if id == "":
+		_obj_seq += 1
+		id = "obj_%d" % _obj_seq
+	else:
+		_obj_seq = maxi(_obj_seq, int(id.trim_prefix("obj_")))
+	var node := Node3D.new()
+	node.name = id
+	_objects_root.add_child(node)
+	var record := {
+		"id": id, "block": String(entry["name"]), "pal_idx": pal_idx,
+		"base_pos": pos, "yaw_deg": yaw_deg, "scale": 1.0,
+		"behaviors": [], "node": node, "loaded": true,
+		"aabb": AABB(Vector3(-0.5, -0.5, -0.5), Vector3.ONE),
+		"material": (entry.get("material", {}) as Dictionary).duplicate(true),
+	}
+	objects[id] = record
+	_attach_block_body(record)
+	Behaviors.tick(record, node, { "t": _time, "delta": 0.0 })
+	return id
+
+
+## Build the primitive-mesh body for a free-placed block object (uses the same renderer primitive vocab
+## + the same material seam as the voxel path, so free blocks are texturable identically later).
+func _attach_block_body(record: Dictionary) -> void:
+	var node: Node3D = record["node"]
+	var old: Node = node.get_node_or_null("body")
+	if old != null:
+		old.name = "body_old"
+		old.queue_free()
+	var pal_idx: int = int(record.get("pal_idx", -1))
+	if pal_idx < 0 or pal_idx >= palette.size():
+		return
+	var entry: Dictionary = palette[pal_idx]
+	var mi := MeshInstance3D.new()
+	mi.name = "body"
+	mi.mesh = GodotSceneRenderer._primitive_mesh(String(entry["shape"]), entry.get("params", {}))
+	_apply_material(mi, record.get("material", entry.get("material", {})))
+	node.add_child(mi)
+	record["aabb"] = _combined_aabb(node)
+
+
+## MC DESTROY (empty-hand LEFT click): remove the placed object OR the voxel block under the crosshair —
+## whichever the ray reaches first. Free-placed blocks/assets ARE objects, so they go through _delete_object.
 func _remove_target() -> void:
 	var rc := _raycast_grid()
 	var block_t: float = rc["t"] if rc["hit"] else INF
@@ -488,14 +608,17 @@ func _pick_into_hand() -> void:
 	var rc := _raycast_grid()
 	var block_t: float = rc["t"] if rc["hit"] else INF
 	var pick := _pick_object()
-	# Object under the crosshair (closer than any block) => pick its asset.
+	# Object under the crosshair (closer than any block) => pick its palette entry (asset OR free block).
 	if pick["id"] != "" and pick["t"] < block_t and objects.has(pick["id"]):
-		var asset_id := String((objects[pick["id"]] as Dictionary)["asset"])
-		var pi := _palette_index_for_asset(asset_id)
+		var orec: Dictionary = objects[pick["id"]]
+		# A free block object carries its palette index directly; an asset object resolves by asset id.
+		var pi := int(orec.get("pal_idx", -1))
+		if pi < 0 or pi >= palette.size():
+			pi = _palette_index_for_asset(String(orec.get("asset", ""))) if orec.has("asset") else _palette_index(String(orec.get("block", "")))
 		if pi >= 0:
 			hotbar[active_slot] = pi
 			_after_hotbar_change()
-			_flash_status("picked asset: %s" % asset_id)
+			_flash_status("picked %s: %s" % ["block" if orec.has("block") else "asset", String(palette[pi].get("name", "?"))])
 		return
 	# Else a block => pick its palette type.
 	if rc["hit"] and world.has(rc["cell"]):
@@ -512,6 +635,14 @@ func _palette_index_for_asset(asset_id: String) -> int:
 		if String(e.get("kind", "block")) == "asset" and String(e.get("asset_id", "")) == asset_id:
 			return i
 	return -1
+
+## Human label for an object record — its asset id (asset objects) or its block name (free blocks).
+func _obj_label(rec: Dictionary) -> String:
+	if rec.has("asset"):
+		return String(rec["asset"])
+	if rec.has("block"):
+		return String(rec["block"])
+	return "?"
 
 func _after_hotbar_change() -> void:
 	_refresh_held_item()
@@ -822,7 +953,7 @@ func _object_pos_for_cell(c: Vector3i) -> Vector3:
 # asset instance swaps in — placement never waits on IO.
 
 func _place_object(asset_id: String, pos: Vector3, yaw_deg := 0.0, scale := 1.0,
-		behaviors: Array = [], forced_id := "") -> String:
+		behaviors: Array = [], forced_id := "", pal_idx := -1) -> String:
 	if assets == null or not assets.has_asset(asset_id):
 		return ""
 	var id := forced_id
@@ -836,7 +967,7 @@ func _place_object(asset_id: String, pos: Vector3, yaw_deg := 0.0, scale := 1.0,
 	node.name = id
 	_objects_root.add_child(node)
 	var record := {
-		"id": id, "asset": asset_id,
+		"id": id, "asset": asset_id, "pal_idx": pal_idx,
 		"base_pos": pos, "yaw_deg": yaw_deg, "scale": scale,
 		"behaviors": behaviors.duplicate(true),
 		"node": node, "loaded": false,
@@ -851,6 +982,10 @@ func _place_object(asset_id: String, pos: Vector3, yaw_deg := 0.0, scale := 1.0,
 ## Placeholder-or-instance: swap in the real asset when the library has it, else a translucent box
 ## (and request the load — `asset_ready` will swap it the moment it lands).
 func _attach_body(record: Dictionary) -> void:
+	# A free-placed primitive BLOCK object builds its body from the primitive vocab, not a GLB.
+	if record.has("block") and not record.has("asset"):
+		_attach_block_body(record)
+		return
 	var node: Node3D = record["node"]
 	var old: Node = node.get_node_or_null("body")
 	if old != null:
@@ -883,7 +1018,7 @@ func _attach_body(record: Dictionary) -> void:
 func _on_asset_ready(asset_id: String) -> void:
 	for id in objects:
 		var rec: Dictionary = objects[id]
-		if String(rec["asset"]) == asset_id and not bool(rec["loaded"]):
+		if String(rec.get("asset", "")) == asset_id and not bool(rec.get("loaded", false)):
 			_attach_body(rec)
 
 
@@ -922,10 +1057,10 @@ func _tick_objects(delta: float) -> void:
 	}
 	for id in objects:
 		var rec: Dictionary = objects[id]
-		# While grabbed, the object follows the build ray (grid-snapped) instead of its behaviors.
+		# While grabbed, the object follows the FREE build ray (no grid snap) instead of its behaviors.
 		if _grabbing and id == selected_id and not _headless:
-			var rc := _raycast_grid()
-			rec["base_pos"] = _object_pos_for_cell(rc["place"])
+			var rc := _raycast_free()
+			rec["base_pos"] = rc["point"]
 		Behaviors.tick(rec, rec.get("node"), ctx)
 
 
@@ -947,7 +1082,7 @@ func _pick_object() -> Dictionary:
 			continue
 		var aabb: AABB = (node as Node3D).global_transform * (rec["aabb"] as AABB)
 		var t := _ray_aabb(origin, dir, aabb.grow(0.05))
-		if t >= 0.0 and t < best_t and t <= REACH * grid_size * 2.0:
+		if t >= 0.0 and t < best_t and t <= reach_distance:
 			best_t = t
 			best_id = id
 	return { "id": best_id, "t": best_t }
@@ -1032,6 +1167,53 @@ func _update_selection_marker() -> void:
 	(_sel_marker.mesh as BoxMesh).size = aabb.size
 
 
+# ══ CROSSHAIR TARGETING + OBJECT-TARGET OUTLINE (Liam correction / coordinator control #2) ═════════════
+# What the crosshair currently points at (the nearest of a placed object or a voxel block within reach) —
+# the thing LMB-destroy / MMB-pick will act on. Computed once per frame and outlined so the player can see
+# exactly what a click hits. This is an OBJECT-target highlight (the actual object) — NOT the grid-cell
+# placement preview Liam rejected. Placement stays free; only the destroy/pick TARGET is outlined.
+func _update_target() -> void:
+	if _cam == null:
+		_target = { "kind": "" }
+		return
+	var rc := _raycast_grid()
+	var block_t: float = rc["t"] if rc["hit"] else INF
+	var pick := _pick_object()
+	var obj_t: float = pick["t"] if pick["id"] != "" else INF
+	if obj_t < block_t and obj_t <= reach_distance and objects.has(pick["id"]):
+		_target = { "kind": "object", "id": String(pick["id"]) }
+	elif rc["hit"] and block_t <= reach_distance and world.has(rc["cell"]):
+		_target = { "kind": "block", "cell": rc["cell"] }
+	else:
+		_target = { "kind": "" }
+
+
+func _update_target_outline() -> void:
+	if _target_outline == null:
+		return
+	# Never outline while grabbing / inventory open / a --shot proof (keeps the proof + grab clean).
+	if _grabbing or _inv_open or _did_shot or String(_target.get("kind", "")) == "":
+		_target_outline.visible = false
+		return
+	var aabb := AABB()
+	if String(_target["kind"]) == "object" and objects.has(String(_target["id"])):
+		var rec: Dictionary = objects[String(_target["id"])]
+		var node = rec.get("node")
+		if node == null or not is_instance_valid(node):
+			_target_outline.visible = false
+			return
+		aabb = ((node as Node3D).global_transform * (rec["aabb"] as AABB)).grow(0.03)
+	elif String(_target["kind"]) == "block" and world.has(_target["cell"]):
+		var c: Vector3i = _target["cell"]
+		aabb = AABB(_cell_to_world(c) - Vector3.ONE * grid_size * 0.5, Vector3.ONE * grid_size).grow(0.03)
+	else:
+		_target_outline.visible = false
+		return
+	_target_outline.visible = true
+	_target_outline.position = aabb.get_center()
+	(_target_outline.mesh as BoxMesh).size = aabb.size
+
+
 ## Local-space combined AABB of every mesh under a node (relative to that node).
 func _combined_aabb(root: Node3D) -> AABB:
 	var merged := AABB()
@@ -1084,7 +1266,7 @@ func _refresh_behavior_list() -> void:
 	if _behavior_list == null or selected_id == "" or not objects.has(selected_id):
 		return
 	var rec: Dictionary = objects[selected_id]
-	var lines := ["Behaviors on %s (%s):" % [selected_id, String(rec["asset"])], ""]
+	var lines := ["Behaviors on %s (%s):" % [selected_id, _obj_label(rec)], ""]
 	var types: Array = Behaviors.TYPES
 	for i in types.size():
 		var t := String(types[i])
@@ -1113,7 +1295,7 @@ func _open_note() -> void:
 
 func _note_target_desc() -> String:
 	if selected_id != "" and objects.has(selected_id):
-		return "%s (%s)" % [selected_id, String((objects[selected_id] as Dictionary)["asset"])]
+		return "%s (%s)" % [selected_id, _obj_label(objects[selected_id])]
 	var rc := _raycast_grid()
 	return "location %s" % str(_cell_to_world(rc["place"] if not rc["hit"] else rc["cell"]))
 
@@ -1172,7 +1354,7 @@ func _write_sticky_note(record: Dictionary) -> bool:
 	if String(target.get("kind", "")) == "object":
 		obj_id = String(target.get("id", ""))
 		if objects.has(obj_id):
-			asset_id = String((objects[obj_id] as Dictionary)["asset"])
+			asset_id = String((objects[obj_id] as Dictionary).get("asset", ""))
 	# World position of the anchor now (so the legacy `position` field stays meaningful).
 	var xform := _note_target_xform(record)
 	var lp: Array = record["local_point"]
@@ -1223,7 +1405,7 @@ func _write_note(text: String, obj_id_override := "", pos_override = null) -> bo
 	var pos: Vector3
 	if obj_id != "" and objects.has(obj_id):
 		var rec: Dictionary = objects[obj_id]
-		asset_id = String(rec["asset"])
+		asset_id = String(rec.get("asset", ""))
 		pos = rec["base_pos"]
 	else:
 		obj_id = ""
@@ -1272,15 +1454,24 @@ func _apply_world_data(data: Dictionary) -> void:
 		assets.evict_except(pre)
 		assets.preload_set(pre)
 	for o in data.get("objects", []):
-		if typeof(o) != TYPE_DICTIONARY or not o.has("asset"):
+		if typeof(o) != TYPE_DICTIONARY:
 			continue
 		var p = o.get("position", [0, 0, 0])
 		if typeof(p) != TYPE_ARRAY or (p as Array).size() < 3:
 			continue
-		_place_object(String(o["asset"]), Vector3(p[0], p[1], p[2]),
-			float(o.get("yaw_deg", 0.0)), float(o.get("scale", 1.0)),
+		var pos := Vector3(p[0], p[1], p[2])
+		var yaw := float(o.get("yaw_deg", 0.0))
+		# A free-placed primitive BLOCK object (Liam 2026-07-05) carries a `block` name, not an `asset`.
+		if o.has("block") and not o.has("asset"):
+			var bpi := _palette_index(String(o["block"]))
+			if bpi >= 0:
+				_place_block_free(bpi, pos, yaw, String(o.get("id", "")))
+			continue
+		if not o.has("asset"):
+			continue
+		_place_object(String(o["asset"]), pos, yaw, float(o.get("scale", 1.0)),
 			o.get("behaviors", []) if typeof(o.get("behaviors")) == TYPE_ARRAY else [],
-			String(o.get("id", "")))
+			String(o.get("id", "")), _palette_index_for_asset(String(o["asset"])))
 	# Sticky notes reload with the world (their anchors target block cells / object ids just placed).
 	_clear_notes()
 	for nd in data.get("notes", []):
@@ -1336,14 +1527,19 @@ func _serialize_world() -> Dictionary:
 	for id in objects:
 		var rec: Dictionary = objects[id]
 		var bp: Vector3 = rec["base_pos"]
-		objs.append({
+		var entry := {
 			"id": id,
-			"asset": String(rec["asset"]),
 			"position": [bp.x, bp.y, bp.z],
 			"yaw_deg": float(rec["yaw_deg"]),
 			"scale": float(rec["scale"]),
 			"behaviors": (rec.get("behaviors", []) as Array).duplicate(true),
-		})
+		}
+		# Free-placed primitive BLOCK objects persist a `block` name; asset objects persist an `asset` id.
+		if rec.has("block") and not rec.has("asset"):
+			entry["block"] = String(rec["block"])
+		else:
+			entry["asset"] = String(rec.get("asset", ""))
+		objs.append(entry)
 	# Sticky notes: persist so they reload WITH the world (spec: "into the world save so notes
 	# reload with the world"). Each carries its anchor (target + local point/normal) + text.
 	var notes := []
@@ -1830,7 +2026,7 @@ func _refresh_status() -> void:
 	if _debug_verbs and selected_id != "" and objects.has(selected_id):
 		var rec: Dictionary = objects[selected_id]
 		lines.append("[debug] Selected: %s (%s)%s   |   G grab · R rotate · +/- scale · X delete · B behaviors · N note" % [
-			selected_id, String(rec["asset"]), "  [GRABBED — click to drop]" if _grabbing else ""])
+			selected_id, _obj_label(rec), "  [GRABBED — click to drop]" if _grabbing else ""])
 	else:
 		lines.append("F5 save world · [ ] switch world · \\ toggle debug verbs%s" % ("  [DEBUG VERBS ON]" if _debug_verbs else ""))
 	if _time < _flash_until and _flash_text != "":
@@ -1838,44 +2034,27 @@ func _refresh_status() -> void:
 	_status.text = "\n".join(lines)
 
 
-# ── the placement PREVIEW ghost (shows where the next block lands) ────────────────────────────────────
+# ── the SUBTLE placement-point DOT (Liam correction 2026-07-05) ───────────────────────────────────────
+# Liam rejected the grid-cell placement highlight. A SUBTLE crosshair dot at the FREE aim point is fine
+# ("A subtle crosshair dot is fine; the big grid-cell highlight is not."). `_preview` is now a tiny faint
+# sphere sitting at the exact free hit point (where the held block/asset would spawn) — not a grid cell,
+# not a full-size ghost mesh. Hidden while holding a tool (the tool draws its own preview) or grabbing.
 func _update_preview() -> void:
-	# Hide the placement ghost during a --shot proof run: it floats ~half-reach in FRONT of the camera,
-	# so in the proof PNG it renders huge and obscures the actual build. Proofs show the build, not UI ghosts.
-	if _did_shot or _inv_open or _cam == null:
-		if _preview != null:
-			_preview.visible = false
-		return
-	# Holding a TOOL => no block-placement ghost (the tool draws its own preview, e.g. the note orb).
-	if Items.is_tool_entry(palette[hotbar[active_slot]]):
-		if _preview != null:
-			_preview.visible = false
-		return
-	var rc := _raycast_grid()
-	var cell: Vector3i = rc["place"]
 	if _preview == null:
 		return
-	if world.has(cell) or _grabbing:
+	if _did_shot or _inv_open or _cam == null or _grabbing or Items.is_tool_entry(palette[hotbar[active_slot]]):
 		_preview.visible = false
 		return
+	var rc := _raycast_free()
 	_preview.visible = true
-	_preview.position = _cell_to_world(cell)
+	_preview.position = rc["point"]
 
 
+## The subtle dot has a FIXED tiny mesh (a small sphere) — it does not mirror the held block's shape, so
+## there is no big grid-cell-sized preview. Kept as a no-op-shaped setter for the call sites that still
+## refresh on hotbar change (cheap; the dot mesh never actually changes).
 func _update_preview_mesh() -> void:
-	if _preview == null:
-		return
-	var entry: Dictionary = palette[hotbar[active_slot]]
-	var kind := String(entry.get("kind", "block"))
-	if kind == "tool":
-		return                                       # tools have no placement ghost (handled in _update_preview)
-	if kind == "asset":
-		# Assets preview as a unit ghost box (the real bounds are unknown until the lazy load lands).
-		var bm := BoxMesh.new()
-		bm.size = Vector3.ONE * 0.9
-		_preview.mesh = bm
-	else:
-		_preview.mesh = GodotSceneRenderer._primitive_mesh(String(entry["shape"]), entry.get("params", {}))
+	pass
 
 
 # ══ WORLD NODES + ENVIRONMENT ═════════════════════════════════════════════════════════════════════════
@@ -1889,16 +2068,36 @@ func _build_world_nodes() -> void:
 	_objects_root = Node3D.new()
 	_objects_root.name = "Objects"
 	add_child(_objects_root)
-	# The translucent placement ghost + the selection marker.
+	# The SUBTLE placement-point dot + the target outline + the selection marker (all non-headless).
 	if not _headless:
+		# subtle placement dot: a tiny faint sphere at the free aim point (NOT a grid-cell ghost).
 		_preview = MeshInstance3D.new()
+		var dot := SphereMesh.new()
+		dot.radius = 0.05
+		dot.height = 0.10
+		_preview.mesh = dot
 		var ghost := StandardMaterial3D.new()
 		ghost.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		ghost.albedo_color = Color(1, 1, 1, 0.35)
+		ghost.albedo_color = Color(1, 1, 1, 0.5)
+		ghost.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		_preview.material_override = ghost
 		_preview.visible = false
 		add_child(_preview)
-		_update_preview_mesh()
+		# OBJECT-target outline: a thin bright wire-box around the exact thing the crosshair points at, so
+		# it is clear what LMB destroy / MMB pick will act on (coordinator control #2). This is the ACTUAL
+		# targeted object — NOT the rejected grid-cell placement highlight.
+		_target_outline = MeshInstance3D.new()
+		var obox := BoxMesh.new()
+		_target_outline.mesh = obox
+		var omat := StandardMaterial3D.new()
+		omat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		omat.albedo_color = Color(1.0, 1.0, 1.0, 0.16)
+		omat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		omat.grow = true                            # a slight outward grow so the outline hugs the surface
+		omat.grow_amount = 0.02
+		_target_outline.material_override = omat
+		_target_outline.visible = false
+		add_child(_target_outline)
 		_sel_marker = MeshInstance3D.new()
 		_sel_marker.mesh = BoxMesh.new()
 		var selmat := StandardMaterial3D.new()
