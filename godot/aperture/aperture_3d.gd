@@ -139,7 +139,9 @@ func _ready() -> void:
 		_build_hud()
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_apply_camera_rotation()
-	if _shot_requested():
+	if _shot_board_requested():
+		await _take_board_shot()
+	elif _shot_requested():
 		await _take_shot()
 
 
@@ -860,6 +862,33 @@ func _set_status(msg: String) -> void:
 
 func _shot_requested() -> bool:
 	return "--shot" in OS.get_cmdline_user_args() or "--shot" in OS.get_cmdline_args()
+
+
+func _shot_board_requested() -> bool:
+	return "--shot-board" in OS.get_cmdline_user_args() or "--shot-board" in OS.get_cmdline_args()
+
+
+## Windowed proof that the 3D computer opens the 2D board as a SAME-WINDOW overlay (spec item 4).
+## Programmatically mounts the board (the exact call the empty-hand right-click makes), captures it,
+## then quits — the interaction the mouse-less --shot cannot exercise.
+func _take_board_shot() -> void:
+	_did_shot = true
+	if _headless:
+		print("[aperture_3d] --shot-board needs a display. Exit 2.")
+		get_tree().quit(2)
+		return
+	_open_board()
+	await get_tree().create_timer(2.0).timeout
+	for _i in 8:
+		await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	var out := "res://docs/aperture_3d_board_overlay.png"
+	var img := get_viewport().get_texture().get_image()
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://docs"))
+	img.save_png(out)
+	print("[aperture_3d] board-overlay proof written: %s (board_is_open=%s)" %
+		[out, str(ComputerTerminal.board_is_open(self))])
+	get_tree().quit(0)
 
 
 func _take_shot() -> void:
