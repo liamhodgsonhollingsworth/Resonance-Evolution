@@ -317,6 +317,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
+			# F opens this room's own richer position-tagged note. F1 (any scene) opens the GLOBAL
+			# GizmoNote box (autoload/gizmo_note.gd) -- different key, no conflict; both work here.
 			KEY_F:
 				_open_note()
 				return

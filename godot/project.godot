@@ -16,6 +16,12 @@ config/description="In-game homoiconic node editor: functionality is an arrangem
 run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.6")
 
+[autoload]
+
+; GizmoNote — global F1 note affordance: press F1 in ANY scene to leave a note for Gizmo
+; (Claude Code) to review. Appends to Alethea-cc/state/sandbox/notes.jsonl. See autoload/gizmo_note.gd.
+GizmoNote="*res://autoload/gizmo_note.gd"
+
 [rendering]
 
 renderer/rendering_method="forward_plus"

@@ -175,7 +175,7 @@ func _initialize() -> void:
 	ok = _check("CE5 empty-hand MIDDLE click picks the looked-at block into the (empty) hand", int(s.hotbar[0]) == s._palette_index("Cube") and not s._hand_empty()) and ok
 
 	# ── C-MAP) the DATA-DRIVEN action map (control extensibility) ─────────────────────────────────────
-	ok = _check("CM1 the action map is a dictionary with the always-on keys", s._key_actions.has(KEY_E) and s._key_actions.has(KEY_Q) and s._key_actions.has(KEY_F1)) and ok
+	ok = _check("CM1 the action map is a dictionary with the always-on keys (F1 now owned by the global GizmoNote autoload, not this map)", s._key_actions.has(KEY_E) and s._key_actions.has(KEY_Q) and not s._key_actions.has(KEY_F1)) and ok
 
 	# ── C-FB) IN-SCENE FEEDBACK (F1) writes a scene_feedback row (overarching ask) ────────────────────
 	var fb_file: String = ProjectSettings.globalize_path("user://test_interaction_feedback.jsonl")

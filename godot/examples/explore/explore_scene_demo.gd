@@ -472,10 +472,10 @@ var _note_panel: PanelContainer
 var _note_edit: LineEdit
 
 func _unhandled_input(event: InputEvent) -> void:
+	# F1 is now owned by the GLOBAL GizmoNote autoload (works in EVERY scene) -- no per-scene F1 here.
+	# The ESC branch below still closes this scene's own note box if some other affordance opened it.
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_F1:
-			_toggle_note_box()
-		elif event.keycode == KEY_ESCAPE and _note_panel != null and _note_panel.visible:
+		if event.keycode == KEY_ESCAPE and _note_panel != null and _note_panel.visible:
 			_close_note_box()
 
 func _toggle_note_box() -> void:
