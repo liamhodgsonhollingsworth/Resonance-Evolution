@@ -1,0 +1,44 @@
+KayKit : Dungeon Remastered (1.0)
+
+Created/distributed by Kay Lousberg (www.kaylousberg.com)
+Creation date: 13/03/2023
+
+------------------------------
+
+License: Creative Commons Zero (CC0 1.0 Universal)
+SPDX-License-Identifier: CC0-1.0
+https://creativecommons.org/publicdomain/zero/1.0/
+
+This content is free to use in personal, educational and commercial projects.
+No attribution is required.
+
+Support the creator by crediting Kay Lousberg, www.kaylousberg.com (this is not
+mandatory).
+
+------------------------------
+
+CC0 1.0 Universal (CC0 1.0) — summary
+
+The person who associated a work with this deed has dedicated the work to the
+public domain by waiving all of his or her rights to the work worldwide under
+copyright law, including all related and neighboring rights, to the extent
+allowed by law. You can copy, modify, distribute and perform the work, even for
+commercial purposes, all without asking permission.
+
+Full legal text: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+------------------------------
+
+Original upstream LICENSE.txt (verbatim, from the GitHub mirror):
+
+	KayKit : Dungeon Remastered (1.0)
+
+	Created/distributed by Kay Lousberg (www.kaylousberg.com)
+	Creation date: 13/03/2023 09:00
+
+	License: (Creative Commons Zero, CC0)
+	http://creativecommons.org/publicdomain/zero/1.0/
+
+	This content is free to use in personal, educational and commercial projects.
+
+	Support me by crediting Kay Lousberg, www.kaylousberg.com (this is not mandatory)

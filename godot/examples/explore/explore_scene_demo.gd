@@ -2,93 +2,124 @@ extends Node3D
 ## EXPLORE-A-SCENE demo (Aperture demo #17). Liam verbatim (2026-07-05, item 3):
 ## "explore around a premade scene that you find on the internet and load in ... go into them and
 ## pick up and collect assets using the sandbox grab feature and store them in my inventory ...
-## walk around a scene and run into solid walls."
+## walk around a scene and run into solid walls." — and (2026-07-05) Liam APPROVED all 5 candidate
+## scenes, so this now VENDORS + makes explorable: KayKit Dungeon Remastered (CC0), Godot 3D
+## Platformer level (MIT), Kenney Mini Dungeon (CC0), Quaternius Modular Dungeon (CC0), and a
+## Sketchfab dungeon environment (CC-BY 4.0, attribution surfaced).
 ##
 ## WHAT THIS SCENE IS
 ##   * A first-person EXPLORER: WASD + mouselook + SOLID-WALL collision. The player is the in-house
-##     FpsController (a CharacterBody3D) — reused as-is, no fork. Walls are StaticBody3D + a box
-##     collider, so you actually RUN INTO them (move_and_slide stops the body); you cannot pass
-##     through. Gravity + a floor keep you grounded.
-##   * A PREMADE ENVIRONMENT loaded as the world. Preferred: a vendored CC0 glTF scene under
-##     res://assets/scenes/<name>/. Fallback (portable, asset-download-free): a procedurally-built
-##     WALLED ROOM (four solid primitive walls) dressed with the already-imported Kenney/Quaternius
-##     CC0 nature props — so the explore + collide + collect loop is provable BEFORE any heavy scene
-##     is approved. When Liam approves a scene, dropping its GLB in and setting SCENE_GLB is the only
-##     change; the mechanic is unchanged.
-##   * COLLECTIBLES scattered in the room. Each is a real scene Node3D built from a renderer-neutral
+##     FpsController (a CharacterBody3D) — reused as-is, no fork. Walls are StaticBody3D + a collider,
+##     so you actually RUN INTO them (move_and_slide stops the body); you cannot pass through.
+##   * ANY of the 5 vendored scenes, chosen by a scene=<slug> launch param (from the Aperture card),
+##     OR a SCENE SELECTOR menu when no scene is given (click a scene, it opens in this window). Each
+##     scene is either a pre-assembled GLB (auto-wrapped in trimesh colliders so it is solid) or a
+##     KIT of pieces the explorer lays out as a walled room + scattered props. See explore_scenes.gd.
+##   * COLLECTIBLES scattered in the scene. Each is a real scene Node3D built from a renderer-neutral
 ##     scene_node descriptor (the same DATA the renderer + inventory speak), registered as a walk-up
 ##     pickable through ExploreGrabAdapter — the sandbox GRAB + INVENTORY feature, imported READ-ONLY
-##     from the peer lane (walkabout/pickup_interactor.gd) via the adapter. Walk up, press E, it's in
-##     your inventory (bottom-left HUD). This is the SAME grab used everywhere else — not a re-impl.
+##     from the peer lane (walkabout/pickup_interactor.gd). Walk up, press E, it is in your inventory.
+##   * PROCEDURAL FALLBACK: if a chosen scene's assets are missing (download failed), the explorer
+##     builds a portable walled room dressed with the imported Kenney/Quaternius CC0 props, so the
+##     demo NEVER hard-fails.
 ##   * IN-SCENE FEEDBACK: press F1 to open a note box; what you type is appended to
 ##     Alethea-cc/state/sandbox/notes.jsonl keyed to this scene id — the SAME feedback substrate as
-##     Aperture card feedback, so notes from inside the scene route the same way.
+##     Aperture card feedback.
 ##
-## LAUNCH (windowed, walkable) — opened from the Aperture board as a scene_link, or directly:
-##   <godot> --path godot res://examples/explore/explore_scene_demo.tscn
+## LAUNCH (windowed, walkable):
+##   <godot> --path godot res://examples/explore/explore_scene_demo.tscn                       # selector
+##   <godot> --path godot res://examples/explore/explore_scene_demo.tscn -- --scene-params={"scene":"kaykit_dungeon"}
 ## HEADLESS smoke test:
 ##   <godot> --headless --path godot -s res://headless_explore_test.gd
 
 const GrabAdapter := preload("res://examples/explore/explore_grab_adapter.gd")
+const Scenes := preload("res://examples/explore/explore_scenes.gd")
 const FpsControllerScript := preload("res://walkabout/fps_controller.gd")
 const RendererScript := preload("res://renderers/godot_scene_renderer.gd")
 
 const SCENE_ID := "explore_scene_demo"
 const NOTES_REL := "Alethea-cc/state/sandbox/notes.jsonl"   # relative to the Wavelet repo root
 
-## Set to a vendored CC0 environment GLB (res://assets/scenes/<name>/scene.glb) once one is approved
-## + imported. Empty → the portable procedural walled-room fallback below is built instead. Either
-## way the explorer mechanic is identical.
-const SCENE_GLB := ""
-
-## Room geometry (the fallback environment): a square walled room the player is spawned inside.
+## Room geometry (the procedural fallback + the assembled-kit room): a square walled room.
 const ROOM_HALF := 12.0     # half the interior extent (meters) — room is 24m square
 const WALL_HEIGHT := 4.0
 const WALL_THICK := 0.5
 const PICKUP_RADIUS := 2.5  # walk within this many meters to grab (matches the sandbox default)
 
+var _slug := ""              # the chosen scene slug ("" -> selector, unless a param/const forces one)
 var _player: CharacterBody3D
 var _grab: ExploreGrabAdapter
 var _feedback: CanvasLayer
-var _renderer: Node          # GodotSceneRenderer instance (for build_node — used statically here)
+var _selector: CanvasLayer
 var _shot_frames := 0
 
 func _ready() -> void:
-	_build_environment()
+	_slug = _requested_slug()
+	if _slug == "":
+		# No scene chosen -> show the selector. (Skipped under --shot so CI captures a real scene.)
+		if _shot_mode():
+			_slug = Scenes.order()[0]
+		else:
+			_add_lighting()
+			_build_selector()
+			return
+	_enter_scene(_slug)
+
+## Build the whole explorable world for slug: environment + player + grab + collectibles + feedback.
+func _enter_scene(slug: String) -> void:
+	_build_environment(slug)
 	_build_player()
-	# Grab + inventory come from the peer lane through the adapter (READ-ONLY import). The player is
-	# the proximity anchor; placed objects (if any) rejoin THIS root.
 	_grab = GrabAdapter.new()
 	_grab.name = "Grab"
 	add_child(_grab)
 	_grab.setup(self, _player, self)
-	_scatter_collectibles()
-	_build_feedback_ui()
-	print("[explore] ready; env=%s; %d collectible(s) registered; player at %s" % [
-		("glb:" + SCENE_GLB) if SCENE_GLB != "" else "procedural_room",
-		_grab.pickable_count(), str(_player.global_position)])
+	_scatter_collectibles(slug)
+	_build_feedback_ui(slug)
+	print("[explore] ready; scene=%s; %d collectible(s); player at %s" % [
+		slug if slug != "" else "procedural_room", _grab.pickable_count(), str(_player.global_position)])
 
-# --- ENVIRONMENT: premade GLB scene, else a procedural WALLED ROOM ---------------------------------
+## The requested scene slug: the scene key of --scene-params=<json>, else "" (-> selector).
+func _requested_slug() -> String:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--scene-params="):
+			var parsed = JSON.parse_string(a.substr("--scene-params=".length()))
+			if typeof(parsed) == TYPE_DICTIONARY and parsed.has("scene"):
+				return String(parsed["scene"]).strip_edges()
+	return ""
 
-func _build_environment() -> void:
+# --- ENVIRONMENT ---------------------------------------------------------------------------------
+
+func _build_environment(slug: String) -> void:
 	_add_lighting()
 	_add_floor()
-	if SCENE_GLB != "" and ResourceLoader.exists(SCENE_GLB, "") or (SCENE_GLB != "" and FileAccess.file_exists(SCENE_GLB)):
-		if _load_premade_scene(SCENE_GLB):
-			return   # a real premade environment supplies its own walls/props
+	var reg := Scenes.registry()
+	if slug != "" and reg.has(slug) and Scenes.is_vendored(slug):
+		var cfg: Dictionary = reg[slug]
+		var kind := String(cfg.get("kind", "assembled"))
+		if kind == "glb" and _build_glb_scene(slug, cfg):
+			return
+		if kind == "assembled" and _build_assembled_scene(slug, cfg):
+			return
+	# Missing assets / unknown slug / build failed -> the portable walled-room fallback.
 	_build_walled_room()
 
-## Load a vendored premade GLB as the environment, wrapping its static geometry in trimesh colliders
-## so its walls are SOLID (you run into them). Runtime GLTF load (not ResourceLoader) so it works
-## with or without a warmed .godot import cache — the #145 pattern (GodotSceneRenderer._load_glb).
-func _load_premade_scene(glb_path: String) -> bool:
-	var abs := ProjectSettings.globalize_path(glb_path)
+## KIND "glb": load the single pre-assembled GLB and wrap its meshes in trimesh colliders (solid).
+func _build_glb_scene(slug: String, cfg: Dictionary) -> bool:
+	var glb := Scenes.glb_dir(slug) + String(cfg.get("glb", "scene.glb"))
+	var abs := ProjectSettings.globalize_path(glb)
 	if not FileAccess.file_exists(abs):
-		return false
+		# The configured filename may differ; take the first glb present.
+		var names: Array = Scenes.glb_names(slug)
+		if names.is_empty():
+			return false
+		glb = Scenes.glb_dir(slug) + String(names[0]) + ".glb"
+		abs = ProjectSettings.globalize_path(glb)
+		if not FileAccess.file_exists(abs):
+			return false
 	var doc := GLTFDocument.new()
 	var state := GLTFState.new()
 	if doc.append_from_file(abs, state) != OK:
-		push_warning("[explore] failed to load premade scene: %s" % glb_path)
+		push_warning("[explore] failed to load premade scene: %s" % glb)
 		return false
 	var scene := doc.generate_scene(state)
 	if scene == null:
@@ -97,12 +128,50 @@ func _load_premade_scene(glb_path: String) -> bool:
 	env.name = "PremadeScene"
 	env.add_child(scene)
 	add_child(env)
-	# Make every mesh in the premade scene a SOLID collider so walls actually stop the player.
 	_add_static_colliders(env)
 	return true
 
-## Walk the premade scene's meshes and give each a trimesh StaticBody3D collider (concave, exact),
-## so arbitrary premade-scene geometry becomes solid without hand-authoring collision.
+## KIND "assembled": lay out a walled dungeon room from the kit's structure pieces (walls to run
+## into) and keep the walled-room's own solid boundary so you can never leave the play space. The
+## kit's PROP pieces are scattered by _scatter_collectibles (grab targets). Structure pieces are
+## placed as decorated SOLID colliders on the room perimeter + interior.
+func _build_assembled_scene(slug: String, cfg: Dictionary) -> bool:
+	var names: Array = Scenes.glb_names(slug)
+	if names.is_empty():
+		return false
+	# Always keep the solid boundary walls (guarantees "run into solid walls" regardless of what the
+	# kit contains), then DRESS the interior with the kit's structure GLBs so it reads as a dungeon.
+	_build_walled_room()
+	var struct_hints: Array = cfg.get("structure_hints", [])
+	var struct_names := _match_names(names, struct_hints)
+	if struct_names.is_empty():
+		return true  # boundary room is enough; props still scatter
+	var dir := Scenes.glb_dir(slug)
+	# Line the interior perimeter + a few interior clusters with structure pieces (decor + solid).
+	var spots := [
+		Vector3(-8, 0, -8), Vector3(0, 0, -9), Vector3(8, 0, -8),
+		Vector3(-9, 0, 0), Vector3(9, 0, 0),
+		Vector3(-8, 0, 8), Vector3(0, 0, 9), Vector3(8, 0, 8),
+		Vector3(-3, 0, -3), Vector3(3, 0, 3), Vector3(-3, 0, 3), Vector3(3, 0, -3),
+	]
+	var i := 0
+	for pos in spots:
+		var base := String(struct_names[i % struct_names.size()])
+		var desc := { "name": base, "mesh": { "source": "glb", "path": dir + base + ".glb" } }
+		var node: Node3D = RendererScript.build_node(desc)
+		if node == null:
+			i += 1
+			continue
+		node.name = "structure_%d" % i
+		add_child(node)
+		node.global_position = pos
+		node.rotation_degrees = Vector3(0, (i * 45) % 360, 0)
+		_add_static_colliders(node)   # make the placed structure solid too
+		i += 1
+	return true
+
+## Walk a subtree's meshes and give each a trimesh StaticBody3D collider, so arbitrary GLB geometry
+## becomes solid without hand-authoring collision.
 func _add_static_colliders(root: Node) -> void:
 	var stack: Array = [root]
 	while not stack.is_empty():
@@ -112,22 +181,15 @@ func _add_static_colliders(root: Node) -> void:
 		for c in n.get_children():
 			stack.append(c)
 
-## The portable fallback environment: four SOLID walls forming a room, so "run into solid walls" is
-## demonstrated with zero downloaded assets. Each wall is a StaticBody3D with a BoxShape3D collider
-## (the physics wall) + a MeshInstance3D (what you see). The CharacterBody3D player collides with the
-## box and stops — you cannot walk through.
+## The portable fallback environment / the assembled-room boundary: four SOLID walls forming a room.
 func _build_walled_room() -> void:
 	var wall_mat := StandardMaterial3D.new()
 	wall_mat.albedo_color = Color(0.42, 0.40, 0.46)
-	# Two walls along X (north/south), two along Z (east/west). Positions put the inner face at ±HALF.
 	var span := ROOM_HALF * 2.0 + WALL_THICK
 	_add_wall(Vector3(0, WALL_HEIGHT * 0.5, -ROOM_HALF - WALL_THICK * 0.5), Vector3(span, WALL_HEIGHT, WALL_THICK), wall_mat, "WallN")
 	_add_wall(Vector3(0, WALL_HEIGHT * 0.5,  ROOM_HALF + WALL_THICK * 0.5), Vector3(span, WALL_HEIGHT, WALL_THICK), wall_mat, "WallS")
 	_add_wall(Vector3(-ROOM_HALF - WALL_THICK * 0.5, WALL_HEIGHT * 0.5, 0), Vector3(WALL_THICK, WALL_HEIGHT, span), wall_mat, "WallW")
 	_add_wall(Vector3( ROOM_HALF + WALL_THICK * 0.5, WALL_HEIGHT * 0.5, 0), Vector3(WALL_THICK, WALL_HEIGHT, span), wall_mat, "WallE")
-	# A couple of interior pillars so there is something to bump into mid-room, too.
-	_add_wall(Vector3(-4, WALL_HEIGHT * 0.5, -4), Vector3(1.2, WALL_HEIGHT, 1.2), wall_mat, "PillarA")
-	_add_wall(Vector3( 5, WALL_HEIGHT * 0.5,  3), Vector3(1.2, WALL_HEIGHT, 1.2), wall_mat, "PillarB")
 
 func _add_wall(center: Vector3, size: Vector3, mat: StandardMaterial3D, wall_name: String) -> void:
 	var body := StaticBody3D.new()
@@ -151,7 +213,7 @@ func _add_floor() -> void:
 	floor_body.name = "Floor"
 	var mi := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(ROOM_HALF * 2.4, ROOM_HALF * 2.4)
+	plane.size = Vector2(ROOM_HALF * 6.0, ROOM_HALF * 6.0)   # generous so GLB scenes sit on a floor
 	mi.mesh = plane
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.18, 0.20, 0.24)
@@ -159,7 +221,7 @@ func _add_floor() -> void:
 	floor_body.add_child(mi)
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(ROOM_HALF * 2.4, 0.2, ROOM_HALF * 2.4)
+	box.size = Vector3(ROOM_HALF * 6.0, 0.2, ROOM_HALF * 6.0)
 	col.shape = box
 	col.position = Vector3(0, -0.1, 0)
 	floor_body.add_child(col)
@@ -185,15 +247,12 @@ func _add_lighting() -> void:
 	env_node.environment = env
 	add_child(env_node)
 
-# --- PLAYER: the in-house first-person controller (walk/look/collision), reused as-is -------------
+# --- PLAYER --------------------------------------------------------------------------------------
 
 func _build_player() -> void:
 	var player: CharacterBody3D = FpsControllerScript.new()
 	player.name = "Player"
-	# Spawn near a corner looking diagonally across the room so the opening view frames the whole
-	# space (walls, pillars, scattered collectibles) rather than a prop right at the camera. Godot
-	# forward is −Z; yaw +135° turns it toward (−X, −Z), i.e. across the room to the far corner.
-	player.position = Vector3(ROOM_HALF - 5.0, 1.0, ROOM_HALF - 5.0)
+	player.position = Vector3(ROOM_HALF - 5.0, 1.5, ROOM_HALF - 5.0)
 	player.rotation_degrees = Vector3(0, 135, 0)
 	var col := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
@@ -205,17 +264,15 @@ func _build_player() -> void:
 	var cam := Camera3D.new()
 	cam.name = "Camera3D"
 	cam.position = Vector3(0, 1.6, 0)
+	cam.far = 500.0
 	player.add_child(cam)
 	add_child(player)
 	_player = player
 
-# --- COLLECTIBLES: CC0 nature props scattered in the room, grabbable via the adapter -------------
+# --- COLLECTIBLES --------------------------------------------------------------------------------
 
-## Scatter a handful of already-imported CC0 assets around the room as walk-up pickables. Each is a
-## real Node3D built from its renderer-neutral scene_node descriptor (mesh identity = inventory type,
-## so two of the same model stack as one inventory row), registered through the grab adapter.
-func _scatter_collectibles() -> void:
-	var picks := _collectible_descriptors()
+func _scatter_collectibles(slug: String) -> void:
+	var picks := _collectible_descriptors(slug)
 	var i := 0
 	for entry in picks:
 		var desc: Dictionary = entry["desc"]
@@ -231,31 +288,60 @@ func _scatter_collectibles() -> void:
 		_grab.register_pickable("pick_%d_%s" % [i, String(desc.get("name", "item"))], node, PICKUP_RADIUS, placed_desc)
 		i += 1
 
-## A small, fixed set of CC0 collectibles + their scatter positions. Drawn from the imported
-## Kenney/Quaternius nature kits (via the manifest) so no new download is needed; falls back to a
-## primitive gem if the manifest is unavailable, so the loop is never empty.
-func _collectible_descriptors() -> Array:
+## Collectibles for slug: prefer the scene's OWN prop GLBs (assembled kits carry props); for GLB
+## scenes (platformer/sketchfab) use the imported manifest kits. Primitive gem fallback so the loop
+## is never empty.
+func _collectible_descriptors(slug: String) -> Array:
 	var out: Array = []
-	# Scattered across the interior, kept clear of the corner spawn (near +X/+Z) so nothing clips the
-	# opening camera. The player walks up to each to grab it.
 	var positions := [
 		Vector3(-6, 0, -6), Vector3(6, 0, -6), Vector3(-6, 0, 6),
 		Vector3(0, 0, -8), Vector3(-8, 0, 0), Vector3(0, 0, 0),
 		Vector3(-3, 0, 2), Vector3(2, 0, -3),
 	]
-	var glb_paths := _manifest_collectible_paths(positions.size())
+	var prop_descs := _scene_prop_descriptors(slug, positions.size())
 	for j in positions.size():
 		var desc: Dictionary
-		if j < glb_paths.size():
-			desc = { "name": glb_paths[j]["name"], "mesh": { "source": "glb", "path": glb_paths[j]["path"] } }
+		if j < prop_descs.size():
+			desc = prop_descs[j]
 		else:
-			# Primitive fallback: a small floating gem (asset-free), still a proper inventory type.
 			desc = { "name": "gem", "mesh": { "source": "primitive", "shape": "sphere", "params": { "radius": 0.4 } } }
 		out.append({ "desc": desc, "pos": positions[j] })
 	return out
 
-## Read up to `limit` GLB collectible paths from the asset manifest (already-imported CC0 kits),
-## preferring small props (rocks, trees, plants). Empty if the manifest is missing → primitive path.
+## Up to limit prop descriptors for the scene: the scene's own kit props if it is an assembled kit
+## with matching prop GLBs, else the imported manifest kits, else empty (-> primitive gems).
+func _scene_prop_descriptors(slug: String, limit: int) -> Array:
+	var out: Array = []
+	var reg := Scenes.registry()
+	if slug != "" and reg.has(slug) and Scenes.is_vendored(slug):
+		var cfg: Dictionary = reg[slug]
+		if String(cfg.get("kind", "")) == "assembled":
+			var names: Array = Scenes.glb_names(slug)
+			var prop_names := _match_names(names, cfg.get("prop_hints", []))
+			var dir := Scenes.glb_dir(slug)
+			for base in prop_names:
+				if out.size() >= limit:
+					break
+				out.append({ "name": String(base), "mesh": { "source": "glb", "path": dir + String(base) + ".glb" } })
+			if not out.is_empty():
+				return out
+	# GLB scenes (or an assembled kit with no matched props): fall back to the imported manifest kits.
+	for p in _manifest_collectible_paths(limit):
+		out.append({ "name": p["name"], "mesh": { "source": "glb", "path": p["path"] } })
+	return out
+
+## Basenames whose lowercase contains ANY of the hint substrings, in kit order.
+func _match_names(names: Array, hints: Array) -> Array:
+	var out: Array = []
+	for n in names:
+		var low := String(n).to_lower()
+		for h in hints:
+			if low.contains(String(h).to_lower()):
+				out.append(n)
+				break
+	return out
+
+## Read up to limit GLB collectible paths from the imported asset manifest (Kenney/Quaternius CC0).
 func _manifest_collectible_paths(limit: int) -> Array:
 	var out: Array = []
 	var mp := "res://assets/manifest.json"
@@ -266,7 +352,6 @@ func _manifest_collectible_paths(limit: int) -> Array:
 		return out
 	var prefer := ["rock", "pine", "tree", "plant", "flower", "mushroom", "twisted"]
 	var assets: Array = data.get("assets", [])
-	# Prefer small props, then fill from whatever remains, so the set is stable + not empty.
 	var ordered: Array = []
 	for a in assets:
 		var tags: Array = a.get("tags", [])
@@ -281,20 +366,68 @@ func _manifest_collectible_paths(limit: int) -> Array:
 		if out.size() >= limit:
 			break
 		var nm := String(a.get("name", "item"))
-		# Trim the verbose Quaternius suffixes for a clean inventory label.
 		if nm.contains("_-_free_model"):
 			nm = nm.split("_-_free_model")[0]
 		out.append({ "name": nm, "path": String(a.get("path", "")) })
 	return out
 
-# --- IN-SCENE FEEDBACK: F1 → note box → append notes.jsonl (same substrate as card feedback) -------
+# --- SCENE SELECTOR: no scene param -> a menu of the 5 vendored scenes -----------------------------
 
-func _build_feedback_ui() -> void:
+func _build_selector() -> void:
+	_selector = CanvasLayer.new()
+	_selector.name = "SelectorLayer"
+	_selector.layer = 30
+	add_child(_selector)
+	if DisplayServer.get_name() != "headless":
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	var panel := PanelContainer.new()
+	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	panel.custom_minimum_size = Vector2(520, 0)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.06, 0.07, 0.10, 0.96)
+	style.set_corner_radius_all(10)
+	style.set_content_margin_all(20)
+	panel.add_theme_stylebox_override("panel", style)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 10)
+	panel.add_child(vb)
+	var title := Label.new()
+	title.text = "Choose a scene to explore"
+	title.add_theme_color_override("font_color", Color(0.72, 0.85, 0.98))
+	title.add_theme_font_size_override("font_size", 20)
+	vb.add_child(title)
+	var sub := Label.new()
+	sub.text = "WASD move - mouse look - E grab - F1 note. Walls are solid: you run into them."
+	sub.add_theme_color_override("font_color", Color(0.6, 0.66, 0.74))
+	sub.add_theme_font_size_override("font_size", 12)
+	vb.add_child(sub)
+	for slug in Scenes.order():
+		var cfg: Dictionary = Scenes.registry()[slug]
+		var vendored := Scenes.is_vendored(slug)
+		var btn := Button.new()
+		var lic := String(cfg.get("license", ""))
+		btn.text = "%s   [%s]%s" % [String(cfg.get("title", slug)), lic, "" if vendored else "   (fallback room)"]
+		btn.tooltip_text = slug
+		btn.custom_minimum_size = Vector2(480, 40)
+		btn.pressed.connect(_on_scene_chosen.bind(slug))
+		vb.add_child(btn)
+	_selector.add_child(panel)
+
+## Chosen from the selector: tear the menu down and enter that scene IN THIS window.
+func _on_scene_chosen(slug: String) -> void:
+	if _selector != null:
+		_selector.queue_free()
+		_selector = null
+	_slug = slug
+	_enter_scene(slug)
+
+# --- IN-SCENE FEEDBACK ---------------------------------------------------------------------------
+
+func _build_feedback_ui(slug: String) -> void:
 	_feedback = CanvasLayer.new()
 	_feedback.name = "FeedbackLayer"
 	_feedback.layer = 20
 	add_child(_feedback)
-	# A hint pinned top-right so the feedback key is discoverable.
 	var hint := Label.new()
 	hint.text = "F1  leave a note about this scene"
 	hint.add_theme_color_override("font_color", Color(0.8, 0.85, 0.92))
@@ -302,7 +435,16 @@ func _build_feedback_ui() -> void:
 	hint.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	hint.position += Vector2(-260, 12)
 	_feedback.add_child(hint)
-	# The (hidden) note dialog: a LineEdit in a panel, shown on F1.
+	# CC-BY attribution surfaced bottom-right in-scene (empty for CC0/MIT).
+	var att := Scenes.attribution_line(slug)
+	if att != "":
+		var att_label := Label.new()
+		att_label.text = att
+		att_label.add_theme_color_override("font_color", Color(0.7, 0.72, 0.78))
+		att_label.add_theme_font_size_override("font_size", 11)
+		att_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+		att_label.position += Vector2(-420, -28)
+		_feedback.add_child(att_label)
 	_note_panel = PanelContainer.new()
 	_note_panel.visible = false
 	_note_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
@@ -316,11 +458,11 @@ func _build_feedback_ui() -> void:
 	vb.add_theme_constant_override("separation", 8)
 	_note_panel.add_child(vb)
 	var title := Label.new()
-	title.text = "Note about this scene (Enter to send · Esc to cancel)"
+	title.text = "Note about this scene (Enter to send - Esc to cancel)"
 	title.add_theme_color_override("font_color", Color(0.62, 0.78, 0.95))
 	vb.add_child(title)
 	_note_edit = LineEdit.new()
-	_note_edit.placeholder_text = "what works / what to change…"
+	_note_edit.placeholder_text = "what works / what to change..."
 	_note_edit.custom_minimum_size = Vector2(430, 0)
 	_note_edit.text_submitted.connect(_on_note_submitted)
 	vb.add_child(_note_edit)
@@ -343,7 +485,6 @@ func _toggle_note_box() -> void:
 		_close_note_box()
 		return
 	_note_panel.visible = true
-	# Release the mouse so the field can be clicked/typed (the FPS controller captured it).
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_note_edit.grab_focus()
 
@@ -359,9 +500,7 @@ func _on_note_submitted(text: String) -> void:
 		append_note(note)
 	_close_note_box()
 
-## Append one feedback note to Alethea-cc/state/sandbox/notes.jsonl, keyed to this scene id. Same
-## JSONL substrate as Aperture card feedback so in-scene notes route the same way. Returns true on
-## success. Pure enough for the headless test to call with an explicit path.
+## Append one feedback note to Alethea-cc/state/sandbox/notes.jsonl, keyed to this scene id.
 func append_note(note: String, path_override: String = "") -> bool:
 	var abs := path_override if path_override != "" else _notes_abs_path()
 	if abs == "":
@@ -371,6 +510,7 @@ func append_note(note: String, path_override: String = "") -> bool:
 	var line := JSON.stringify({
 		"ts": Time.get_datetime_string_from_system(true) + "Z",
 		"scene": SCENE_ID,
+		"subscene": _slug,
 		"kind": "in_scene_feedback",
 		"note": note,
 	})
@@ -386,30 +526,28 @@ func append_note(note: String, path_override: String = "") -> bool:
 	print("[explore] note appended to %s" % abs)
 	return true
 
-## Resolve the absolute path to Alethea-cc/state/sandbox/notes.jsonl by walking up from the Godot
-## project dir (…/Resonance-Evolution/godot) to the Wavelet repo root. The sandbox state dir lives in
-## the Wavelet repo, so notes from either repo's tooling land in one place.
 func _notes_abs_path() -> String:
-	var proj := ProjectSettings.globalize_path("res://")   # …/Resonance-Evolution/godot/
-	# Try the Wavelet-root layout first (…/Wavelet/Alethea-cc/state/sandbox/notes.jsonl).
+	var proj := ProjectSettings.globalize_path("res://")
 	var candidates := [
-		proj.path_join("../../../").simplify_path().path_join(NOTES_REL),  # …/Wavelet/
+		proj.path_join("../../../").simplify_path().path_join(NOTES_REL),
 		proj.path_join("../").simplify_path().path_join("Alethea-cc/state/sandbox/notes.jsonl"),
-		proj.path_join("state/sandbox/notes.jsonl"),                       # in-project fallback
+		proj.path_join("state/sandbox/notes.jsonl"),
 	]
 	for c in candidates:
-		var base := (c as String).get_base_dir().get_base_dir()  # …/Alethea-cc/state
+		var base := (c as String).get_base_dir().get_base_dir()
 		if DirAccess.dir_exists_absolute(base) or DirAccess.dir_exists_absolute(base.get_base_dir()):
 			return c
-	# Nothing pre-existing: default to the Wavelet-root candidate (make_dir_recursive creates it).
 	return candidates[0]
 
-# --- CI one-shot: `-- --shot` renders a few frames → png → quit (proves it runs windowed) ---------
+# --- CI one-shot: -- --shot renders a few frames -> png -> quit -----------------------------------
 
 const SHOT_OUT := "res://live/explore_shot.png"
 
+func _shot_mode() -> bool:
+	return "--shot" in OS.get_cmdline_user_args() or "--shot" in OS.get_cmdline_args()
+
 func _process(_delta: float) -> void:
-	if "--shot" in OS.get_cmdline_user_args() or "--shot" in OS.get_cmdline_args():
+	if _shot_mode():
 		_shot_frames += 1
 		if _shot_frames == 15:
 			await _capture(SHOT_OUT)
