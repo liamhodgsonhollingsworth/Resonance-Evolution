@@ -116,6 +116,10 @@ func ensure_asset(key: String, template: Node3D) -> Texture2D:
 ## Core: put `subject` (a fresh Node3D not yet in the tree) into a throwaway off-screen
 ## SubViewport, frame it, render one frame, grab the pixels, save the PNG, free everything.
 func _render_node(key: String, subject: Node3D) -> Texture2D:
+	# Defer the whole render to an idle frame: called during _ready the scene tree is "busy setting up
+	# children" and add_child fails + look_at warns (Node not inside tree). One deferred hop clears both.
+	await _tree.process_frame
+
 	var vp := SubViewport.new()
 	vp.size = Vector2i(SIZE, SIZE)
 	vp.transparent_bg = true
@@ -134,10 +138,11 @@ func _render_node(key: String, subject: Node3D) -> Texture2D:
 	subject.position -= centre                       # recentre to origin
 
 	var cam := Camera3D.new()
-	scene.add_child(cam)
 	var dist := radius * 2.6
-	cam.position = Vector3(dist * 0.75, dist * 0.65, dist * 0.9)
-	cam.look_at(Vector3.ZERO, Vector3.UP)
+	var cam_pos := Vector3(dist * 0.75, dist * 0.65, dist * 0.9)
+	scene.add_child(cam)
+	# look_at_from_position: safe regardless of the camera's in-tree state (avoids the transient warning).
+	cam.look_at_from_position(cam_pos, Vector3.ZERO, Vector3.UP)
 	cam.fov = 45.0
 
 	var key_light := DirectionalLight3D.new()
