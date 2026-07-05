@@ -33,8 +33,8 @@ func _initialize() -> void:
 
 	# The room built its sub-structure.
 	ok = _check("room built the Objects root", room.get_node_or_null("Objects") != null) and ok
-	ok = _check("room built the Doors root (2 doors)",
-		room.get_node_or_null("Doors") != null and room.get_node("Doors").get_child_count() == 2) and ok
+	ok = _check("room built the Doors root (3 doors: dungeons, gallery, sandbox)",
+		room.get_node_or_null("Doors") != null and room.get_node("Doors").get_child_count() == 3) and ok
 	ok = _check("room built the Computer", room.get_node_or_null("Computer") != null) and ok
 	ok = _check("palette slot 0 is the empty hand",
 		room.call("_is_empty_hand")) and ok
@@ -47,15 +47,17 @@ func _initialize() -> void:
 		not ComputerTerminal.close_board(room)) and ok
 
 	# The room's own door specs each resolve to a valid transition PLAN (the wiring that decides
-	# same-window vs new-window at walk-in time). This runs regardless of display.
+	# same-window vs new-window at walk-in time) AND point at a scene that ACTUALLY EXISTS. The prior
+	# dungeon door pointed at a non-existent scene (defect #3) — assert existence so that never recurs.
 	var specs: Array = room.get("door_specs")
-	ok = _check("room carries 2 door specs", specs.size() == 2) and ok
-	var exp_plan := SceneTransition.plan(specs[0])
-	ok = _check("door 0 (explore, experimental) plans to a NEW window",
-		bool(exp_plan.get("ok")) and String(exp_plan.get("channel")) == "new_window") and ok
-	var stable_plan := SceneTransition.plan(specs[1])
-	ok = _check("door 1 (sandbox, stable) plans to the SAME window",
-		bool(stable_plan.get("ok")) and String(stable_plan.get("channel")) == "same_window") and ok
+	ok = _check("room carries 3 door specs (dungeons + gallery + sandbox)", specs.size() == 3) and ok
+	for i in specs.size():
+		var spec: Dictionary = specs[i]
+		var pl := SceneTransition.plan(spec)
+		ok = _check("door %d (%s) plans OK to same_window" % [i, String(spec.get("label", "?"))],
+			bool(pl.get("ok")) and String(pl.get("channel")) == "same_window") and ok
+		ok = _check("door %d (%s) target scene EXISTS: %s" % [i, String(spec.get("label", "?")), String(spec.get("scene", ""))],
+			ResourceLoader.exists(String(spec.get("scene", "")))) and ok
 
 	# Placement path: with a block selected, _place_active adds one object to the Objects root.
 	room.set("active_slot", 1)                    # slot 1 = Cube
