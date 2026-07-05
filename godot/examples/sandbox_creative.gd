@@ -127,8 +127,14 @@ var _obj_seq := 0                                             # monotonic object
 # The BLOCK PALETTE — the engine's primitive vocabulary as generic, untextured building blocks, PLUS
 # (appended in _ready) every manifest asset as kind:"asset" entries under per-kit category tabs.
 var palette: Array = []                                       # filled in _build_palette / _extend_palette_with_assets
-var hotbar: Array = []                                        # 9 palette indices (the MC hotbar)
+var hotbar: Array = []                                        # 9 palette indices; EMPTY_HAND (-1) = holding nothing
 var active_slot := 0                                          # 0..8
+
+## EMPTY HAND (Liam item 1, 2026-07-05): holding nothing is a REAL, selectable hotbar state. A slot set to
+## EMPTY_HAND holds no item — with an empty hand the MC defaults apply: LMB destroys the targeted thing,
+## RMB does nothing (nothing to place), MMB picks the looked-at thing INTO the hand. Q (drop) empties the
+## active slot back to this state.
+const EMPTY_HAND := -1
 
 # ── modules ─────────────────────────────────────────────────────────────────────────────────────────
 var assets: Node = null                                       # AssetLibrary (lazy loader; child node)
@@ -147,6 +153,8 @@ var _inv_panel: Panel
 var _inv_grid: GridContainer
 var _inv_tabs: HBoxContainer
 var _inv_title: Label
+var _inv_search: LineEdit
+var _inv_query := ""                                          # active inventory search substring ("" = browse by tab)
 var _crosshair: Control
 var _status: Label
 var _behavior_panel: Panel
@@ -184,6 +192,7 @@ var _notes: Dictionary = {}                                  # note_id -> note r
 var _note_seq := 0                                           # monotonic note-id counter
 var _notes_root: Node3D = null                               # parent for stuck-note render meshes
 var _editing_note_id := ""                                   # the note whose text the editor is currently editing
+var _feedback_mode := false                                  # the note editor is capturing IN-SCENE FEEDBACK (F1), not a stuck note
 var thumbs = null                                            # ItemThumbnails (image previews; lazily built)
 
 # hotload watcher state (the painterly_scene / live_demo pattern: content-change → re-apply)
@@ -201,6 +210,7 @@ var notes_path := DEFAULT_NOTES_PATH
 func _ready() -> void:
 	var t0 := Time.get_ticks_msec()
 	_headless = DisplayServer.get_name() == "headless"
+	_build_action_map()
 	_build_palette()
 	_default_hotbar()
 	_build_world_nodes()
@@ -274,6 +284,28 @@ func _process(delta: float) -> void:
 
 
 # ══ CREATIVE-MODE CAMERA + CONTROLS ═══════════════════════════════════════════════════════════════════
+#
+# DATA-DRIVEN ACTION MAP (coordinator control-extensibility ask 2026-07-05): the always-on key bindings
+# are a DICTIONARY (keycode -> a zero-arg Callable). Adding a Minecraft-equivalent control is a ONE-LINE
+# entry here — the dispatch loop below never changes. This is the plug point for the extra controls Liam
+# picks (full-inventory E is already here; creative flight / sprint / jump / sneak, when chosen, each add
+# ONE row). Kept separate from the mouse/number/wheel handling (those are MC-fixed).
+var _key_actions: Dictionary = {}                            # keycode:int -> Callable (built in _build_action_map)
+
+func _build_action_map() -> void:
+	_key_actions = {
+		KEY_E:            func(_ev): _toggle_inventory(),                       # full creative inventory / picker
+		KEY_Q:            func(_ev): _drop_held(),                             # MC drop: empty the held slot (item disappears)
+		KEY_ESCAPE:       func(_ev): Input.mouse_mode = Input.MOUSE_MODE_VISIBLE,
+		KEY_BACKSLASH:    func(_ev): _toggle_debug_verbs(),                    # superseded verb layer toggle
+		KEY_F5:           func(_ev): _save_world(),
+		KEY_BRACKETLEFT:  func(_ev): _cycle_world(-1),
+		KEY_BRACKETRIGHT: func(_ev): _cycle_world(1),
+		KEY_F1:           func(_ev): _open_feedback(),                         # in-scene feedback (overarching ask)
+		# --- Liam's extra MC-equivalent controls fold in here as ONE line each when he picks them. ---
+		# e.g. creative flight toggle, sprint hold, jump, sneak — one KEY_* -> Callable row apiece.
+	}
+
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _headless:
@@ -304,26 +336,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				_toggle_behavior_panel()
 				return
 			return
-		# ALWAYS-ON keys (MC defaults + world ops; independent of the debug verb layer).
-		match event.keycode:
-			KEY_E:
-				_toggle_inventory()
-				return
-			KEY_ESCAPE:
-				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-				return
-			KEY_BACKSLASH:
-				_toggle_debug_verbs()
-				return
-			KEY_F5:
-				_save_world()
-				return
-			KEY_BRACKETLEFT:
-				_cycle_world(-1)
-				return
-			KEY_BRACKETRIGHT:
-				_cycle_world(1)
-				return
+		# ALWAYS-ON keys via the DATA-DRIVEN action map (one dictionary row per binding — see _build_action_map).
+		if _key_actions.has(event.keycode):
+			(_key_actions[event.keycode] as Callable).call(event)
+			return
 		# DEBUG VERB LAYER (superseded default, gated behind BACKSLASH; append-only supersession).
 		# MC controls (mouse) are the default; these fire only when the debug layer is toggled on.
 		if _debug_verbs:
@@ -494,6 +510,8 @@ func _raycast_free() -> Dictionary:
 ## FREELY at the exact aim point under the crosshair (no grid, Liam correction 2026-07-05). Both go into
 ## the free OBJECT layer so they carry an arbitrary position + orientation. (Tools act via the seam.)
 func _place_active() -> void:
+	if _hand_empty():
+		return                                       # empty hand => nothing to place (MC default: RMB no-op)
 	var pal_idx: int = hotbar[active_slot]
 	var entry: Dictionary = palette[pal_idx]
 	if Items.is_tool_entry(entry):
@@ -589,9 +607,8 @@ func _click_secondary() -> void:
 	if _active_handler != null and _active_handler.has_method("secondary"):
 		_active_handler.secondary(self)
 		return
-	# A tool held in hand is not "placed"; only blocks/assets are.
-	var entry: Dictionary = palette[hotbar[active_slot]]
-	if Items.is_tool_entry(entry):
+	# Empty hand or a tool held => nothing is "placed" (MC: RMB no-op); only blocks/assets place.
+	if _hand_empty() or Items.is_tool_entry(_active_entry()):
 		return
 	_place_active()
 
@@ -636,6 +653,18 @@ func _palette_index_for_asset(asset_id: String) -> int:
 			return i
 	return -1
 
+## The palette entry the active hotbar slot holds — {} for an EMPTY HAND (holding nothing).
+func _active_entry() -> Dictionary:
+	var pi: int = hotbar[active_slot] if active_slot >= 0 and active_slot < hotbar.size() else EMPTY_HAND
+	if pi == EMPTY_HAND or pi < 0 or pi >= palette.size():
+		return {}
+	return palette[pi]
+
+## Is the active hotbar slot an EMPTY HAND (holding nothing)?
+func _hand_empty() -> bool:
+	return active_slot < 0 or active_slot >= hotbar.size() or int(hotbar[active_slot]) == EMPTY_HAND
+
+
 ## Human label for an object record — its asset id (asset objects) or its block name (free blocks).
 func _obj_label(rec: Dictionary) -> String:
 	if rec.has("asset"):
@@ -662,7 +691,7 @@ func _toggle_debug_verbs() -> void:
 # its preview (the sticky-note orb).
 func _refresh_held_item() -> void:
 	var prev = _active_handler
-	var entry: Dictionary = palette[hotbar[active_slot]] if hotbar[active_slot] < palette.size() else {}
+	var entry: Dictionary = _active_entry()        # {} for an EMPTY HAND (no handler => MC defaults)
 	var next = null
 	if Items.is_tool_entry(entry):
 		var slot_idx: int = hotbar[active_slot]
@@ -1277,6 +1306,47 @@ func _refresh_behavior_list() -> void:
 	_behavior_list.text = "\n".join(lines)
 
 
+# ── IN-SCENE FEEDBACK (F1): leave feedback from inside the scene (overarching ask 2026-07-05) ──────────
+# Liam (overarching): "the ability to leave feedback on pages and scenes from the aperture". F1 opens the
+# text box; the line appends to the SAME notes.jsonl substrate as card + sticky-note feedback, keyed to the
+# scene id "sandbox_creative" with kind:"scene_feedback" — so a note left in the scene is indistinguishable
+# in the data contract from a card note (a Claude Code session reads them the same way). No shared code file.
+func _open_feedback() -> void:
+	if _headless or _note_panel == null:
+		return
+	_feedback_mode = true
+	_note_open = true
+	_note_panel.visible = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if _note_target_label != null:
+		_note_target_label.text = "Feedback on this scene (sandbox_creative)"
+	if _note_edit != null:
+		_note_edit.text = ""
+		_note_edit.placeholder_text = "feedback on this scene…  (Enter saves · ESC cancels)"
+		_note_edit.grab_focus()
+
+
+## Append one IN-SCENE FEEDBACK line to notes.jsonl (same substrate as sticky notes + card feedback).
+## Standalone so headless tests call it directly. Returns success.
+func _write_feedback(text: String) -> bool:
+	var pos := Vector3.ZERO
+	if _cam != null:
+		pos = _cam.global_position
+	var entry := {
+		"ts": Time.get_datetime_string_from_system(true) + "Z",
+		"world": world_name,
+		"world_version": store.latest_version(world_name) if store != null else 0,
+		"object_id": "",
+		"asset_id": "",
+		"position": [pos.x, pos.y, pos.z],
+		"note": text,
+		# --- feedback provenance (additive; keyed to the scene id, same as an Aperture card note) ---
+		"kind": "scene_feedback",
+		"scene_id": "sandbox_creative",
+	}
+	return _append_note_line(entry)
+
+
 # ── notes on things (N): the Claude Code handoff channel ──────────────────────────────────────────────
 # A note lands as one JSONL line in notes_path with everything a Claude Code session needs to act on it
 # cold: UTC timestamp, world + version, object id + asset id (or a bare location), world position, text.
@@ -1305,6 +1375,19 @@ func _close_note(save: bool) -> void:
 	if _note_panel != null:
 		_note_panel.visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	# IN-SCENE FEEDBACK path (F1): the editor was capturing scene feedback, not a stuck note.
+	if _feedback_mode:
+		_feedback_mode = false
+		if save:
+			var fb := _note_edit.text.strip_edges() if _note_edit != null else ""
+			if fb != "":
+				if _write_feedback(fb):
+					_flash_status("scene feedback saved -> %s" % notes_path)
+				else:
+					_flash_status("FEEDBACK FAILED to write %s" % notes_path)
+		if _note_edit != null:
+			_note_edit.placeholder_text = "note for Claude Code…  (Enter saves · ESC cancels)"
+		return
 	var editing := _editing_note_id
 	_editing_note_id = ""
 	if not save:
@@ -1770,10 +1853,11 @@ func _make_slot_button(pal_idx: int, active: bool, label: String) -> Object:
 	b.custom_minimum_size = Vector2(56, 56)
 	b.clip_text = true
 	var entry: Dictionary = palette[pal_idx] if pal_idx >= 0 and pal_idx < palette.size() else {}
+	var item_name := String(entry.get("name", "")) if pal_idx >= 0 else ""   # EMPTY_HAND (-1) => blank slot
 	if label != "":
-		b.text = "%s\n%s" % [label, String(entry.get("name", "-"))]
+		b.text = "%s\n%s" % [label, item_name] if item_name != "" else label
 	else:
-		b.text = String(entry.get("name", "-"))
+		b.text = item_name
 	b.add_theme_font_size_override("font_size", 11)
 	# Tint the slot with the block's untextured albedo so the palette reads at a glance (fallback +
 	# background behind the thumbnail).
@@ -1871,6 +1955,14 @@ func _build_inventory_panel() -> void:
 	_inv_title.text = "Creative Inventory  —  click a block → hotbar slot %d  (E to close)" % (active_slot + 1)
 	_inv_title.add_theme_font_size_override("font_size", 14)
 	vb.add_child(_inv_title)
+	# SEARCH box (control #1: "browse/scroll/search all assets + block types"). Typing filters the grid
+	# across ALL categories by name; clearing it returns to the active category tab.
+	_inv_search = LineEdit.new()
+	_inv_search.placeholder_text = "search items…  (name substring; clear to browse by tab)"
+	_inv_search.add_theme_font_size_override("font_size", 13)
+	_inv_search.clear_button_enabled = true
+	_inv_search.text_changed.connect(func(q: String): _on_inv_search(q))
+	vb.add_child(_inv_search)
 	# Category tabs.
 	_inv_tabs = HBoxContainer.new()
 	_inv_tabs.add_theme_constant_override("separation", 6)
@@ -1907,9 +1999,14 @@ func _populate_inventory(category: String) -> void:
 	_active_category = category
 	for c in _inv_grid.get_children():
 		c.queue_free()
+	var q := _inv_query.strip_edges().to_lower()
 	for pal_idx in palette.size():
 		var entry: Dictionary = palette[pal_idx]
-		if entry["category"] != category:
+		# With a search query set, match by name substring across ALL categories; else filter by tab.
+		if q != "":
+			if not String(entry.get("name", "")).to_lower().contains(q):
+				continue
+		elif entry["category"] != category:
 			continue
 		var b = _make_slot_button(pal_idx, false, "")
 		b.role = "inventory"                          # drag source (drag onto a hotbar slot)
@@ -1919,12 +2016,19 @@ func _populate_inventory(category: String) -> void:
 		b.pressed.connect(func(): _pick_into_hotbar(idx))
 		_inv_grid.add_child(b)
 		_apply_slot_thumbnail(b, pal_idx)
-	# reflect the active tab
+	# reflect the active tab (dimmed while a search query overrides the tab filter)
 	for t in _inv_tabs.get_children():
 		if t is Button:
-			t.button_pressed = (t.text == category)
+			t.button_pressed = (q == "" and t.text == category)
 	# Render any missing thumbnails for this tab's items, then re-apply so images fill in this open.
-	_render_missing_thumbnails_for(category)
+	if q == "":
+		_render_missing_thumbnails_for(category)
+
+
+## Search box changed: filter the grid by name substring (across all categories). Empty => back to tab view.
+func _on_inv_search(query: String) -> void:
+	_inv_query = query
+	_populate_inventory(_active_category)
 
 
 ## Render (async) any not-yet-cached thumbnails for the given category, then re-skin the grid slots.
@@ -2000,6 +2104,17 @@ func _select_slot(i: int) -> void:
 	_update_preview_mesh()
 
 
+## DROP (Q, MC default — Liam item 1, 2026-07-05): drop the held item. For now it simply DISAPPEARS (no
+## physics / ground rest), emptying the held slot back to EMPTY_HAND. A no-op if the hand is already empty.
+func _drop_held() -> void:
+	if _hand_empty():
+		return
+	var name := String(_active_entry().get("name", "item"))
+	hotbar[active_slot] = EMPTY_HAND
+	_after_hotbar_change()
+	_flash_status("dropped %s (empty hand)" % name)
+
+
 var _flash_text := ""
 var _flash_until := 0.0
 
@@ -2013,16 +2128,20 @@ func _flash_status(msg: String) -> void:
 func _refresh_status() -> void:
 	if _status == null:
 		return
-	var entry: Dictionary = palette[hotbar[active_slot]]
-	var kind := String(entry.get("kind", "block"))
 	var lines := []
-	var label := "Tool" if kind == "tool" else ("Asset" if kind == "asset" else "Block")
-	if kind == "tool":
-		lines.append("%s: %s   (slot %d)   |   world: %s   |   LEFT use · MIDDLE pick · 1-9 slots · E inventory · WASD+Space/Shift fly" % [
-			label, String(entry["name"]), active_slot + 1, world_name])
+	if _hand_empty():
+		lines.append("Empty hand   (slot %d)   |   world: %s   |   LEFT destroy · MIDDLE pick · RMB (nothing) · 1-9 slots · E inventory · Q drop · WASD fly" % [
+			active_slot + 1, world_name])
 	else:
-		lines.append("%s: %s   (slot %d)   |   world: %s   |   RIGHT place · LEFT destroy · MIDDLE pick · 1-9 slots · E inventory · WASD fly" % [
-			label, String(entry["name"]), active_slot + 1, world_name])
+		var entry: Dictionary = _active_entry()
+		var kind := String(entry.get("kind", "block"))
+		var label := "Tool" if kind == "tool" else ("Asset" if kind == "asset" else "Block")
+		if kind == "tool":
+			lines.append("%s: %s   (slot %d)   |   world: %s   |   LEFT use · MIDDLE pick · 1-9 slots · E inventory · Q drop · WASD+Space/Shift fly" % [
+				label, String(entry["name"]), active_slot + 1, world_name])
+		else:
+			lines.append("%s: %s   (slot %d)   |   world: %s   |   RIGHT place · LEFT destroy · MIDDLE pick · 1-9 slots · E inventory · Q drop · WASD fly" % [
+				label, String(entry["name"]), active_slot + 1, world_name])
 	if _debug_verbs and selected_id != "" and objects.has(selected_id):
 		var rec: Dictionary = objects[selected_id]
 		lines.append("[debug] Selected: %s (%s)%s   |   G grab · R rotate · +/- scale · X delete · B behaviors · N note" % [
@@ -2042,7 +2161,8 @@ func _refresh_status() -> void:
 func _update_preview() -> void:
 	if _preview == null:
 		return
-	if _did_shot or _inv_open or _cam == null or _grabbing or Items.is_tool_entry(palette[hotbar[active_slot]]):
+	# No placement dot when there is nothing to place: empty hand, a held tool, grabbing, inventory, or --shot.
+	if _did_shot or _inv_open or _cam == null or _grabbing or _hand_empty() or Items.is_tool_entry(_active_entry()):
 		_preview.visible = false
 		return
 	var rc := _raycast_free()
