@@ -95,24 +95,40 @@ var _headless := false
 var _time := 0.0
 var _doors: Array = []             # DoorGateway instances (polled for walk-in)
 
-# The doors to place in the room. DATA - each is a SceneTransition target + placement. A peer lane's
-# explorable-scene lands here by adding one entry (its scene path + same_window/experimental flag).
-# aperture_explore_scene is EXPERIMENTAL (relies on the new explorer system a peer is building) -> new
-# window until it is proven, then flip same_window:true to bring it into this window (spec item 5).
+# The doors to place in the room. DATA - each is a SceneTransition target + placement. Adding a portal
+# for a new explorable scene is ONE entry (its res:// scene + same_window flag + placement). Every door
+# below points at a scene that ACTUALLY EXISTS on origin/main and was walk-through-verified live (Liam
+# 2026-07-05 defect fixes 3/4/5): the prior specs pointed at a non-existent aperture_explore_scene.tscn
+# (dungeon door dead) and had NO gallery door at all. All three are SAME-WINDOW: the self-cleaning
+# TransitionOverlay (scene_transition.gd) makes each seamless AND leaveable with ESC back to the room,
+# with no edit to the read-only destination scenes.
 var door_specs: Array = [
 	{
-		"scene": "res://examples/aperture_explore_scene.tscn",
-		"experimental": true, "same_window": false,
-		"label": "Explore gallery (experimental)",
-		"color": [0.55, 0.8, 1.0],
-		"position": [-6.0, 0.0, -11.4], "yaw_deg": 0.0,
+		# DUNGEONS (defect #3: portals were missing). The real vendored explorer (RE #155): with no
+		# scene param it opens the SCENE SELECTOR menu; pick a dungeon and it loads in this window.
+		"scene": "res://examples/explore/explore_scene_demo.tscn",
+		"same_window": true,
+		"label": "Dungeons",
+		"color": [0.95, 0.78, 0.5],
+		"position": [-7.0, 0.0, -11.4], "yaw_deg": 0.0,
 	},
 	{
+		# GALLERY (defect #4: gateway did nothing - there was no gallery door). The turntable showcase
+		# scene; ESC returns to the room via the overlay (gallery.gd is read-only, so leave is ours).
+		"scene": "res://gallery/gallery.tscn",
+		"same_window": true,
+		"label": "Gallery",
+		"color": [0.55, 0.8, 1.0],
+		"position": [-11.4, 0.0, 0.0], "yaw_deg": 90.0,
+	},
+	{
+		# SANDBOX (defect #5: same-window swap left a stuck black cover). Fixed by the self-cleaning
+		# overlay; the sandbox now opens interactive (its own camera/HUD/mouse) and ESC returns.
 		"scene": "res://examples/sandbox_creative.tscn",
 		"same_window": true,
 		"label": "Sandbox",
 		"color": [0.7, 0.95, 0.7],
-		"position": [6.0, 0.0, -11.4], "yaw_deg": 0.0,
+		"position": [7.0, 0.0, -11.4], "yaw_deg": 0.0,
 	},
 ]
 
@@ -781,28 +797,17 @@ func _build_hud() -> void:
 	ch.add_theme_font_size_override("font_size", 22)
 	ch.position = Vector2(-7, -16)
 	_crosshair.add_child(ch)
-	var help := Label.new()
-	help.text = ("3D APERTURE (sandbox room) - click to capture - ESC release\n" +
-		"WASD+mouse walk (walls solid) - 0=empty hand - 1-9 pick block - wheel cycle\n" +
-		"empty hand: L-click pick up - R-click computer=open 2D board - R-click remove\n" +
-		"holding block: L-click PLACE anywhere - Q drop item - X remove - R rotate - +/- scale\n" +
-		"F5 save layout - F feedback - walk into a DOOR to enter a scene (ESC leaves)")
-	help.position = Vector2(12, 8)
-	help.add_theme_font_size_override("font_size", 12)
-	_hud.add_child(help)
+	# Defect #1 (Liam 2026-07-05): NO controls-explanation overlay on the aperture room.
+	# Defect #2 (Liam 2026-07-05): NO inventory / hotbar HUD on the aperture room. The pick-up / remove /
+	# place mechanics stay fully wired (input + slot state untouched; _hotbar_ui stays null so
+	# _rebuild_hotbar_ui no-ops) - item-4 layout editing still works; only the visible bar is gone.
 	_status = Label.new()
-	_status.position = Vector2(12, 92)
+	_status.position = Vector2(12, 12)
 	_status.add_theme_font_size_override("font_size", 13)
 	_status.modulate = Color(0.7, 0.95, 0.7)
 	_hud.add_child(_status)
-	_hotbar_ui = HBoxContainer.new()
-	_hotbar_ui.add_theme_constant_override("separation", 4)
-	_hotbar_ui.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_hotbar_ui.position = Vector2(0, -60)
-	_hud.add_child(_hotbar_ui)
-	_rebuild_hotbar_ui()
 	_build_note_panel()
-	_set_status("welcome - aim at the computer and right-click to open the 2D board")
+	_set_status("aim at the computer and right-click (empty hand) to open the 2D board - walk into a door to enter a scene")
 
 
 func _rebuild_hotbar_ui() -> void:

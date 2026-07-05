@@ -32,8 +32,10 @@ extends RefCounted
 ## No class_name (mistake #046): consumers preload() this file by path.
 
 const ApertureSceneLauncher := preload("res://aperture/scene_launcher.gd")
+const TransitionOverlay := preload("res://aperture/transition_overlay.gd")
 
 const DEFAULT_FADE := 0.35
+const APERTURE_ROOM := "res://aperture/aperture_3d.tscn"
 
 
 ## Resolve a target dict to a decision WITHOUT acting — pure, so tests assert on the routing
@@ -62,6 +64,7 @@ static func plan(target) -> Dictionary:
 		"params": t.get("params", {}) if typeof(t.get("params", {})) == TYPE_DICTIONARY else {},
 		"label": String(t.get("label", "")),
 		"fade_seconds": float(t.get("fade_seconds", DEFAULT_FADE)),
+		"return_scene": String(t.get("return_scene", APERTURE_ROOM)),
 	}
 
 
@@ -100,36 +103,41 @@ static func enter(host: Node, target, exe: String = "") -> Dictionary:
 	return p
 
 
-## SEAMLESS same-window swap: fade a top CanvasLayer to black, change the scene under cover of the
-## black frame (no reload flash), then the newly-loaded scene fades itself back in when it calls
-## fade_in_on_ready (so the room-to-room feel spans the boundary). If a fade cannot be built
-## (headless / no tree), it changes the scene immediately — behavior degrades, never breaks.
+## SEAMLESS same-window swap — SELF-CLEANING (Liam 2026-07-05 defect #5 fix). Installs a
+## TransitionOverlay on the tree ROOT (so it survives change_scene_to_file), fades it to black, swaps
+## the scene under cover of the black frame, then the overlay fades ITSELF out and frees — the
+## destination scene needs to do NOTHING (the old design required the incoming scene to call
+## fade_in_on_ready, which only aperture_3d did, so sandbox/gallery/explore were left under a stuck
+## opaque input-eating cover: the black frozen screen). The overlay also wires LEAVE = ESC back to the
+## room for the destination, so read-only reuse scenes (gallery/sandbox/explore) are leaveable without
+## edits. Headless / no-tree / zero-fade → immediate swap, no overlay (behavior degrades, never breaks).
+## `return_scene` (from the plan; defaults to the aperture room) is where ESC returns.
 static func _same_window_swap(host: Node, plan_dict: Dictionary) -> void:
 	var scene := String(plan_dict["scene"])
 	var tree := host.get_tree() if host != null else null
 	if tree == null:
 		return
 	var fade_seconds := float(plan_dict.get("fade_seconds", DEFAULT_FADE))
+	var return_scene := String(plan_dict.get("return_scene", APERTURE_ROOM))
 	var headless := DisplayServer.get_name() == "headless"
 	if headless or fade_seconds <= 0.0:
 		tree.change_scene_to_file(scene)
 		return
-	# Fade cover: a CanvasLayer above everything, on the tree ROOT so it survives the scene change
-	# just long enough to hide the swap frame. The next scene removes any leftover cover on ready.
-	var layer := CanvasLayer.new()
-	layer.name = "__transition_fade"
-	layer.layer = 128
-	var rect := ColorRect.new()
-	rect.color = Color(0, 0, 0, 0)
-	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
-	rect.mouse_filter = Control.MOUSE_FILTER_STOP     # eat input during the fade
-	layer.add_child(rect)
-	tree.root.add_child(layer)
+	# The self-cleaning overlay lives on the ROOT, above the swapped scene. It starts transparent,
+	# we fade it to black, swap the scene under the black frame, then IT fades itself out + frees.
+	var overlay: CanvasLayer = TransitionOverlay.new()
+	tree.root.add_child(overlay)
+	overlay.call("setup", fade_seconds, return_scene)
+	var rect: ColorRect = overlay.get_child(0) as ColorRect
+	if rect == null:
+		tree.change_scene_to_file(scene)
+		return
+	rect.mouse_filter = Control.MOUSE_FILTER_STOP     # eat input during the fade-to-black only
 	var tw := tree.create_tween()
 	tw.tween_property(rect, "color:a", 1.0, fade_seconds)
 	tw.tween_callback(func():
 		tree.change_scene_to_file(scene)
-		layer.set_meta("__armed", true))
+		overlay.call("arm_cover"))                    # hand off: the overlay now fades ITSELF back out
 
 
 ## Called by a scene in _ready to complete a seamless ENTER: find the leftover black cover the
