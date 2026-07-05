@@ -191,11 +191,17 @@ func _notes_abs_path() -> String:
 func _scene_id() -> String:
 	var cur := _current_scene()
 	if cur != null:
-		# Honour an explicit SCENE_ID the scene root may expose (const or var).
-		if _has_prop(cur, "SCENE_ID"):
-			var sid = cur.get("SCENE_ID")
-			if sid != null and String(sid) != "":
-				return String(sid)
+		# Honour an explicit SCENE_ID the scene root may expose (a script const, e.g. sandbox/explore/
+		# aperture all declare `const SCENE_ID`). Consts are NOT in get_property_list(), so read the
+		# script's constant map; Object.get() also resolves them, used as the direct fallback.
+		var scr = cur.get_script()
+		if scr != null and scr.has_method("get_script_constant_map"):
+			var cmap: Dictionary = scr.get_script_constant_map()
+			if cmap.has("SCENE_ID") and String(cmap["SCENE_ID"]) != "":
+				return String(cmap["SCENE_ID"])
+		var sid = cur.get("SCENE_ID")
+		if sid != null and String(sid) != "":
+			return String(sid)
 	var file := _scene_file()
 	if file != "":
 		return file.get_file().get_basename()
@@ -214,13 +220,6 @@ func _current_scene() -> Node:
 	if tree == null:
 		return null
 	return tree.current_scene
-
-
-func _has_prop(obj: Object, prop_name: String) -> bool:
-	for p in obj.get_property_list():
-		if String(p.get("name", "")) == prop_name:
-			return true
-	return false
 
 
 # -- overlay UI (built in code; small + centered + unobtrusive) --------------------------------------

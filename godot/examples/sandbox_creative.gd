@@ -301,7 +301,7 @@ func _build_action_map() -> void:
 		KEY_F5:           func(_ev): _save_world(),
 		KEY_BRACKETLEFT:  func(_ev): _cycle_world(-1),
 		KEY_BRACKETRIGHT: func(_ev): _cycle_world(1),
-		KEY_F1:           func(_ev): _open_feedback(),                         # in-scene feedback (overarching ask)
+		# F1 is now owned by the GLOBAL GizmoNote autoload (works in EVERY scene) -- no per-scene binding here.
 		# --- Liam's extra MC-equivalent controls fold in here as ONE line each when he picks them. ---
 		# e.g. creative flight toggle, sprint hold, jump, sneak — one KEY_* -> Callable row apiece.
 	}
