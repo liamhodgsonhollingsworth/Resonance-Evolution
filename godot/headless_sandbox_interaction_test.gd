@@ -181,7 +181,7 @@ func _initialize() -> void:
 	var fb_file: String = ProjectSettings.globalize_path("user://test_interaction_feedback.jsonl")
 	if FileAccess.file_exists(fb_file):
 		DirAccess.remove_absolute(fb_file)
-	var prev_notes := s.notes_path
+	var prev_notes: String = s.notes_path
 	s.notes_path = fb_file
 	ok = _check("CF1 _write_feedback appends a scene_feedback row", s._write_feedback("the sky is a bit flat here")) and ok
 	var frow := _last_json_line(fb_file)
