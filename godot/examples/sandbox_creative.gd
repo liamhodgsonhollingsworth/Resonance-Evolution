@@ -518,9 +518,12 @@ func _place_active() -> void:
 		return                                       # tools are not placed; they act on click
 	var rc := _raycast_free()
 	var pos: Vector3 = rc["point"]
-	# Face the placement away from the camera by default (a sensible free orientation) so a placed asset
-	# does not always point the same way; fine orientation comes later via the queued wand tool.
-	var yaw := rad_to_deg(atan2(-(-_cam.global_transform.basis.z).x, -(-_cam.global_transform.basis.z).z)) if _cam != null else 0.0
+	# Orient the placement to face back toward the camera (yaw from the look direction) — a sensible free
+	# default; fine orientation comes later via the queued wand tool.
+	var yaw := 0.0
+	if _cam != null:
+		var look := -_cam.global_transform.basis.z
+		yaw = rad_to_deg(atan2(look.x, look.z))
 	if String(entry.get("kind", "block")) == "asset":
 		_place_object(String(entry["asset_id"]), pos, yaw, 1.0, [], "", pal_idx)
 	else:
@@ -2109,10 +2112,10 @@ func _select_slot(i: int) -> void:
 func _drop_held() -> void:
 	if _hand_empty():
 		return
-	var name := String(_active_entry().get("name", "item"))
+	var dropped_name := String(_active_entry().get("name", "item"))
 	hotbar[active_slot] = EMPTY_HAND
 	_after_hotbar_change()
-	_flash_status("dropped %s (empty hand)" % name)
+	_flash_status("dropped %s (empty hand)" % dropped_name)
 
 
 var _flash_text := ""
