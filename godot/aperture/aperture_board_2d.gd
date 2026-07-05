@@ -736,10 +736,22 @@ func _build_tile(card: Dictionary, opts: Dictionary) -> Control:
 			cv.add_child(body)
 
 	# ---- decision action buttons (banner decision cards; verbatim action ids) ----
+	# Web-board review parity (2026-07-05): a pinned decision/review card gets its approve/deny
+	# buttons AND an always-visible inline comment box. The comment rides the FEEDBACK row (via
+	# _decide → act(..., comment) → _feedback), NOT the ✎ note row — so a reviewer's approve/deny reason
+	# lands where aperture_feedback.latest_decision(id).comment reads it.
 	if decision and is_notif:
 		var actions: Array = card.get("actions", [])
 		if actions.is_empty():
 			actions = [{ "id": "approve", "label": "Approve" }, { "id": "reject", "label": "Reject" }]
+		# always-visible optional comment box, above the button bar (never hidden, unlike the ✎ box)
+		var decide_comment := LineEdit.new()
+		decide_comment.name = "DecisionComment"
+		decide_comment.placeholder_text = "Add a comment (optional)…"
+		decide_comment.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		decide_comment.add_theme_font_size_override("font_size", 12)
+		decide_comment.mouse_filter = Control.MOUSE_FILTER_STOP   # typing must not bubble to tile click-through
+		cv.add_child(decide_comment)
 		var bar := HBoxContainer.new()
 		bar.add_theme_constant_override("separation", 6)
 		cv.add_child(bar)
@@ -751,10 +763,10 @@ func _build_tile(card: Dictionary, opts: Dictionary) -> Control:
 			var bcol: Color = accent
 			if String(act.get("id")) == "approve":
 				bcol = PALETTE["accent.green"]
-			elif String(act.get("id")) == "reject":
+			elif String(act.get("id")) == "reject" or String(act.get("id")) == "deny":
 				bcol = PALETTE["accent.red"]
 			_style_action_button(btn, bcol)
-			btn.pressed.connect(func(): _decide(card, String(act.get("id")), panel))
+			btn.pressed.connect(func(): _decide(card, String(act.get("id")), panel, decide_comment.text))
 			bar.add_child(btn)
 
 	# ---- overlay: hover ✕ skip (top-right) + ✎ feedback (left of ✕) + ☆ bookmark (top-left) ----
@@ -999,9 +1011,12 @@ func _bookmark(card: Dictionary, btn: Button) -> void:
 	_actions().act(c, "bookmark")
 
 ## Decision buttons — decideArtifact parity: the action id is recorded verbatim; the card leaves.
-func _decide(card: Dictionary, action_id: String, tile: Control) -> void:
+## `comment` (the always-visible approve/deny inline box, default "") rides the FEEDBACK row
+## (feedback.jsonl via _feedback), NOT the note row — so aperture_feedback.latest_decision(id).comment
+## returns the reviewer's approve/deny reason. Web-board parity: review cards carry an optional comment.
+func _decide(card: Dictionary, action_id: String, tile: Control, comment: String = "") -> void:
 	_skipped[String(card.get("id", ""))] = true
-	_actions().act({ "id": String(card.get("id", "")) }, action_id)
+	_actions().act({ "id": String(card.get("id", "")) }, action_id, comment)
 	if tile.get_parent() != null:
 		tile.get_parent().remove_child(tile)
 	tile.queue_free()

@@ -17,6 +17,11 @@ extends RefCounted
 ##   compose                <-> render()+composeGridTiles (BOARD_CAP, buckets, order)
 ##   explore_url            <-> exploreUrl           (never-dead-link fallback)
 ##
+## Review/approval cards (2026-07-05 web+godot fix): a REVIEW card (disposition=="decision" + pin)
+## is a notification, so compose() pins it to the top banner; the 2D board then renders its
+## approve/deny action buttons AND an always-visible inline comment box (aperture_board_2d.gd
+## _build_tile). The approve/deny comment rides the FEEDBACK row (feedback.jsonl), matching the web
+## board's review treatment — approve→green, deny/reject→red.
 ## Engine-agnostic data-in/data-out (no scene types) so the 2D board scene, the primitives, and
 ## the headless parity test share ONE implementation — exactly like ApertureInbox/ApertureActions
 ## (the read/write halves this file composes with). The headless test cross-checks disperse_by_type
