@@ -1,0 +1,17 @@
+ATTRIBUTION (CC BY 4.0) — REQUIRED CREDIT
+
+This attribution is recorded for a pre-assembled dungeon environment model
+identified on Sketchfab under the Creative Commons Attribution 4.0 license.
+The model file itself was NOT vendored (Sketchfab downloads require an
+authenticated login/OAuth session and are not reachable headless).
+
+If/when this model is downloaded and used, the following credit line is
+MANDATORY under CC BY 4.0:
+
+  "Low-Poly Dungeon – Game-Ready 3D Environment" by Chandan-kr
+  is licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
+  Source: https://sketchfab.com/3d-models/low-poly-dungeon-game-ready-3d-environment-786b756ee34d4841988426d1e7477ac4
+  Author: https://sketchfab.com/Chandan-kr
+
+Short credit line (for in-game credits screens):
+  Dungeon environment by Chandan-kr (Sketchfab) — CC BY 4.0
