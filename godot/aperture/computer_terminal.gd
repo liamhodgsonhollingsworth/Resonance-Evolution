@@ -36,8 +36,13 @@ func request_open() -> void:
 ## Build (or reuse) the 2D-board overlay as a CanvasLayer child of `host`. Returns the CanvasLayer,
 ## or null when headless / the board scene is missing. The board is the UNMODIFIED peer scene; ESC
 ## handling lives in the room (it calls close_board). Static so the room owns the overlay lifetime.
-static func open_board(host: Node) -> CanvasLayer:
-	if DisplayServer.get_name() == "headless":
+##
+## `force` bypasses the headless gate so a HEADLESS REGRESSION TEST can build the EXACT SAME overlay
+## tree the live path builds (the real bug lives in this tree, never in the standalone board — a
+## standalone-board test is a false pass). Normal runtime callers pass force=false, so live behavior
+## is unchanged: still null under headless, board only mounts on a real display.
+static func open_board(host: Node, force := false) -> CanvasLayer:
+	if DisplayServer.get_name() == "headless" and not force:
 		return null
 	if not ResourceLoader.exists(BOARD_SCENE):
 		push_warning("computer_terminal: board scene missing at %s" % BOARD_SCENE)
@@ -50,26 +55,60 @@ static func open_board(host: Node) -> CanvasLayer:
 	var ps: PackedScene = load(BOARD_SCENE)
 	if ps == null:
 		return null
+	var board := ps.instantiate()
+	return _build_overlay(host, board)
+
+
+## Display-independent overlay builder — the ONE place the overlay tree is assembled, so the live
+## right-click path and the headless regression test build byte-for-byte the same tree. Takes an
+## already-instantiated board Control (or any Node); returns the mounted CanvasLayer.
+##
+## ROOT CAUSE of the "can't press the X / placement is off" bug (Liam, 4th report, 2026-07-06):
+## the board and backdrop were added DIRECTLY to the CanvasLayer with full-rect anchors. A
+## CanvasLayer is NOT a Control and has NO rect, so anchors resolve against nothing — the board
+## stayed at its default 64x64 instead of filling the viewport. At 64px wide the masonry collapsed
+## to ONE ~39px column and the corner-anchored X/note/star buttons piled ON TOP OF EACH OTHER
+## (right-anchored X and left-anchored star both landed at x~16-47, note pushed to negative x). So a
+## click where the X is drawn actually hit the star sitting over it — the X "does nothing". This is
+## why the standalone-board test always passed: there the board's parent IS a Control host that
+## stretches it, so it never reproduced the CanvasLayer-parent sizing failure.
+##
+## FIX: put a real full-rect ROOT CONTROL under the CanvasLayer, size it explicitly to the current
+## viewport (CanvasLayers do not push a size, so we set it) AND keep it synced on window resize.
+## bg + board + ribbon are anchored INSIDE that root Control, whose rect is real — so full-rect
+## anchors finally stretch the board to the whole screen, the masonry gets its 4 columns at real
+## card width, and the buttons land in their correct, non-overlapping corners.
+static func _build_overlay(host: Node, board: Node) -> CanvasLayer:
 	var layer := CanvasLayer.new()
 	layer.name = "__board_overlay"
 	layer.layer = 64
-	# A dim backdrop so the 3D room reads as "behind the screen".
+	# The sizing anchor: a Control that DOES have a real rect (unlike its CanvasLayer parent). We size
+	# it to the viewport and re-sync on resize; every child anchors against THIS.
+	var root := Control.new()
+	root.name = "OverlayRoot"
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE   # a pass-through frame; children own their own hits
+	layer.add_child(root)
+	# A dim backdrop so the 3D room reads as "behind the screen". IGNORE, not the ColorRect default
+	# STOP: the backdrop is purely cosmetic and must NEVER eat a click meant for the board on top of
+	# it (a STOP full-rect sibling under the board is exactly the kind of click-eater that made the
+	# X un-pressable). IGNORE keeps the backdrop click-transparent.
 	var bg := ColorRect.new()
 	bg.color = Color(0, 0, 0, 0.82)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	layer.add_child(bg)
-	var board := ps.instantiate()
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(bg)
 	if board is Control:
-		# Full-rect WITH offsets (set_anchors_AND_offsets_preset), so the board fills the whole viewport
-		# regardless of its instantiated size — anchors alone can leave a scripted Control at its default
-		# size, which would shrink the tile grid to a single narrow column and pile the ✕/✎/☆ buttons up.
+		# Full-rect WITH offsets (set_anchors_AND_offsets_preset) inside the now-real-sized root, so the
+		# board fills the whole viewport and the tile grid gets its real column width (no piled-up buttons).
 		(board as Control).set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	layer.add_child(board)
+	root.add_child(board)
 	# A thin "ESC to leave" ribbon so the exit is discoverable (spec: "which I leave using escape").
+	# IGNORE so this top-left ribbon never sits over (and eat clicks for) a card button beneath it.
 	var ribbon := Label.new()
 	ribbon.text = "  2D APERTURE  —  ESC to return to the room  "
 	ribbon.add_theme_font_size_override("font_size", 13)
 	ribbon.add_theme_color_override("font_color", Color(0.85, 0.9, 0.95))
+	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var rs := StyleBoxFlat.new()
 	rs.bg_color = Color(0.05, 0.07, 0.11, 0.9)
 	rs.set_corner_radius_all(6)
@@ -77,9 +116,39 @@ static func open_board(host: Node) -> CanvasLayer:
 	rs.content_margin_top = 4; rs.content_margin_bottom = 4
 	ribbon.add_theme_stylebox_override("normal", rs)
 	ribbon.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT, Control.PRESET_MODE_MINSIZE, 8)
-	layer.add_child(ribbon)
+	root.add_child(ribbon)
 	host.add_child(layer)
+	# Size the root NOW that it is in the tree (its viewport exists), so anchors resolve against a real
+	# rect. Then keep it glued to the window on resize. Order matters: sizing before the tree add would
+	# read a null viewport and leave the 64x64 default (the very bug this fixes).
+	_size_root_to_viewport(root)
+	# Keep the overlay glued to the window on resize. This overlay is freshly built on every open
+	# (close_board frees it), so a plain connect never double-subscribes.
+	var vp := root.get_viewport()
+	if vp != null:
+		vp.size_changed.connect(_size_root_to_viewport.bind(root))
 	return layer
+
+
+## Size the overlay root Control to the current WINDOW rect. A CanvasLayer child Control is not
+## auto-laid-out (no Control/Container parent), so its size must be set explicitly; without this the
+## board stays 64x64 and the masonry collapses (the button-overlap bug). A CanvasLayer draws to the
+## root Window, so we size to the root Window's visible rect — NOT root.get_viewport(), which for a
+## CanvasLayer-parented Control can report a stale/tiny rect (observed 64x64 in headless). Falls back
+## to a sane default if the tree/window is not yet available; the resize signal then corrects it.
+static func _size_root_to_viewport(root: Control) -> void:
+	var vsize := Vector2.ZERO
+	var tree := root.get_tree()
+	if tree != null and tree.root != null:
+		vsize = Vector2(tree.root.get_visible_rect().size)   # the root Window (what a CanvasLayer draws to)
+	if vsize.x <= 0 or vsize.y <= 0:
+		var vp := root.get_viewport()
+		if vp != null:
+			vsize = vp.get_visible_rect().size
+	if vsize.x <= 0 or vsize.y <= 0:
+		vsize = Vector2(1280, 720)
+	root.position = Vector2.ZERO
+	root.size = vsize
 
 
 ## Remove the board overlay from `host` (ESC in the room). Returns true if one was present.
