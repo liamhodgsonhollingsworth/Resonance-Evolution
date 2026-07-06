@@ -82,6 +82,10 @@ static func tick(record: Dictionary, node: Node3D, ctx: Dictionary) -> Vector3:
 	var delta := float(ctx.get("delta", 0.0))
 	var base_pos: Vector3 = record.get("base_pos", Vector3.ZERO)
 	var yaw := deg_to_rad(float(record.get("yaw_deg", 0.0)))
+	# Optional 3-axis rotation (the precise WAND tool writes these). ABSENT => 0.0, so a record that
+	# carries only `yaw_deg` (every pre-wand object) rotates EXACTLY as before — backward-compatible.
+	var pitch := deg_to_rad(float(record.get("pitch_deg", 0.0)))
+	var roll := deg_to_rad(float(record.get("roll_deg", 0.0)))
 	var scl := float(record.get("scale", 1.0))
 	var offset := Vector3.ZERO      # pure-function contributions (orbit/bob)
 	var behaviors: Array = record.get("behaviors", [])
@@ -112,7 +116,16 @@ static func tick(record: Dictionary, node: Node3D, ctx: Dictionary) -> Vector3:
 	var pos := base_pos + offset
 	if node != null and is_instance_valid(node):
 		node.position = pos
-		node.rotation = Vector3(0.0, yaw, 0.0)
+		# Compose yaw (Y) · pitch (X) · roll (Z). When pitch and roll are 0 this equals the old
+		# single-yaw rotation exactly (Basis(Y,yaw)·I·I == Vector3(0,yaw,0) as Euler) — backward-compatible.
+		if pitch == 0.0 and roll == 0.0:
+			node.rotation = Vector3(0.0, yaw, 0.0)
+		else:
+			var b := Basis.IDENTITY
+			b = b.rotated(Vector3.UP, yaw)         # yaw around world-up first (matches the old convention)
+			b = b.rotated(b.x, pitch)              # then pitch around the (yawed) local X
+			b = b.rotated(b.z, roll)               # then roll around the (yawed+pitched) local Z
+			node.basis = b
 		node.scale = Vector3.ONE * scl
 		_sync_light(record, node, t)
 	return pos
