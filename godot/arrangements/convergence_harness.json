@@ -1,0 +1,66 @@
+{
+  "format": "resonance.arrangement/v1",
+  "meta": {
+    "name": "convergence_harness",
+    "slice": "dreams-arc/slice-6",
+    "purpose": "The side-by-side CONVERGENCE comparator harness. A Fixture Feeder emits the current candidate + a fixed reference into CompareDiff; the scalar distance d feeds a Convergence Gate (a Context gate over a State round-counter) whose `fire` is `d <= epsilon`; on any round the Iterate Action advances the fixture and a Report Message narrates the round. The whole point is that d is a WIRED, inspectable output on every round, so a driver can assert d DECREASES (converging) or FAILS to decrease (non-converging). The candidate is fed as a param (fixture_candidate) so a driver hot-loads it per round as a diff splice; reference + epsilon are params.",
+    "params": {
+      "fixture_candidate": "the candidate value for THIS round (hot-loaded per round by the driver)",
+      "fixture_reference": "the fixed target the candidate is converging toward",
+      "epsilon": "convergence threshold: the gate fires when d <= epsilon"
+    }
+  },
+  "nodes": [
+    { "id": "candidate", "type": "Const", "params": { "value": 10.0 },
+      "note": "Fixture Feeder OUT: the candidate value for this round. The driver diff-splices params.value each round to feed a sequence (10 -> 5 -> 2 -> ... converging, or a non-monotone sequence for the failure contract)." },
+    { "id": "reference", "type": "Const", "params": { "value": 0.0 },
+      "note": "Reference slot: the fixed target the candidate approaches." },
+    { "id": "epsilon", "type": "Const", "params": { "value": 0.5 },
+      "note": "Convergence threshold (a wire-able knob)." },
+
+    { "id": "diff", "type": "CompareDiff", "params": { "metric": "l2" },
+      "note": "The comparator: d = |candidate - reference|. The load-bearing output the harness measures each round." },
+
+    { "id": "converged", "type": "Compare", "params": { "op": "le" },
+      "note": "Gate predicate: d <= epsilon. The `fire` boolean the Convergence Gate reads." },
+
+    { "id": "gate", "type": "Context",
+      "params": {
+        "handler": "gate",
+        "arrangement": {
+          "format": "resonance.arrangement/v1",
+          "nodes": [
+            { "id": "round", "type": "State", "params": { "init": 0 } },
+            { "id": "one", "type": "Const", "params": { "value": 1 } },
+            { "id": "inc", "type": "Math", "params": { "op": "add" } }
+          ],
+          "wires": [
+            { "from": "round", "out": "value", "to": "inc", "in": "a" },
+            { "from": "one", "out": "value", "to": "inc", "in": "b" }
+          ]
+        },
+        "ports": {
+          "inputs": [],
+          "outputs": [ { "name": "count", "type": "number", "node": "round", "port": "value" } ]
+        }
+      },
+      "note": "Convergence Gate: a Context `gate` scope over a State round-counter. The WHOLE scope only propagates while its implicit `enabled` input (wired from `converged`) is truthy; otherwise `count` is null (the gate has not fired). So a non-null `count` == the gate FIRED at convergence." },
+
+    { "id": "iterate", "type": "WorldAction", "params": { "op": "log", "message": "iterate: advance fixture" },
+      "note": "Iterate Action: on every round advance the fixture (a WorldAction `log` op — the harmless declared effect proving the sink round-trips). A host that registers a real `fixture.advance` op honours it; here it is a declared receipt." },
+
+    { "id": "report", "type": "Message", "params": { "role": "note", "author": "convergence_harness", "content": "round report", "created_at": 0 },
+      "note": "Report: one Message record narrating the round (a wire-able, inspectable data node — the harness's human-readable trace)." }
+  ],
+  "wires": [
+    { "from": "candidate", "out": "value", "to": "diff", "in": "candidate" },
+    { "from": "reference", "out": "value", "to": "diff", "in": "reference" },
+
+    { "from": "diff", "out": "d", "to": "converged", "in": "a" },
+    { "from": "epsilon", "out": "value", "to": "converged", "in": "b" },
+
+    { "from": "converged", "out": "result", "to": "gate", "in": "enabled" },
+
+    { "from": "diff", "out": "d", "to": "iterate", "in": "value" }
+  ]
+}
