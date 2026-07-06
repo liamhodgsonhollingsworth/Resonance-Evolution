@@ -192,7 +192,8 @@ func _rotate(ctrl, deg: float) -> void:
 	if _target_id == "" or not ctrl.objects.has(_target_id):
 		return
 	var rec: Dictionary = ctrl.objects[_target_id]
-	var field := ["pitch_deg", "yaw_deg", "roll_deg"][_axis]
+	var fields := ["pitch_deg", "yaw_deg", "roll_deg"]
+	var field: String = fields[_axis]
 	var v := fmod(float(rec.get(field, 0.0)) + deg, 360.0)
 	if _snap:
 		var step := maxf(snap_rot_deg, 0.01)
