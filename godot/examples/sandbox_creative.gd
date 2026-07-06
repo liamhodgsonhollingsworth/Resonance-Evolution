@@ -74,7 +74,11 @@ extends Node3D
 ## MC defaults above. A TOOL item overrides them (see runtime/sandbox_items.gd + sticky_note.gd):
 ##   Sticky Note : hold it, aim at any surface (a preview orb shows the exact stick point), LEFT
 ##                 click sticks a note there (rides the object if it moves), then type; Enter saves.
-##   (The rotate/scale/manipulate WAND is a queued tool — a future handler in the same seam.)
+##   Manipulation Wand (the PRECISE move+rotate tool, Liam item 3): RIGHT-click a placed object to grab
+##                 it (a 3-axis gizmo appears); LEFT-click cycles the active axis X→Y→Z; hold LEFT and
+##                 DRAG to move it precisely along that axis (grid-free, continuous); SCROLL or [ / ] to
+##                 rotate in small (5°) steps; , / . nudge-move one fine step; G toggles optional snap;
+##                 RIGHT-click again / ESC releases. Writes base_pos + yaw/pitch/roll_deg as DATA.
 ##
 ## DEBUG VERB LAYER (superseded default, kept reachable — press BACKSLASH \ to toggle):
 ##   The pre-2026-07-03 default verbs are NOT gone, only demoted. Toggle the debug layer on and:
@@ -320,12 +324,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 			_close_note(false)
 		return
-	# Mouse-look (only while the pointer is captured and the inventory is closed).
+	# Mouse-look (only while the pointer is captured and the inventory is closed). The active held TOOL
+	# gets first refusal on mouse motion (the wand's precise drag-move); if it consumes the event, the
+	# camera does NOT also turn. Empty hand / block / sticky-note define no mouse_motion => camera-look.
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		if _active_handler != null and _active_handler.has_method("mouse_motion") and _active_handler.mouse_motion(self, event):
+			return
 		_yaw -= event.relative.x * mouse_sens
 		_pitch = clampf(_pitch - event.relative.y * mouse_sens, -1.5, 1.5)
 		_apply_camera_rotation()
 		return
+	# The active held TOOL gets first refusal on KEY presses (the wand's G/[ ]/,/./TAB/ESC precise
+	# controls). If it consumes the key, no other binding fires. Tools with no key() (sticky note,
+	# empty hand) consume nothing, so the always-on action map + debug verbs work unchanged.
+	if event is InputEventKey and event.pressed and not event.echo and not _behavior_open:
+		if _active_handler != null and _active_handler.has_method("key") and _active_handler.key(self, event):
+			return
 	if event is InputEventKey and event.pressed and not event.echo:
 		# The behavior panel owns the number keys while open (1..5 toggle, B/ESC close).
 		if _behavior_open:
@@ -371,6 +385,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Number keys 1..9 select the hotbar slot (MC parity).
 		if event.keycode >= KEY_1 and event.keycode <= KEY_9:
 			_select_slot(event.keycode - KEY_1)
+			return
+	# The active held TOOL gets first refusal on mouse BUTTONS (press AND release) — the wand needs the
+	# LEFT-release to end a drag and the wheel to rotate. Consumed => no other mouse handling fires.
+	# Tools with no mouse_button() (sticky note, empty hand) consume nothing => MC defaults below.
+	if event is InputEventMouseButton and not _inv_open:
+		if _active_handler != null and _active_handler.has_method("mouse_button") and _active_handler.mouse_button(self, event):
 			return
 	if event is InputEventMouseButton and event.pressed:
 		if _inv_open:
@@ -880,13 +900,22 @@ func open_note_editor(note_id: String) -> void:
 func flash(msg: String) -> void:
 	_flash_status(msg)
 
-## Handlers call this to parent a 3D preview node (the sticky-note orb) under a HUD-3D root.
+## Handlers call this to parent a 3D preview node (the sticky-note orb, the wand gizmo) under a HUD-3D root.
 func add_preview_child(n: Node3D) -> void:
 	if _preview3d_root == null:
 		_preview3d_root = Node3D.new()
 		_preview3d_root.name = "HeldToolPreview"
 		add_child(_preview3d_root)
 	_preview3d_root.add_child(n)
+
+
+## The WAND calls this to mark/unmark its manipulation target ("" clears). Reuses the existing
+## selection machinery (selected_id + _sel_marker) so the target gets the same translucent box outline —
+## no new highlight code. Does NOT enter the debug grab mode (that is a separate flag).
+func wand_set_selection(id: String) -> void:
+	selected_id = id if (id != "" and objects.has(id)) else ""
+	_grabbing = false
+	_refresh_status()
 
 
 ## Place a palette block at a grid cell. This is the ONE write path into the world Dictionary + the scene:
@@ -1551,13 +1580,15 @@ func _apply_world_data(data: Dictionary) -> void:
 		if o.has("block") and not o.has("asset"):
 			var bpi := _palette_index(String(o["block"]))
 			if bpi >= 0:
-				_place_block_free(bpi, pos, yaw, String(o.get("id", "")))
+				var bid := _place_block_free(bpi, pos, yaw, String(o.get("id", "")))
+				_restore_wand_rotation(bid, o)
 			continue
 		if not o.has("asset"):
 			continue
-		_place_object(String(o["asset"]), pos, yaw, float(o.get("scale", 1.0)),
+		var oid := _place_object(String(o["asset"]), pos, yaw, float(o.get("scale", 1.0)),
 			o.get("behaviors", []) if typeof(o.get("behaviors")) == TYPE_ARRAY else [],
 			String(o.get("id", "")), _palette_index_for_asset(String(o["asset"])))
+		_restore_wand_rotation(oid, o)
 	# Sticky notes reload with the world (their anchors target block cells / object ids just placed).
 	_clear_notes()
 	for nd in data.get("notes", []):
@@ -1565,6 +1596,19 @@ func _apply_world_data(data: Dictionary) -> void:
 			continue
 		_load_note(nd)
 	_refresh_status()
+
+
+## Reload the WAND's extra rotation axes (pitch/roll) onto a freshly-placed object record. Absent keys
+## => leave the record at its 0.0 default (an object never touched by the wand is unaffected). Called
+## after each placement in _apply_world_data so a precisely-rotated object round-trips through save/load.
+func _restore_wand_rotation(id: String, o: Dictionary) -> void:
+	if id == "" or not objects.has(id):
+		return
+	var rec: Dictionary = objects[id]
+	if o.has("pitch_deg"):
+		rec["pitch_deg"] = float(o["pitch_deg"])
+	if o.has("roll_deg"):
+		rec["roll_deg"] = float(o["roll_deg"])
 
 
 ## Clear every stuck-note render node + record (a world switch / re-seed).
@@ -1620,6 +1664,12 @@ func _serialize_world() -> Dictionary:
 			"scale": float(rec["scale"]),
 			"behaviors": (rec.get("behaviors", []) as Array).duplicate(true),
 		}
+		# Persist the wand's extra rotation axes ONLY when non-zero (append-only additive: an object never
+		# touched by the wand serializes byte-identically to before — old readers ignore absent keys).
+		if absf(float(rec.get("pitch_deg", 0.0))) > 1e-9:
+			entry["pitch_deg"] = float(rec["pitch_deg"])
+		if absf(float(rec.get("roll_deg", 0.0))) > 1e-9:
+			entry["roll_deg"] = float(rec["roll_deg"])
 		# Free-placed primitive BLOCK objects persist a `block` name; asset objects persist an `asset` id.
 		if rec.has("block") and not rec.has("asset"):
 			entry["block"] = String(rec["block"])
@@ -2326,6 +2376,9 @@ func _apply_settings(cfg: Dictionary) -> void:
 	grid_size = float(cfg.get("grid_size", GRID))
 	fly_speed = float(cfg.get("fly_speed", 8.0))
 	mouse_sens = float(cfg.get("mouse_sensitivity", 0.0025))
+	# CONFIGURABLE REACH (Liam item 1): the ONE knob for how far place/destroy/grab/target reach, in
+	# metres. Read from the params file (hot-reloadable) so Liam can tune it live; defaults to the export.
+	reach_distance = float(cfg.get("reach_distance", reach_distance))
 	var np := OS.get_environment("SANDBOX_NOTES_PATH")
 	if np == "":
 		np = String(cfg.get("notes_path", DEFAULT_NOTES_PATH))

@@ -38,10 +38,12 @@ extends RefCounted
 ## No class_name (mistake #046): consumers preload() this file by path.
 
 const StickyNote := preload("res://runtime/sticky_note.gd")
+const ManipulationWand := preload("res://runtime/manipulation_wand.gd")
 
 ## Marker payloads a palette/hotbar entry can carry in its `tool` field. Empty/absent => a plain
 ## block or asset (no tool behavior — the MC defaults apply).
 const TOOL_STICKY_NOTE := "sticky_note"
+const TOOL_WAND := "wand"                   # the PRECISE move + rotate manipulation tool (Liam item 3)
 
 ## The tools that appear in the inventory as HOLDABLE ITEMS (beyond blocks + assets). Each is a
 ## palette-entry template; the controller appends these into the palette under a "Tools" tab.
@@ -58,6 +60,16 @@ static func tool_palette_entries() -> Array:
 			"material": { "albedo": [0.98, 0.62, 0.12] },
 			"category": "Tools",
 		},
+		{
+			"kind": "tool",
+			"name": "Manipulation Wand",
+			"tool": TOOL_WAND,
+			"shape": "",
+			"params": {},
+			# a cool cyan so the wand reads distinctly from the orange sticky note in the hotbar
+			"material": { "albedo": [0.25, 0.75, 0.95] },
+			"category": "Tools",
+		},
 	]
 
 
@@ -69,6 +81,8 @@ static func make_handler(entry: Dictionary) -> Object:
 	match String(entry.get("tool", "")):
 		TOOL_STICKY_NOTE:
 			return StickyNote.new()
+		TOOL_WAND:
+			return ManipulationWand.new()
 		_:
 			return null
 
