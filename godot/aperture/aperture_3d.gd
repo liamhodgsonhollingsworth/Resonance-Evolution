@@ -105,6 +105,17 @@ var _doors: Array = []             # DoorGateway instances (polled for walk-in)
 # with no edit to the read-only destination scenes.
 var door_specs: Array = [
 	{
+		# HOME AREA (Liam 2026-07-06, room-series slice 1): a NEW sandbox-editable HOME room reached by
+		# walking through THIS door. Distinct scene (aperture/sandbox_home.tscn) that reuses the creative
+		# sandbox's full editing (place/move/rotate + palette + Manipulation Wand) and adds SKY + CLOUDS.
+		# Same-window + seamless; ESC returns to this room (the self-cleaning overlay wires leave = ESC).
+		"scene": "res://aperture/sandbox_home.tscn",
+		"same_window": true,
+		"label": "Home",
+		"color": [0.75, 0.95, 0.78],
+		"position": [11.4, 0.0, 0.0], "yaw_deg": -90.0,
+	},
+	{
 		# DUNGEONS (defect #3: portals were missing). The real vendored explorer (RE #155): with no
 		# scene param it opens the SCENE SELECTOR menu; pick a dungeon and it loads in this window.
 		"scene": "res://examples/explore/explore_scene_demo.tscn",

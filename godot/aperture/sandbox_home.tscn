@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://b8home3dsandbox0"]
+
+[ext_resource type="Script" path="res://aperture/sandbox_home.gd" id="1_home"]
+
+[node name="SandboxHome" type="Node3D"]
+script = ExtResource("1_home")
