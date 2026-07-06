@@ -135,6 +135,11 @@ func _init() -> void:
 	# same substrate/channels the web board uses - see prim_aperture_inbox/action.gd.
 	register("ApertureInbox", PrimApertureInbox)
 	register("ApertureAction", PrimApertureAction)
+	# WorldAction: the param-configured side-effect SINK (Dreams-arc Slice 1). Sibling of
+	# ApertureAction — a thin wire around the WorldActions op registry (runtime/world_actions.gd).
+	# A new world effect is a registered op, never a new primitive; unknown op = a declared no-op
+	# so the same arrangement runs on any host. See prim_world_action.gd + world_actions.gd.
+	register("WorldAction", PrimWorldAction)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class

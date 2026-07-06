@@ -46,6 +46,9 @@ const SceneTransition := preload("res://aperture/scene_transition.gd")
 const DoorGateway := preload("res://aperture/door_gateway.gd")
 const ComputerTerminal := preload("res://aperture/computer_terminal.gd")
 const InputGate := preload("res://walkabout/input_gate.gd")
+const GraphPanelMount := preload("res://aperture/graph_panel_mount.gd")  # thin diegetic node-panel overlay (Slice 1)
+const WiringTool := preload("res://runtime/wiring_tool.gd")               # point-and-bind target resolver (Slice 1)
+const PickupInteractorScript := preload("res://walkabout/pickup_interactor.gd")  # reused proximity register/refresh seam
 
 const SCENE_ID := "aperture_3d"
 const NOTES_PATH := "G:/Wavelet/Alethea-cc/state/sandbox/notes.jsonl"
@@ -100,6 +103,10 @@ var _pos := Vector3(0.0, 1.7, 8.0)  # player position (integrated so wall collis
 
 # -- interaction state ------------------------------------------------------------------------------
 var _aimed_meta := {}              # meta of the Area3D under the crosshair this frame
+# WIRING TOOL (Slice 1): a PickupInteractor gives the "point at / walk up to an object" proximity seam
+# (register/refresh/available_ids), reused verbatim; the aim seam (_aimed_meta.obj_id) is the primary
+# target. Binding an object opens its node graph in a GraphPanel overlay that live-writes + hot-loads.
+var _wiring_interactor: PickupInteractor = null   # registers placed objects for the proximity fallback
 var _note_open := false
 var _did_shot := false
 var _headless := false
@@ -174,6 +181,7 @@ func _ready() -> void:
 	store = WorldStoreScript.new()
 	store.seed_from()
 	_load_room_layout()
+	_build_wiring_interactor()   # Slice 1: proximity seam for point-and-bind (registers loaded objects)
 	if not _headless:
 		_build_hud()
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -345,10 +353,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	# ESC priority: close the board overlay first, else release the mouse.
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
-		if ComputerTerminal.board_is_open(self):
+		if GraphPanelMount.panel_is_open(self):
+			_close_wiring_panel()   # Slice 1: ESC closes the node panel first (edits already live)
+		elif ComputerTerminal.board_is_open(self):
 			_close_board()
 		else:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		return
+	# While the node panel overlay is up, the GraphPanel owns input (drag-to-rewire); only ESC (above) acts.
+	if GraphPanelMount.panel_is_open(self):
 		return
 	# While the board overlay is up, the 2D board owns input (its own scene handles clicks/keys).
 	if ComputerTerminal.board_is_open(self):
@@ -406,6 +419,10 @@ func _unhandled_input(event: InputEvent) -> void:
 ## LEFT click: EMPTY HAND -> pick up the aimed node (rearrange). Holding an item -> place it FREELY at
 ## the aim point (no grid, no preview). (Spec items 1 + 2.)
 func _left_click() -> void:
+	# WIRING tool (Slice 1): left-click also binds the pointed-at/nearby object (a tool is never placed).
+	if _is_wiring_tool():
+		_bind_wiring_target()
+		return
 	if _is_empty_hand():
 		_pick_up_aimed()
 		return
@@ -415,6 +432,10 @@ func _left_click() -> void:
 ## RIGHT click: EMPTY HAND on the computer -> open the 2D board (spec item 4). Empty hand elsewhere ->
 ## remove the aimed node. Holding an item does nothing special on right-click (place is left-click).
 func _right_click() -> void:
+	# WIRING tool (Slice 1): equipped + pointing at (or standing near) an object -> open its node panel.
+	if _is_wiring_tool():
+		_bind_wiring_target()
+		return
 	if _is_empty_hand() and String(_aimed_meta.get("interactable", "")) == "computer":
 		_open_board()
 		return
@@ -434,6 +455,11 @@ func _build_palette() -> void:
 		_pal("Ball",   "sphere",   {"radius":0.5},                        [0.62,0.72,0.82]),
 		_pal("Cone",   "cone",     {"radius":0.5,"height":1.0},           [0.82,0.68,0.56]),
 		_pal("Wedge",  "wedge",    {"width":1.0,"height":1.0,"depth":1.0},[0.66,0.78,0.64]),
+		# WIRING tool (Slice 1): equip it, aim at a placed node, right-click -> its node panel opens in-world.
+		# kind:"tool" so place/remove code skips it (a tool ACTS, it is not placed) — same idiom as the
+		# sandbox held-item seam. A cool violet so it reads distinctly in the hotbar.
+		{ "kind": "tool", "tool": "wiring", "name": "Wiring", "shape": "", "params": {},
+			"material": { "albedo": [0.62, 0.55, 0.95] } },
 	]
 	hotbar = []
 	for i in min(10, palette.size()):
@@ -492,6 +518,8 @@ func _ray_point() -> Vector3:
 
 func _place_active() -> void:
 	var entry: Dictionary = palette[hotbar[active_slot]]
+	if String(entry.get("kind", "")) == "tool":
+		return   # tools ACT (bind), they are not placed
 	var pos := _ray_point()
 	pos.y = maxf(pos.y, 0.0)
 	if String(entry.get("kind", "")) == "asset":
@@ -521,6 +549,7 @@ func _place_block(entry: Dictionary, pos: Vector3) -> void:
 	objects[id] = { "id": id, "block": entry, "asset": "", "base_pos": pos, "yaw_deg": 0.0,
 		"scale": 1.0, "behaviors": [], "node": node, "loaded": true, "aabb": aabb }
 	_add_pick_area(node, id, aabb)
+	_register_wiring_object(id)   # Slice 1: bindable by the wiring tool
 
 
 func _place_object(asset_id: String, pos: Vector3, yaw_deg := 0.0, scale := 1.0, forced_id := "") -> String:
@@ -553,6 +582,7 @@ func _attach_asset_body(rec: Dictionary) -> void:
 		rec["loaded"] = true
 		rec["aabb"] = _combined_aabb(inst)
 		_add_pick_area(node, String(rec["id"]), rec["aabb"])
+		_register_wiring_object(String(rec["id"]))
 	else:
 		var ph := MeshInstance3D.new()
 		ph.name = "body"
@@ -566,6 +596,7 @@ func _attach_asset_body(rec: Dictionary) -> void:
 		ph.material_override = m
 		node.add_child(ph)
 		_add_pick_area(node, String(rec["id"]), rec["aabb"])
+		_register_wiring_object(String(rec["id"]))
 		assets.request(asset_id)
 
 
@@ -776,6 +807,76 @@ func _update_aim() -> void:
 		for k in ["interactable", "obj_id"]:
 			if col.has_meta(k):
 				_aimed_meta[k] = col.get_meta(k)
+
+
+# == WIRING TOOL: point-and-bind -> in-world node panel (Dreams-arc Slice 1) =======================
+# Equip the Wiring tool, aim at (or stand near) a placed object, right-click -> its node graph opens as
+# a same-window GraphPanel overlay. Every edit re-serialises to the object's arrangement file, which the
+# running graph hot-loads as a diff (no scene rebuild). Two seams are reused verbatim: the room's aim
+# (_aimed_meta.obj_id) and PickupInteractor's proximity register/refresh (the "walk up to it" fallback).
+
+## Build the proximity interactor and register every currently-placed object with it, so the "nearest
+## in-range object" fallback works even when the crosshair is not dead-on. Reuses PickupInteractor as-is.
+func _build_wiring_interactor() -> void:
+	_wiring_interactor = PickupInteractorScript.new()
+	_wiring_interactor.name = "WiringInteractor"
+	add_child(_wiring_interactor)
+	for id in objects:
+		_register_wiring_object(String(id))
+
+## Register one object with the proximity interactor (its live node gates the "near enough to bind" test).
+## Called when the interactor is built and whenever a new object is placed. Safe before the interactor
+## exists (a no-op) and idempotent enough for Slice 1 (re-registering an id just adds another pickable
+## for the same node; the FIRST available id wins in resolve_target, so binding stays correct).
+func _register_wiring_object(id: String) -> void:
+	if _wiring_interactor == null or not objects.has(id):
+		return
+	var rec: Dictionary = objects[id]
+	var node = rec.get("node")
+	if node != null and is_instance_valid(node):
+		_wiring_interactor.register(id, node)
+
+## Is the Wiring tool the active hotbar item?
+func _is_wiring_tool() -> bool:
+	if active_slot >= hotbar.size():
+		return false
+	var e: Dictionary = palette[hotbar[active_slot]]
+	return String(e.get("tool", "")) == "wiring"
+
+## The GUI bind path: resolve what the player is pointing at / near, then open its node panel. Delegates
+## to bind_object(id) — the SAME backend fn the headless text verb calls (text-equivalence, gate T).
+func _bind_wiring_target() -> void:
+	var id := WiringTool.resolve_target(_aimed_meta, _wiring_interactor, _pos)
+	if id == "":
+		_set_status("wiring: aim at (or stand near) a node to open it")
+		return
+	bind_object(id)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+## THE SHARED BACKEND FN (one function behind BOTH the GUI right-click and the headless text verb).
+## Ensures the object's arrangement file exists (seeding a starter graph if new) and mounts the GraphPanel
+## overlay pointed at it. `force` mounts the real overlay headless (the #049 test hook). Returns the
+## arrangement path bound (or "" on failure). This is the text-equivalence anchor: bind_object_text()
+## and the right-click both funnel here, so GUI and text drive identical behaviour.
+func bind_object(id: String, force := false) -> String:
+	if not objects.has(id):
+		return ""
+	var path := WiringTool.ensure_arrangement(id)
+	GraphPanelMount.open_panel(self, path, force)
+	_set_status("node panel open: %s (ESC to close, edits are live)" % id)
+	return path
+
+## TEXT VERB (gate T — text-equivalence): open a node panel by object id with no GUI, driving the EXACT
+## same backend (bind_object) and the same real overlay (force=true). A headless caller gets the same
+## mounted GraphPanel + the same arrangement file the right-click would produce. Returns the bound path.
+func bind_object_text(id: String) -> String:
+	return bind_object(id, true)
+
+## Close the node panel overlay (ESC). Recaptures the mouse so movement resumes, like _close_board.
+func _close_wiring_panel() -> void:
+	if GraphPanelMount.close_panel(self):
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		_set_status("closed node panel (edits saved + live)")
 
 
 # == IN-SCENE FEEDBACK (F) - append to notes.jsonl keyed to scene id "aperture_3d" =================
