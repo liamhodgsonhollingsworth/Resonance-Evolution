@@ -47,6 +47,10 @@ var _confirm_timer: Timer
 ## Whether the scene had the mouse captured when we opened, so we can restore it exactly on close.
 var _restore_capture := false
 var _headless := false
+## The engine frame on which we last consumed an ESC to close the box. The root scene-transition
+## overlay reads this (via input_gate) so it defers on the SAME ESC even though our _input may run
+## after it releases the LineEdit focus - a deterministic hand-off independent of _input order.
+var _esc_consumed_frame := -1
 
 
 func _ready() -> void:
@@ -73,9 +77,16 @@ func _input(event: InputEvent) -> void:
 	# While the box is open, swallow ESC (cancel) here so the scene's own ESC (which often exits to the
 	# aperture room — see the "escape when writing a note ... go back to the aperture" note) never fires.
 	if _open and event.keycode == KEY_ESCAPE:
+		_esc_consumed_frame = Engine.get_process_frames()
 		get_viewport().set_input_as_handled()
 		close(false)
 		return
+
+
+## True while the box is open OR we consumed an ESC on the current engine frame - the overlay uses
+## this to defer its own ESC-leave when the note box owns the keystroke.
+func holds_esc() -> bool:
+	return _open or _esc_consumed_frame == Engine.get_process_frames()
 
 
 func toggle() -> void:

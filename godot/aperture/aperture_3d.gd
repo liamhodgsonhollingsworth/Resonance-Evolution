@@ -45,6 +45,7 @@ const Behaviors := preload("res://runtime/sandbox_behaviors.gd")
 const SceneTransition := preload("res://aperture/scene_transition.gd")
 const DoorGateway := preload("res://aperture/door_gateway.gd")
 const ComputerTerminal := preload("res://aperture/computer_terminal.gd")
+const InputGate := preload("res://walkabout/input_gate.gd")
 
 const SCENE_ID := "aperture_3d"
 const NOTES_PATH := "G:/Wavelet/Alethea-cc/state/sandbox/notes.jsonl"
@@ -681,6 +682,10 @@ func _save_room() -> void:
 func _update_movement(delta: float) -> void:
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		return
+	# Freeze fly movement while a text field (the F note box / any LineEdit) owns focus - is_key_pressed
+	# below is RAW input and would otherwise fly while typing (Liam 2026-07-05).
+	if InputGate.text_input_active(get_viewport()):
+		return
 	var basis := _cam.global_transform.basis
 	var fwd := -basis.z; fwd.y = 0.0
 	fwd = fwd.normalized() if fwd.length() > 0.001 else Vector3.FORWARD
@@ -809,7 +814,6 @@ func _build_hud() -> void:
 	_status.modulate = Color(0.7, 0.95, 0.7)
 	_hud.add_child(_status)
 	_build_note_panel()
-	_set_status("aim at the computer and right-click (empty hand) to open the 2D board - walk into a door to enter a scene")
 
 
 func _rebuild_hotbar_ui() -> void:

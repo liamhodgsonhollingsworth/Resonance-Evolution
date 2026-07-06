@@ -20,6 +20,7 @@ extends CanvasLayer
 
 const APERTURE_ROOM := "res://aperture/aperture_3d.tscn"
 const OVERLAY_NAME := "__aperture_transition_overlay"
+const InputGate := preload("res://walkabout/input_gate.gd")
 
 var _rect: ColorRect                 # the black fade cover
 var _fade_seconds := 0.35
@@ -119,6 +120,12 @@ func _input(event: InputEvent) -> void:
 		return
 	var key := event as InputEventKey
 	if not (key.pressed and not key.echo and key.keycode == KEY_ESCAPE):
+		return
+	# DEFER to the running scene when it (or a focused text field) wants ESC (Liam 2026-07-05 defects
+	# #2/#3/#5): while a note box / inventory / any LineEdit is open, ESC must close THAT and stay in
+	# the scene - NOT yank the player back to the aperture room. The scene keeps its own ESC handler;
+	# we simply do not also treat this ESC as "leave". (InputGate is preloaded by path - #046.)
+	if InputGate.scene_holds_esc(get_tree()):
 		return
 	_leaving = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

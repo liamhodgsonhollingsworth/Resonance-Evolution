@@ -8,6 +8,8 @@ extends CharacterBody3D
 ## It is a plain navigation primitive — it touches NONE of the runtime/primitive/Context seam;
 ## it only moves a body + camera so a human can look at whatever the renderer delegate spawned.
 
+const InputGate := preload("res://walkabout/input_gate.gd")
+
 @export var mouse_sensitivity: float = 0.0025
 @export var walk_speed: float = 4.0
 @export var sprint_speed: float = 7.0
@@ -36,6 +38,10 @@ func _find_camera(n: Node) -> Camera3D:
 	return null
 
 func _unhandled_input(event: InputEvent) -> void:
+	# While a text field (note box / any LineEdit) is focused, the keyboard + look belong to it -
+	# do not turn the camera (Liam 2026-07-05: typing must not drive the environment).
+	if InputGate.text_input_active(get_viewport()):
+		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		# Yaw turns the body; pitch tilts only the camera (so movement stays level).
 		rotate_y(-event.relative.x * mouse_sensitivity)
@@ -47,6 +53,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _physics_process(delta: float) -> void:
+	# RAW-input gate (Liam 2026-07-05 defect: "space still makes me jump when typing"). Input.is_key_
+	# pressed() below reads the physical keyboard and ignores set_input_as_handled(), so the ONLY way to
+	# stop movement/jump while a text field owns focus is to check for it explicitly and zero the body.
+	if InputGate.text_input_active(get_viewport()):
+		velocity.x = 0.0
+		velocity.z = 0.0
+		if not is_on_floor():
+			velocity.y -= gravity * delta
+		move_and_slide()
+		return
 	# Gravity + jump.
 	if not is_on_floor():
 		velocity.y -= gravity * delta
