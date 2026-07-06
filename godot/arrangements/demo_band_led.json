@@ -1,0 +1,22 @@
+{
+	"format": "resonance.arrangement/v1",
+	"name": "demo_band_led",
+	"_doc": "DEMO C of the Slice-5 interaction demo — LIVE BAND -> LED (Liam's Q4, reusing Slice 7 visi-sonor). A signal band is injected via the per-frame frame (the demo drives it from a time oscillator / a keypress so Liam sees the colour change live) and read by an Input SOURCE. A BRAIN of Compare(gt threshold) + Select maps the band energy to a WARM colour when high and a COOL colour when low. The WorldAction fires device.set_led with the mapped { r, g, b, addr }; the mounted renderer tints a small on-screen LED indicator so the colour is VISIBLE. device.* is registered by the host at boot (DeviceActions.register_device_ops); a host with no LED still runs this same arrangement, device.set_led falling through the unknown-op declared-no-op. Same node types + wiring as arrangements/visisonor_loop.json — this is the demo instance driven by the live oscillator.",
+	"nodes": [
+		{ "id": "band", "type": "Input", "params": { "input_id": "signal.band.high", "default": 0.0 } },
+		{ "id": "thr", "type": "Const", "params": { "value": 0.5 } },
+		{ "id": "hot", "type": "Compare", "params": { "op": "gt" } },
+		{ "id": "warm", "type": "Const", "params": { "value": { "r": 1.0, "g": 0.35, "b": 0.05, "addr": 0 } } },
+		{ "id": "cool", "type": "Const", "params": { "value": { "r": 0.1, "g": 0.35, "b": 1.0, "addr": 0 } } },
+		{ "id": "brain", "type": "Select", "params": { "default_cond": false } },
+		{ "id": "led", "type": "WorldAction", "params": { "op": "device.set_led" } }
+	],
+	"wires": [
+		{ "from": "band", "out": "value", "to": "hot", "in": "a" },
+		{ "from": "thr", "out": "value", "to": "hot", "in": "b" },
+		{ "from": "hot", "out": "result", "to": "brain", "in": "cond" },
+		{ "from": "warm", "out": "value", "to": "brain", "in": "a" },
+		{ "from": "cool", "out": "value", "to": "brain", "in": "b" },
+		{ "from": "brain", "out": "result", "to": "led", "in": "value" }
+	]
+}
