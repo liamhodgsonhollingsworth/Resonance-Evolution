@@ -41,6 +41,14 @@ var descend_budget: int = 0
 func _init() -> void:
 	register("Const", PrimConst)
 	register("Math", PrimMath)
+	# The pure OPERATOR siblings of Math (same source shape, an op table in the DATA). Compare
+	# emits a bool predicate (<,<=,==,!=,>,>=); Logic gates bools (and/or/xor/not/...); Select is
+	# the MUX/ternary (cond ? a : b). Together they make "near Y AND pressed X" and if/else
+	# branches single wire-able nodes — the missing operators for the interaction spine +
+	# visi-sonor's BRAIN threshold logic. New arrangements, never new engine code.
+	register("Compare", PrimCompare)
+	register("Logic", PrimLogic)
+	register("Select", PrimSelect)
 	register("Log", PrimLog)
 	register("Model", PrimModel)
 	register("Transform", PrimTransform)
@@ -117,6 +125,12 @@ func _init() -> void:
 	register("TextureApply", PrimTextureApply)
 	register("MathPaint", PrimMathPaint)
 	register("LSystem", PrimLSystem)
+	# SdfEdit: one signed-distance-field edit (shape + transform + CSG op + blend + material) as
+	# DATA, emitting an EDIT-LIST descriptor a chain of these nodes accumulates. Like LSystem it is a
+	# param-generator that emits renderer-neutral data through a pure math module (renderers/sdf.gd);
+	# it STOPS at DATA — a later sculpt/voxel/splat slice bakes the field. New shapes/ops are new
+	# enum strings a consumer learns, never engine edits.
+	register("SdfEdit", PrimSdfEdit)
 	# The Godot Aperture 3D surface (godot/aperture/): inbox READ + action WRITE over the
 	# same substrate/channels the web board uses - see prim_aperture_inbox/action.gd.
 	register("ApertureInbox", PrimApertureInbox)
