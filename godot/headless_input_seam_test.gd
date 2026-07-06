@@ -137,6 +137,29 @@ func _run() -> void:
 	_check("ABSENT FRAME: an Input on a never-fed runtime falls to params.default",
 		out_none.get("in", {}).get("value") == 0)
 
+	# --- 3b. REGRESSION: a NUMERIC input_id must not crash evaluate() -------------------------------
+	# params arrive from the arrangement spec UNNORMALISED (graph_runtime assigns prim.params =
+	# spec.params raw), so a numeric input_id reaches evaluate() as-is. It must coerce via str() — the
+	# String() constructor throws "Nonexistent 'String' constructor" on a non-string, the exact crash
+	# class the WorldAction sibling documents. Load the dict directly (no JSON round-trip) so input_id
+	# stays a raw int, exactly the repro path; str(42) -> the key "42".
+	var rt_num := GraphRuntime.new()
+	get_root().add_child(rt_num)
+	rt_num.load_arrangement({
+		"format": "resonance.arrangement/v1", "name": "input_numeric_id",
+		"nodes": [ { "id": "in", "type": "Input", "params": { "input_id": 42, "default": 7 } } ],
+		"wires": [],
+	})
+	rt_num.set_input_frame({ "42": 99 })   # str(42) -> "42": a frame carrying that coerced key must resolve
+	var out_num := rt_num.evaluate()
+	_check("NUMERIC input_id: evaluate() does not crash; str()-coerced key '42' resolves (99 flows)",
+		out_num.get("in", {}).get("value") == 99)
+	rt_num.set_input_frame({ "other": true })   # coerced key absent -> falls to params.default, still no crash
+	var out_num_def := rt_num.evaluate()
+	_check("NUMERIC input_id: absent coerced key falls to params.default (7), no String() throw",
+		out_num_def.get("in", {}).get("value") == 7)
+	rt_num.free()
+
 	# --- 4. UNKNOWN OP = NO-OP still holds through WorldAction --------------------------------------
 	# Point the SAME Input-driven arrangement at an op no host registered. The receipt must be a
 	# declared no-op (ok:true, noop:true) — the portability keystone, unchanged by the Input seam.

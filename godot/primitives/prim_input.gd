@@ -31,7 +31,8 @@ func evaluate(_inputs: Dictionary) -> Dictionary:
 	# primitive is add_child'd to its GraphRuntime in load_arrangement). We reach it through the
 	# runtime's public accessor so we never touch the runtime's internals: a frame that lacks our
 	# input_id (or no frame at all) falls back to params.default, so the node is always defined.
-	var input_id := String(params.get("input_id", ""))
+	# str() (not String()) so a numeric/Variant params.input_id coerces safely; String() throws on a non-string.
+	var input_id := str(params.get("input_id", ""))
 	var fallback = params.get("default", 0)
 	var rt := get_parent()
 	if rt != null and rt.has_method("get_input_frame"):
