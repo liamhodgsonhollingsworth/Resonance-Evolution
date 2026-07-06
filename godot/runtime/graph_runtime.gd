@@ -20,6 +20,14 @@ var _registry: Dictionary = {}
 # nodes. Empty for a top-level runtime, so it changes nothing in the normal case.
 var _external: Dictionary = {}
 
+# Per-frame INPUT FRAME (Dreams-arc Slice 2): abstract input_id (String) -> value. This is the
+# universal PORTABILITY SEAM the injector writes and PrimInput reads — the same seam a camera frame,
+# an audio-band frame, or a swipe frame injects through in later slices. Distinct from `_external`
+# above (which keys by node_id -> port for Chip sub-graph port injection): this keys by ABSTRACT
+# input vocabulary and is read by any Input source node, wherever it sits in the graph. Empty for a
+# runtime nobody feeds, so an un-driven Input just falls back to its params.default — nothing changes.
+var _input_frame: Dictionary = {}
+
 # Recursion depth in the Chip-nesting tree (0 = top level). A Chip sets its sub-runtime's
 # depth to its own + 1; PrimChip caps it (PrimChip.MAX_DEPTH) so a deeply-nested or (once
 # shared chip definitions exist) self-referencing chip halts gracefully instead of
@@ -40,6 +48,11 @@ var descend_budget: int = 0
 
 func _init() -> void:
 	register("Const", PrimConst)
+	# Input: the per-frame SOURCE sibling of Const (Dreams-arc Slice 2). Emits a value looked up from
+	# the runtime's abstract input FRAME (set_input_frame) by params.input_id, falling back to
+	# params.default. The READ end of the universal input portability seam — new arrangements, never
+	# new engine code, add an input. See prim_input.gd + set_input_frame() below.
+	register("Input", PrimInput)
 	register("Math", PrimMath)
 	# The pure OPERATOR siblings of Math (same source shape, an op table in the DATA). Compare
 	# emits a bool predicate (<,<=,==,!=,>,>=); Logic gates bools (and/or/xor/not/...); Select is
@@ -190,6 +203,20 @@ func _instance(type_name: String) -> Primitive:
 ## Used by a Chip to feed its incoming port values into its nested sub-graph.
 func set_external_inputs(ext: Dictionary) -> void:
 	_external = ext
+
+## Inject the per-frame INPUT FRAME for subsequent evaluate()s (abstract input_id -> value). This is
+## the universal portability seam (Dreams-arc Slice 2): a per-host INJECTOR deposits one frame of
+## abstract inputs here and every Input source node reads its own input_id out of it. The SAME seam a
+## later camera / audio-band / swipe injector writes through. Purely additive — it stores the frame;
+## evaluate()'s topo/dataflow is unchanged, and an Input whose key is absent falls to params.default.
+func set_input_frame(frame: Dictionary) -> void:
+	_input_frame = frame
+
+## The current per-frame input frame (abstract input_id -> value). PrimInput.evaluate() reads this off
+## its parent runtime; a host / test can also inspect what was last injected. Read-only accessor —
+## the frame is only mutated through set_input_frame, so Input nodes never touch runtime internals.
+func get_input_frame() -> Dictionary:
+	return _input_frame
 
 ## Resolve the declared semantic type of a primitive type's port (e.g. ("Math","a",true)
 ## -> "number"). Drives Chip boundary-port typing and GraphEdit slot colors. Returns
