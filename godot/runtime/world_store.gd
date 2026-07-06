@@ -118,7 +118,11 @@ func save_version(name: String, data: Dictionary) -> int:
 	var dir := worlds_dir.path_join(name)
 	DirAccess.make_dir_recursive_absolute(dir)
 	var out := data.duplicate(true)
-	out["format"] = FORMAT
+	# Preserve the payload's OWN format tag when it carries one (the sandbox now persists a
+	# resonance.arrangement/v1 graph — every room is a node arrangement). Only stamp the legacy default
+	# when the caller supplied no format, so old sandbox.world/v2 callers are unchanged (append-only).
+	if not out.has("format") or String(out["format"]).strip_edges() == "":
+		out["format"] = FORMAT
 	out["name"] = name
 	out["version"] = v
 	out["saved_utc"] = Time.get_datetime_string_from_system(true) + "Z"
