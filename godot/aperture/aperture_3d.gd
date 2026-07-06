@@ -808,11 +808,11 @@ func _build_hud() -> void:
 	# Defect #2 (Liam 2026-07-05): NO inventory / hotbar HUD on the aperture room. The pick-up / remove /
 	# place mechanics stay fully wired (input + slot state untouched; _hotbar_ui stays null so
 	# _rebuild_hotbar_ui no-ops) - item-4 layout editing still works; only the visible bar is gone.
-	_status = Label.new()
-	_status.position = Vector2(12, 12)
-	_status.add_theme_font_size_override("font_size", 13)
-	_status.modulate = Color(0.7, 0.95, 0.7)
-	_hud.add_child(_status)
+	# Defect (Liam 2026-07-06, re-reported): NO top-left status text in the aperture room. The green
+	# "2D aperture open / back in the room / holding: ..." Label used to sit at (12,12); Liam asked for
+	# it gone. _status stays NULL so _set_status() still runs its logic + console print (non-visual),
+	# but nothing is drawn top-left. The room's top-left is now clean (only the centered crosshair).
+	_status = null
 	_build_note_panel()
 
 
