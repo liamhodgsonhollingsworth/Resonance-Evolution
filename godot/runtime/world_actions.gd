@@ -37,6 +37,28 @@ extends RefCounted
 ## An op absent here is a DECLARED NO-OP (see perform()), never an error.
 var _ops: Dictionary = {}
 
+## HOST-WIDE ops registered once at boot (Dreams-arc Slice 7 seam). A host with hardware (a room of
+## lights / an IR blaster) registers its device.* family HERE via register_host() at boot; thereafter
+## EVERY WorldActions instance — including the fresh one PrimWorldAction builds per-evaluate — inherits
+## them in _init(). A host with no hardware never registers, so this stays empty and device.* falls
+## through the unknown-op declared-no-op path. This is the "a host registers its device.* at boot"
+## model: purely additive (an empty registry changes nothing for existing graphs), opt-in, host-wide.
+static var _host_ops: Dictionary = {}
+
+
+## Register (or replace) a HOST-WIDE op that every subsequently-constructed WorldActions inherits. The
+## boot seam for the device.*/app.* families (a host calls this once; DeviceActions.register_device_ops
+## routes through here). Additive by construction — never touches the per-instance dispatch.
+static func register_host(op: String, fn: Callable) -> void:
+	if op == "":
+		return
+	_host_ops[op] = fn
+
+
+## Remove a host-wide op (returns to the "unknown op = declared no-op" baseline for it). No-op if absent.
+static func unregister_host(op: String) -> void:
+	_host_ops.erase(op)
+
 ## Where "log"-family effects go. A Callable(String) — default prints through Godot's logger. A test
 ## injects its own sink (e.g. append to an Array) so it observes the effect with no real side effect.
 var _log_sink: Callable = Callable()
@@ -52,6 +74,10 @@ func _init(cfg: Dictionary = {}, log_sink: Callable = Callable()) -> void:
 	config = cfg.duplicate(true) if cfg != null else {}
 	_log_sink = log_sink
 	_register_builtins()
+	# Inherit any HOST-WIDE ops a host registered at boot (device.*/app.* families). Empty for a host
+	# with no hardware, so this changes nothing in the default case; opt-in per register_host().
+	for op in _host_ops:
+		_ops[op] = _host_ops[op]
 
 
 ## Register (or replace) an op. This is the ENTIRE extension surface — a new world effect is one call
