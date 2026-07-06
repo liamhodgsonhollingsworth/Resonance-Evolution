@@ -139,12 +139,14 @@ func _initialize() -> void:
 	var saved_yaw := float(s.objects[oid].get("yaw_deg", 0.0))
 	var saved_x := float((s.objects[oid]["base_pos"] as Vector3).x)
 	var ser: Dictionary = s._serialize_world()
-	# the serialized object entry must carry the extra axes.
+	# The sandbox now serializes to a resonance.arrangement/v1 graph (every room is a node arrangement).
+	# The object's edit metadata (incl. the wand's extra axes) rides on the "_sandbox" block of its
+	# Transform node — assert the axes are carried there.
 	var found := {}
-	for o in ser.get("objects", []):
-		if typeof(o) == TYPE_DICTIONARY and String(o.get("id", "")) == oid:
-			found = o
-	ok = _check("W10 serialize emits the wand's pitch_deg + roll_deg on the object", found.has("pitch_deg") and found.has("roll_deg")) and ok
+	for n in ser.get("nodes", []):
+		if typeof(n) == TYPE_DICTIONARY and n.has("_sandbox") and String((n["_sandbox"] as Dictionary).get("id", "")) == oid:
+			found = n["_sandbox"]
+	ok = _check("W10 serialize emits the wand's pitch_deg + roll_deg on the object (in the arrangement's _sandbox metadata)", found.has("pitch_deg") and found.has("roll_deg")) and ok
 	s._apply_world_data(ser)
 	# find the reloaded object (id preserved).
 	ok = _check("W10b object reloads with the world", s.objects.has(oid)) and ok

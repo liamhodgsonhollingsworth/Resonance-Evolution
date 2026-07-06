@@ -366,11 +366,17 @@ func _initialize() -> void:
 	ok = _check("H3 MIDDLE-pick on a free block object picks its palette entry (Cube) into hand", int(s.hotbar[5]) == s._palette_index("Cube")) and ok
 	# Persist + reload: a free block object round-trips through serialize/apply.
 	var ser: Dictionary = s._serialize_world()
+	# The sandbox serializes to a resonance.arrangement/v1 graph: a free-placed block object becomes a
+	# Const(primitive)->Transform->Group chain whose Transform's "_sandbox" metadata is kind:"block_object"
+	# and carries the `block` name. Assert that shape (the old top-level `objects` list is gone by design).
 	var free_in_objs := false
-	for o in ser.get("objects", []):
-		if typeof(o) == TYPE_DICTIONARY and String(o.get("block", "")) == "Cube":
+	for n in ser.get("nodes", []):
+		if typeof(n) != TYPE_DICTIONARY or not n.has("_sandbox"):
+			continue
+		var meta: Dictionary = n["_sandbox"]
+		if String(meta.get("kind", "")) == "block_object" and String(meta.get("block", "")) == "Cube":
 			free_in_objs = true
-	ok = _check("H4 serialize emits the free block as an object with a `block` field", free_in_objs) and ok
+	ok = _check("H4 serialize emits the free block as a block-object node with a `block` field", free_in_objs) and ok
 	s._apply_world_data(ser)
 	var reloaded_free := 0
 	for oid2 in s.objects:

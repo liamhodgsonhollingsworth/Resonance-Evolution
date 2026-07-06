@@ -20,6 +20,7 @@ const AssetLibraryScript := preload("res://runtime/asset_library.gd")
 const WorldStoreScript := preload("res://runtime/world_store.gd")
 const Behaviors := preload("res://runtime/sandbox_behaviors.gd")
 const SandboxScript := preload("res://examples/sandbox_creative.gd")
+const WorldArrangement := preload("res://runtime/world_arrangement.gd")
 
 var _fails := 0
 
@@ -199,9 +200,12 @@ func _initialize() -> void:
 	ok = _check("E7 delete removes the object (and clears selection state safely)", not s.objects.has("obj_3") and s.objects.size() == 4) and ok
 	var new_id: String = s._place_object(swap_asset, Vector3(9, 0, 9), 45.0, 1.5)
 	ok = _check("E8 placing a manifest asset creates a fresh unique id", new_id != "" and s.objects.has(new_id) and new_id != "obj_5") and ok
-	# Serialize → append-only save → reload round-trip.
+	# Serialize → append-only save → reload round-trip. The sandbox now serializes to resonance.arrangement/v1
+	# (every room is a node arrangement); DESERIALIZE back to the edit-model to assert the same guarantee.
 	var v_new: int = s.store.save_version(s.world_name, s._serialize_world())
-	var back: Dictionary = s.store.load_world(s.world_name)
+	var back_raw: Dictionary = s.store.load_world(s.world_name)
+	ok = _check("E9pre store round-trips a resonance.arrangement/v1 file", WorldArrangement.is_arrangement(back_raw)) and ok
+	var back: Dictionary = WorldArrangement.deserialize(back_raw)
 	ok = _check("E9 serialize/save/reload round-trips (v2, 40 blocks, 5 objects)", v_new == 2 and (back["blocks"] as Array).size() == 40 and (back["objects"] as Array).size() == 5) and ok
 	var kept_yaw := false
 	for o in back["objects"]:
