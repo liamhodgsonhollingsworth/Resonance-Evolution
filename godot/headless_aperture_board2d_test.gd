@@ -421,13 +421,12 @@ func _run() -> void:
 	ok = _check("scene_link card launches in-engine via the launcher seam (no shell_open)",
 		str(launched) == str([TEST_PREFIX + "iscene"]) and opened.is_empty()) and ok
 
-	# 6e. hover reveals ✕/☆; clicking ✕ skips the RIGHT card and does NOT click through
+	# 6e. ✕ is ALWAYS visible now (card-button fix, Liam 2026-07-05 — no hover gate); clicking ✕ skips
+	# the RIGHT card and does NOT click through.
 	opened.clear()
 	var skip_btn := _find_glyph_button(t_img, "✕")
-	ok = _check("✕ skip button exists and is hidden until hover",
-		skip_btn != null and not skip_btn.visible) and ok
-	_hover(t_img)
-	ok = _check("hovering the tile reveals the ✕ skip button", skip_btn != null and skip_btn.visible) and ok
+	ok = _check("✕ skip button exists and is ALWAYS visible (no hover gate — card-button fix)",
+		skip_btn != null and skip_btn.visible) and ok
 	if skip_btn != null:
 		_hover(skip_btn)
 		_vp_click(skip_btn.get_global_rect().get_center())
@@ -454,15 +453,13 @@ func _run() -> void:
 		and ifb[1].get("artifact_id") == TEST_PREFIX + "idec") and ok
 	ok = _check("deciding never opens a url", opened.is_empty()) and ok
 
-	# 6h. PER-CARD FEEDBACK (the big r2 feature): the ✎ button reveals on hover, opens the inline
-	# note box, and Send writes a note byte-compatible with the web detail-page textarea — the REAL
-	# aperture_notes.py reads the board's note back. (Uses t_txt, still present after the skips above.)
+	# 6h. PER-CARD FEEDBACK (the big r2 feature): the ✎ button is ALWAYS visible now (card-button fix),
+	# opens the inline note box, and Send writes a note byte-compatible with the web detail-page textarea
+	# — the REAL aperture_notes.py reads the board's note back. (Uses t_txt, still present after skips.)
 	opened.clear()
 	var note_btn := _find_glyph_button(t_txt, "✎")
-	ok = _check("✎ per-card feedback button exists and is hidden until hover",
-		note_btn != null and not note_btn.visible) and ok
-	_hover(t_txt)
-	ok = _check("hovering the tile reveals the ✎ feedback button", note_btn != null and note_btn.visible) and ok
+	ok = _check("✎ per-card feedback button exists and is ALWAYS visible (no hover gate)",
+		note_btn != null and note_btn.visible) and ok
 	var fbox := t_txt.find_child("FeedbackBox", true, false) as Control
 	ok = _check("the tile carries an inline FeedbackBox (hidden until ✎)",
 		fbox != null and not fbox.visible) and ok

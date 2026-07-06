@@ -769,9 +769,22 @@ func _build_tile(card: Dictionary, opts: Dictionary) -> Control:
 			btn.pressed.connect(func(): _decide(card, String(act.get("id")), panel, decide_comment.text))
 			bar.add_child(btn)
 
-	# ---- overlay: hover ✕ skip (top-right) + ✎ feedback (left of ✕) + ☆ bookmark (top-left) ----
+	# ---- overlay: ✕ skip (top-right) + ✎ feedback (left of ✕) + ☆ bookmark (top-left) ----
+	# CARD-BUTTON FIX (Liam 2026-07-05, THIRD report of "the x button on the cards still doesn't let
+	# me press it, the placement of the buttons seems off"): the buttons are now ALWAYS VISIBLE, not
+	# hover-gated. On the web a hover reveal is fine (a mouse hovers a tile constantly); in the Godot
+	# board embedded on the in-room computer the hover-reveal is the failure — the button is invisible
+	# until the pointer is already on the tile, so Liam "can't press the X" because there is nothing to
+	# press until he is already hovering, and a slightly-off pointer never reveals it. Always-visible
+	# removes that whole failure class. The overlay is ALSO explicitly full-rect (PRESET_FULL_RECT) so
+	# the corner-anchored buttons are pinned to the tile's real corners every frame, never to a lagging
+	# 0-size overlay (the "placement seems off" half of the report). Hitboxes are 28px (was 24) for a
+	# more forgiving target. Verified end-to-end by the agent harness: a click at each button's EXACT
+	# on-screen center fires its handler (feedback/note row written) — see headless_agent_harness_test.gd.
 	var overlay := Control.new()
+	overlay.name = "TileOverlay"
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)   # pin to the tile's real rect every frame
 	panel.add_child(overlay)
 	var skip_btn: Button = null
 	var bm_btn: Button = null
@@ -787,10 +800,10 @@ func _build_tile(card: Dictionary, opts: Dictionary) -> Control:
 		overlay.add_child(skip_btn)
 		skip_btn.anchor_left = 1.0
 		skip_btn.anchor_right = 1.0
-		skip_btn.offset_left = -30
+		skip_btn.offset_left = -34
 		skip_btn.offset_right = -6
 		skip_btn.offset_top = 6
-		skip_btn.offset_bottom = 30
+		skip_btn.offset_bottom = 34
 		# ✎ per-card feedback — opens the inline note box; sits just left of ✕.
 		note_btn = _round_button("✎", PALETTE["accent.cool"])
 		note_btn.tooltip_text = "Leave feedback on this card"
@@ -798,41 +811,29 @@ func _build_tile(card: Dictionary, opts: Dictionary) -> Control:
 		overlay.add_child(note_btn)
 		note_btn.anchor_left = 1.0
 		note_btn.anchor_right = 1.0
-		note_btn.offset_left = -58
-		note_btn.offset_right = -34
+		note_btn.offset_left = -66
+		note_btn.offset_right = -38
 		note_btn.offset_top = 6
-		note_btn.offset_bottom = 30
+		note_btn.offset_bottom = 34
 		bm_btn = _round_button("☆", PALETTE["accent.gold"])
 		bm_btn.tooltip_text = "Save this"
 		bm_btn.pressed.connect(func(): _bookmark(card, bm_btn))
 		overlay.add_child(bm_btn)
 		bm_btn.offset_left = 6
-		bm_btn.offset_right = 30
+		bm_btn.offset_right = 34
 		bm_btn.offset_top = 6
-		bm_btn.offset_bottom = 30
-		skip_btn.visible = false
-		note_btn.visible = false
-		bm_btn.visible = false
+		bm_btn.offset_bottom = 34
+		# ALWAYS VISIBLE — no hover gate (the fix; see header note above).
+		skip_btn.visible = true
+		note_btn.visible = true
+		bm_btn.visible = true
 
-	# hover: border-hover + reveal the controls (aperture.css .tile:hover)
+	# hover: border-highlight only (the buttons no longer hide/reveal — they are always shown).
 	panel.mouse_entered.connect(func():
 		panel.add_theme_stylebox_override("panel", _tile_style(is_notif, accent, true))
-		if skip_btn != null:
-			skip_btn.visible = true
-		if note_btn != null:
-			note_btn.visible = true
-		if bm_btn != null:
-			bm_btn.visible = true
 		panel.set_meta("hovered", true))
 	panel.mouse_exited.connect(func():
 		panel.add_theme_stylebox_override("panel", _tile_style(is_notif, accent, false))
-		if skip_btn != null:
-			skip_btn.visible = false
-		# the ✎ button stays visible while its box is open (so the box has an obvious owner)
-		if note_btn != null:
-			note_btn.visible = note_box.visible
-		if bm_btn != null:
-			bm_btn.visible = _bookmarked.has(_dom_id(card))   # a saved ★ stays visible
 		panel.set_meta("hovered", false))
 
 	# ---- click-through (openUrl parity: artifacts open media.link; board tiles explore).
@@ -886,17 +887,18 @@ func _entry_style() -> StyleBoxFlat:
 	return s
 
 func _round_button(glyph: String, color: Color) -> Button:
-	# .tile__archive / .tile__bookmark: 24px circle, dark bg, accent glyph
+	# .tile__archive / .tile__bookmark: 28px circle, dark bg, accent glyph (28 > web's 24 for a more
+	# forgiving hitbox on the in-engine board — see the always-visible card-button fix note in _build_tile).
 	var b := Button.new()
 	b.text = glyph
 	b.flat = true
-	b.custom_minimum_size = Vector2(24, 24)
-	b.add_theme_font_size_override("font_size", 14)
+	b.custom_minimum_size = Vector2(28, 28)
+	b.add_theme_font_size_override("font_size", 15)
 	b.add_theme_color_override("font_color", color)
 	b.add_theme_color_override("font_hover_color", COL_INK_STRONG)
 	var s := StyleBoxFlat.new()
 	s.bg_color = COL_BTN_BG
-	s.set_corner_radius_all(12)
+	s.set_corner_radius_all(14)
 	for st in ["normal", "hover", "pressed", "focus"]:
 		b.add_theme_stylebox_override(st, s)
 	b.mouse_filter = Control.MOUSE_FILTER_STOP
