@@ -1,0 +1,22 @@
+{
+	"format": "resonance.arrangement/v1",
+	"name": "visisonor_loop",
+	"_doc": "The canonical visi-sonor INSTANCE of the Sensor->Logic->Action interaction format (Dreams-arc Slice 7). A signal/camera frame (a frequency-band energy) is injected via GraphRuntime.set_input_frame -> read by an Input SOURCE (the read side of the portability seam, landed F2) -> a BRAIN of Compare+Select (landed) maps band energy against a threshold to a COLOUR -> a WorldAction fires device.set_led with the mapped {r,g,b}. device.* is registered by the HOST at boot (DeviceActions.register_device_ops); a host with no LED still runs this same arrangement, device.set_led falling through WorldActions' unknown-op declared-no-op. NO Sensor primitive (that is a parallel slice) — the landed Input source reads the injected frame directly.",
+	"nodes": [
+		{ "id": "band", "type": "Input", "params": { "input_id": "signal.band.high", "default": 0.0 } },
+		{ "id": "thr", "type": "Const", "params": { "value": 0.5 } },
+		{ "id": "hot", "type": "Compare", "params": { "op": "gt" } },
+		{ "id": "warm", "type": "Const", "params": { "value": { "r": 1.0, "g": 0.2, "b": 0.0, "addr": 0 } } },
+		{ "id": "cool", "type": "Const", "params": { "value": { "r": 0.0, "g": 0.2, "b": 1.0, "addr": 0 } } },
+		{ "id": "brain", "type": "Select", "params": { "default_cond": false } },
+		{ "id": "led", "type": "WorldAction", "params": { "op": "device.set_led" } }
+	],
+	"wires": [
+		{ "from": "band", "out": "value", "to": "hot", "in": "a" },
+		{ "from": "thr", "out": "value", "to": "hot", "in": "b" },
+		{ "from": "hot", "out": "result", "to": "brain", "in": "cond" },
+		{ "from": "warm", "out": "value", "to": "brain", "in": "a" },
+		{ "from": "cool", "out": "value", "to": "brain", "in": "b" },
+		{ "from": "brain", "out": "result", "to": "led", "in": "value" }
+	]
+}
