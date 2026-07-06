@@ -23,6 +23,12 @@ output/
 .cache/
 *.npy
 
+# Godot asset-import descriptors — DERIVED from source assets + .godot/ on editor open, so they are
+# cache noise, not substrate. They MUST be gitignored: Godot rewrites them every open, and a dirty
+# *.import worktree can silently block the desktop shortcut's `git pull --ff-only` (breaking the
+# "merged updates must reach the shortcut" guarantee). Untracked; regenerated on open.
+*.import
+
 # Workflow shell runtime state (sessions, raw logs, local inbox)
 state/
 
