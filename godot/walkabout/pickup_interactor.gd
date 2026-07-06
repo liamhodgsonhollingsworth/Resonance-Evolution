@@ -26,6 +26,7 @@ extends Node3D
 ## without a window or input device. `_process` only wires real Input + the live player Node3D.
 
 const DEFAULT_RADIUS := 2.5   # meters: how close the player must be to interact
+const InputGate := preload("res://walkabout/input_gate.gd")
 
 ## One registered pickable: the live scene Node3D, its proximity Context runtime, and bookkeeping.
 class Pickable:
@@ -334,6 +335,14 @@ func _player_camera() -> Camera3D:
 
 func _process(_delta: float) -> void:
 	if _player == null or not is_instance_valid(_player):
+		return
+	# Never pick/place/cycle while typing a note (Liam 2026-07-05: typing must not drive the world).
+	# is_key_pressed() below is RAW input, so this explicit gate is the only thing that stops it.
+	var vp := get_viewport()
+	if vp != null and InputGate.text_input_active(vp):
+		_e_was_down = Input.is_key_pressed(KEY_E)
+		_q_was_down = Input.is_key_pressed(KEY_Q)
+		_tab_was_down = Input.is_key_pressed(KEY_TAB)
 		return
 	refresh(_player.global_position)
 	# "E" = use / pick up the nearest in-range object. Edge-triggered (only on the press transition)

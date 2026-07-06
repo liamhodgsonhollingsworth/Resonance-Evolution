@@ -20,11 +20,12 @@ var _interactor: PickupInteractor = null
 var _panel: PanelContainer
 var _rows_box: VBoxContainer
 var _title: Label
-var _hint: Label
 
 func _ready() -> void:
 	layer = 10   # above the 3D viewport
 	_build_ui()
+	if _panel != null:
+		_panel.visible = false
 	_refresh()
 
 ## Bind to a live PickupInteractor: refresh now and on every inventory/selection change.
@@ -68,11 +69,6 @@ func _build_ui() -> void:
 	_rows_box.add_theme_constant_override("separation", 2)
 	col.add_child(_rows_box)
 
-	_hint = Label.new()
-	_hint.text = "E pick up · Q place · Tab cycle"
-	_hint.add_theme_color_override("font_color", TEXT_DIM)
-	_hint.add_theme_font_size_override("font_size", 11)
-	col.add_child(_hint)
 
 ## Re-read the interactor and rebuild the row list. Cheap (a handful of labels) and only fires on
 ## change, so rebuilding wholesale is simpler than diffing and has no perceptible cost.
@@ -82,16 +78,15 @@ func _refresh() -> void:
 	for c in _rows_box.get_children():
 		c.queue_free()
 	if _interactor == null:
+		if _panel != null: _panel.visible = false
 		return
 	var rows: Array = _interactor.held_rows()
+	# No standing "explanation panel" in the corner (Liam 2026-07-05): the inventory only appears once
+	# you are actually carrying something. Empty => hidden.
 	if rows.is_empty():
-		var empty := Label.new()
-		empty.text = "(empty — walk up to an object and press E)"
-		empty.add_theme_color_override("font_color", TEXT_DIM)
-		empty.add_theme_font_size_override("font_size", 12)
-		_rows_box.add_child(empty)
-		_title.text = "INVENTORY"
+		if _panel != null: _panel.visible = false
 		return
+	if _panel != null: _panel.visible = true
 	_title.text = "INVENTORY  (%d)" % _interactor.held_total()
 	for row in rows:
 		var lbl := Label.new()

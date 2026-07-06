@@ -93,6 +93,7 @@ const Items := preload("res://runtime/sandbox_items.gd")               # held-it
 const StickyNote := preload("res://runtime/sticky_note.gd")            # the one tool built now
 const ItemThumbnails := preload("res://runtime/item_thumbnails.gd")   # inventory image previews
 const _InvSlot := preload("res://examples/sandbox_inventory_slot.gd") # drag-and-drop inventory/hotbar slot
+const InputGate := preload("res://walkabout/input_gate.gd")        # shared text-focus / ESC gate
 
 const PARAMS_PATH := "res://examples/sandbox_params.json"     # the file Liam/Claude edit to iterate settings
 const SHOT_PATH := "res://docs/sandbox_creative.png"          # headless proof PNG (committed under docs/)
@@ -296,11 +297,31 @@ func _process(delta: float) -> void:
 # ONE row). Kept separate from the mouse/number/wheel handling (those are MC-fixed).
 var _key_actions: Dictionary = {}                            # keycode:int -> Callable (built in _build_action_map)
 
+## ESC priority (Liam 2026-07-05 defect #5): close an open overlay FIRST; only release the mouse when
+## nothing is open. Together with wants_esc() the root scene-transition overlay defers, so ESC while
+## the inventory is open closes the inventory and STAYS - it no longer exits to the aperture room.
+func _on_escape() -> void:
+	if _inv_open:
+		_toggle_inventory()
+		return
+	if _behavior_open:
+		_toggle_behavior_panel()
+		return
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+## True while any ESC-closable overlay is open, so the root TransitionOverlay defers its "ESC leaves
+## to the room" to us (the note box is owned by the global GizmoNote autoload, which the overlay also
+## defers to via the focused-text-field check).
+func wants_esc() -> bool:
+	return _inv_open or _behavior_open or _note_open
+
+
 func _build_action_map() -> void:
 	_key_actions = {
 		KEY_E:            func(_ev): _toggle_inventory(),                       # full creative inventory / picker
 		KEY_Q:            func(_ev): _drop_held(),                             # MC drop: empty the held slot (item disappears)
-		KEY_ESCAPE:       func(_ev): Input.mouse_mode = Input.MOUSE_MODE_VISIBLE,
+		KEY_ESCAPE:       func(_ev): _on_escape(),
 		KEY_BACKSLASH:    func(_ev): _toggle_debug_verbs(),                    # superseded verb layer toggle
 		KEY_F5:           func(_ev): _save_world(),
 		KEY_BRACKETLEFT:  func(_ev): _cycle_world(-1),
@@ -418,6 +439,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _update_movement(delta: float) -> void:
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		return
+	# Also freeze movement whenever a text field owns focus (belt-and-braces with the mouse-capture
+	# guard above; is_key_pressed() is RAW input and would otherwise fly while typing).
+	if InputGate.text_input_active(get_viewport()):
 		return
 	var dir := Vector3.ZERO
 	var basis := _cam.global_transform.basis
@@ -2005,7 +2030,7 @@ func _build_inventory_panel() -> void:
 	vb.offset_left = 12; vb.offset_top = 10; vb.offset_right = -12; vb.offset_bottom = -12
 	_inv_panel.add_child(vb)
 	_inv_title = Label.new()
-	_inv_title.text = "Creative Inventory  —  click a block → hotbar slot %d  (E to close)" % (active_slot + 1)
+	_inv_title.text = "Creative Inventory"
 	_inv_title.add_theme_font_size_override("font_size", 14)
 	vb.add_child(_inv_title)
 	# SEARCH box (control #1: "browse/scroll/search all assets + block types"). Typing filters the grid
@@ -2140,13 +2165,15 @@ func _swap_hotbar_slots(a: int, b: int) -> void:
 
 
 func _toggle_inventory() -> void:
-	if _headless or _inv_panel == null:
-		return
+	# Flip the OPEN state unconditionally so it is text-equivalent-testable (wants_esc / harness); only
+	# the display-touching lines below are guarded for headless.
 	_inv_open = not _inv_open
-	_inv_panel.visible = _inv_open
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if _inv_open else Input.MOUSE_MODE_CAPTURED
+	if _inv_panel != null:
+		_inv_panel.visible = _inv_open
+	if not _headless:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if _inv_open else Input.MOUSE_MODE_CAPTURED
 	if _inv_open and _inv_title != null:
-		_inv_title.text = "Creative Inventory  —  click a block → hotbar slot %d  (E to close)" % (active_slot + 1)
+		_inv_title.text = "Creative Inventory"
 
 
 func _select_slot(i: int) -> void:
@@ -2181,29 +2208,12 @@ func _flash_status(msg: String) -> void:
 func _refresh_status() -> void:
 	if _status == null:
 		return
-	var lines := []
-	if _hand_empty():
-		lines.append("Empty hand   (slot %d)   |   world: %s   |   LEFT destroy · MIDDLE pick · RMB (nothing) · 1-9 slots · E inventory · Q drop · WASD fly" % [
-			active_slot + 1, world_name])
-	else:
-		var entry: Dictionary = _active_entry()
-		var kind := String(entry.get("kind", "block"))
-		var label := "Tool" if kind == "tool" else ("Asset" if kind == "asset" else "Block")
-		if kind == "tool":
-			lines.append("%s: %s   (slot %d)   |   world: %s   |   LEFT use · MIDDLE pick · 1-9 slots · E inventory · Q drop · WASD+Space/Shift fly" % [
-				label, String(entry["name"]), active_slot + 1, world_name])
-		else:
-			lines.append("%s: %s   (slot %d)   |   world: %s   |   RIGHT place · LEFT destroy · MIDDLE pick · 1-9 slots · E inventory · Q drop · WASD fly" % [
-				label, String(entry["name"]), active_slot + 1, world_name])
-	if _debug_verbs and selected_id != "" and objects.has(selected_id):
-		var rec: Dictionary = objects[selected_id]
-		lines.append("[debug] Selected: %s (%s)%s   |   G grab · R rotate · +/- scale · X delete · B behaviors · N note" % [
-			selected_id, _obj_label(rec), "  [GRABBED — click to drop]" if _grabbing else ""])
-	else:
-		lines.append("F5 save world · [ ] switch world · \\ toggle debug verbs%s" % ("  [DEBUG VERBS ON]" if _debug_verbs else ""))
+	# ONLY a transient action toast - no controls text, ever (Liam 2026-07-05). Empty when nothing was
+	# just done; a recent action (via _flash_status) shows for a few seconds then clears.
 	if _time < _flash_until and _flash_text != "":
-		lines.append(">> " + _flash_text)
-	_status.text = "\n".join(lines)
+		_status.text = _flash_text
+	else:
+		_status.text = ""
 
 
 # ── the SUBTLE placement-point DOT (Liam correction 2026-07-05) ───────────────────────────────────────

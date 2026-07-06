@@ -69,6 +69,7 @@ func _ready() -> void:
 func _enter_scene(slug: String) -> void:
 	_build_environment(slug)
 	_build_player()
+	_place_player_clear()
 	_grab = GrabAdapter.new()
 	_grab.name = "Grab"
 	add_child(_grab)
@@ -252,7 +253,7 @@ func _add_lighting() -> void:
 func _build_player() -> void:
 	var player: CharacterBody3D = FpsControllerScript.new()
 	player.name = "Player"
-	player.position = Vector3(ROOM_HALF - 5.0, 1.5, ROOM_HALF - 5.0)
+	player.position = Vector3(0, 1.5, 0)   # provisional; _place_player_clear() moves it to a verified-clear spot
 	player.rotation_degrees = Vector3(0, 135, 0)
 	var col := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
@@ -268,6 +269,60 @@ func _build_player() -> void:
 	player.add_child(cam)
 	add_child(player)
 	_player = player
+
+## Move the player to a spot that is CLEAR of solid geometry (Liam 2026-07-05 defect: "in this dungeon
+## I can't move around at all" - the fixed corner spawn landed inside a placed wall piece for KayKit).
+## Tries a ring of candidate points; for each it (a) requires the capsule not to overlap any static
+## body and (b) snaps the player onto the floor via a downward ray. Falls back to the room centre.
+func _place_player_clear() -> void:
+	if _player == null or not is_instance_valid(_player):
+		return
+	# Let physics register the just-added static colliders before we query the space (a direct-space
+	# query right after add_child can miss brand-new bodies). Two physics frames is ample + headless-safe.
+	if get_tree() != null:
+		await get_tree().physics_frame
+		await get_tree().physics_frame
+	if not is_instance_valid(_player):
+		return
+	var space := _player.get_world_3d().direct_space_state if _player.get_world_3d() != null else null
+	var candidates := [
+		Vector3(0, 1.5, 0),
+		Vector3(4, 1.5, 4), Vector3(-4, 1.5, -4), Vector3(4, 1.5, -4), Vector3(-4, 1.5, 4),
+		Vector3(0, 1.5, 6), Vector3(6, 1.5, 0), Vector3(0, 1.5, -6), Vector3(-6, 1.5, 0),
+		Vector3(ROOM_HALF - 5.0, 1.5, ROOM_HALF - 5.0),
+	]
+	for c in candidates:
+		var spot := _clear_spot(space, c)
+		if spot != Vector3.INF:
+			_player.global_position = spot
+			return
+	# Nothing verified clear (headless without physics, or an unusually dense scene): centre is safest.
+	_player.global_position = Vector3(0, 1.5, 0)
+
+## If `cand` is clear (no static body overlaps the player capsule there), return it snapped to the
+## floor; else Vector3.INF. Headless-with-no-space returns the candidate as-is (best effort).
+func _clear_spot(space, cand: Vector3) -> Vector3:
+	if space == null:
+		return cand
+	# Snap onto the ground first (ray down), so we test the capsule where the body will actually rest.
+	var down := PhysicsRayQueryParameters3D.create(cand + Vector3(0, 4, 0), cand + Vector3(0, -8, 0))
+	var hit: Dictionary = space.intersect_ray(down)
+	var base := cand
+	if not hit.is_empty():
+		base = Vector3(cand.x, float(hit["position"].y) + 1.0, cand.z)
+	# Capsule-overlap test at the resting spot (capsule offset +0.9, height 1.8, radius 0.35).
+	var q := PhysicsShapeQueryParameters3D.new()
+	var cap := CapsuleShape3D.new()
+	cap.height = 1.8
+	cap.radius = 0.35
+	q.shape = cap
+	q.transform = Transform3D(Basis(), base + Vector3(0, 0.9, 0))
+	q.collision_mask = 0xFFFFFFFF
+	q.exclude = [_player.get_rid()]
+	var overlaps: Array = space.intersect_shape(q, 4)
+	if overlaps.is_empty():
+		return base
+	return Vector3.INF
 
 # --- COLLECTIBLES --------------------------------------------------------------------------------
 
@@ -397,7 +452,7 @@ func _build_selector() -> void:
 	title.add_theme_font_size_override("font_size", 20)
 	vb.add_child(title)
 	var sub := Label.new()
-	sub.text = "WASD move - mouse look - E grab - F1 note. Walls are solid: you run into them."
+	sub.text = "Pick a scene to walk around in."
 	sub.add_theme_color_override("font_color", Color(0.6, 0.66, 0.74))
 	sub.add_theme_font_size_override("font_size", 12)
 	vb.add_child(sub)
@@ -428,13 +483,8 @@ func _build_feedback_ui(slug: String) -> void:
 	_feedback.name = "FeedbackLayer"
 	_feedback.layer = 20
 	add_child(_feedback)
-	var hint := Label.new()
-	hint.text = "F1  leave a note about this scene"
-	hint.add_theme_color_override("font_color", Color(0.8, 0.85, 0.92))
-	hint.add_theme_font_size_override("font_size", 12)
-	hint.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	hint.position += Vector2(-260, 12)
-	_feedback.add_child(hint)
+	# (No controls-explanation text - Liam 2026-07-05. F1 for a note is global + intuitive; the
+	# CC-BY attribution below is a legal credit, not a controls hint, so it stays.)
 	# CC-BY attribution surfaced bottom-right in-scene (empty for CC0/MIT).
 	var att := Scenes.attribution_line(slug)
 	if att != "":
