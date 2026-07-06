@@ -125,6 +125,12 @@ func _init() -> void:
 	register("TextureApply", PrimTextureApply)
 	register("MathPaint", PrimMathPaint)
 	register("LSystem", PrimLSystem)
+	# SdfEdit: one signed-distance-field edit (shape + transform + CSG op + blend + material) as
+	# DATA, emitting an EDIT-LIST descriptor a chain of these nodes accumulates. Like LSystem it is a
+	# param-generator that emits renderer-neutral data through a pure math module (renderers/sdf.gd);
+	# it STOPS at DATA — a later sculpt/voxel/splat slice bakes the field. New shapes/ops are new
+	# enum strings a consumer learns, never engine edits.
+	register("SdfEdit", PrimSdfEdit)
 	# The Godot Aperture 3D surface (godot/aperture/): inbox READ + action WRITE over the
 	# same substrate/channels the web board uses - see prim_aperture_inbox/action.gd.
 	register("ApertureInbox", PrimApertureInbox)
