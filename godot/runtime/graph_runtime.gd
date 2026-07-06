@@ -53,6 +53,12 @@ func _init() -> void:
 	# params.default. The READ end of the universal input portability seam — new arrangements, never
 	# new engine code, add an input. See prim_input.gd + set_input_frame() below.
 	register("Input", PrimInput)
+	# Sensor: the CONTINUOUS-signal SOURCE sibling of Input (Dreams-arc Slice 4). Emits a scalar it SENSES
+	# for a bound target — proximity DISTANCE (reusing PrimContext's proximity math), a sensed vector's
+	# VOLUME/magnitude, or a continuous external band read from the SAME per-frame input FRAME Input reads
+	# (set_input_frame, keyed by params.sensor_id — how a camera/audio-band frame drives it). New source
+	# arrangement, never new engine code; unknown/absent signal falls to params.default. See prim_sensor.gd.
+	register("Sensor", PrimSensor)
 	register("Math", PrimMath)
 	# The pure OPERATOR siblings of Math (same source shape, an op table in the DATA). Compare
 	# emits a bool predicate (<,<=,==,!=,>,>=); Logic gates bools (and/or/xor/not/...); Select is
