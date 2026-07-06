@@ -20,10 +20,14 @@ extends RefCounted
 ## into the store on first touch, so a fresh machine has something to open and every edit
 ## lands in versioned state, never in the repo file.
 ##
-## WORLD FILE SHAPE (v2 — supersets the sandbox_params block list):
+## WORLD FILE SHAPE — the store is FORMAT-AGNOSTIC: it persists whatever `data` the caller hands it and
+## PRESERVES the payload's own `format` tag (see save_version). The sandbox now saves a
+## resonance.arrangement/v1 {nodes,wires} graph (every room is a node arrangement — runtime/world_arrangement.gd);
+## the legacy sandbox.world/v2 shape below still loads for older saved worlds (append-only supersession):
 ##   { "format": "sandbox.world/v2", "name": "...",
 ##     "blocks":  [ {cell:[x,y,z], block:"Cube", material?:{}} ],
 ##     "objects": [ {id, asset, position:[x,y,z], yaw_deg, scale, behaviors:[{type,params}]} ] }
+## Only the DEFAULT (stamped when a payload carries no format) is sandbox.world/v2.
 ##
 ## No class_name (mistake #046): consumers preload() this file by path.
 
@@ -118,7 +122,11 @@ func save_version(name: String, data: Dictionary) -> int:
 	var dir := worlds_dir.path_join(name)
 	DirAccess.make_dir_recursive_absolute(dir)
 	var out := data.duplicate(true)
-	out["format"] = FORMAT
+	# Preserve the payload's OWN format tag when it carries one (the sandbox now persists a
+	# resonance.arrangement/v1 graph — every room is a node arrangement). Only stamp the legacy default
+	# when the caller supplied no format, so old sandbox.world/v2 callers are unchanged (append-only).
+	if not out.has("format") or String(out["format"]).strip_edges() == "":
+		out["format"] = FORMAT
 	out["name"] = name
 	out["version"] = v
 	out["saved_utc"] = Time.get_datetime_string_from_system(true) + "Z"

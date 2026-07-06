@@ -89,6 +89,7 @@ const GodotSceneRenderer := preload("res://renderers/godot_scene_renderer.gd")
 const AssetLibraryScript := preload("res://runtime/asset_library.gd")
 const Behaviors := preload("res://runtime/sandbox_behaviors.gd")
 const WorldStoreScript := preload("res://runtime/world_store.gd")
+const WorldArrangement := preload("res://runtime/world_arrangement.gd")  # world <-> resonance.arrangement/v1 (every room is a node arrangement)
 const Items := preload("res://runtime/sandbox_items.gd")               # held-item seam (MC-default + tool handlers)
 const StickyNote := preload("res://runtime/sticky_note.gd")            # the one tool built now
 const ItemThumbnails := preload("res://runtime/item_thumbnails.gd")   # inventory image previews
@@ -1584,6 +1585,11 @@ func _load_active_world() -> bool:
 
 
 func _apply_world_data(data: Dictionary) -> void:
+	# A resonance.arrangement/v1 file (the current save format — every room is a node arrangement) is
+	# decoded back into the {blocks, objects, notes} edit-model this function already consumes. A legacy
+	# sandbox.world/v2 file passes straight through (append-only compat: old saved worlds still load).
+	if WorldArrangement.is_arrangement(data):
+		data = WorldArrangement.deserialize(data)
 	# blocks (clear + re-seed: the file is the source of truth for the seeded build)
 	_seed_world({ "blocks": data.get("blocks", []), "material_ops": data.get("material_ops", []) }, true)
 	# objects: preload the world's asset set (background), evict what this world does not use,
@@ -1676,6 +1682,8 @@ func _serialize_world() -> Dictionary:
 		blocks.append({
 			"cell": [cell.x, cell.y, cell.z],
 			"block": String(rec["type"]),
+			"shape": String(rec.get("shape", "box")),
+			"params": (rec.get("params", {}) as Dictionary).duplicate(true),
 			"material": (rec.get("material", {}) as Dictionary).duplicate(true),
 		})
 	var objs := []
@@ -1714,12 +1722,47 @@ func _serialize_world() -> Dictionary:
 			"text": String(nrec.get("text", "")),
 			"held_item": String(nrec.get("held_item", "sticky_note")),
 		})
-	return {
+	# EVERY ROOM IS A NODE ARRANGEMENT (Liam 2026-07-06): the sandbox persists + hotloads as the SAME
+	# resonance.arrangement/v1 {nodes,wires} the GraphRuntime interprets and the aperture room runs on.
+	# Blocks -> Const(primitive)->Transform->Group; asset objects -> Model->Transform->Group; free-placed
+	# block objects -> Const->Transform->Group. Sandbox-only edit metadata (cell, asset id, behaviors,
+	# wand axes, materials, notes, grid_size) rides on additive keys the schema permits, so the reverse
+	# (_apply_world_data) reconstructs an IDENTICAL world. See runtime/world_arrangement.gd.
+	return WorldArrangement.serialize(blocks, objs, _asset_path_map(), _block_shape_map(), {
 		"grid_size": grid_size,
-		"blocks": blocks,
-		"objects": objs,
 		"notes": notes,
-	}
+		"name": world_name,
+	})
+
+
+## { asset_id -> res:// glb path } for every manifest asset — so a serialized Model node carries a
+## loadable path (a reader resolves geometry through GraphRuntime without the sandbox's AssetLibrary).
+func _asset_path_map() -> Dictionary:
+	var out := {}
+	if assets == null:
+		return out
+	for id in assets.manifest:
+		var e = assets.manifest[id]
+		if typeof(e) == TYPE_DICTIONARY and e.has("path"):
+			out[String(id)] = String(e["path"])
+	return out
+
+
+## { block_name -> { shape, params, material } } from the palette — the primitive-mesh vocabulary a
+## free-placed block object serializes into (so its Const scene_node is a real renderer-neutral mesh).
+func _block_shape_map() -> Dictionary:
+	var out := {}
+	for entry in palette:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		if String(entry.get("kind", "block")) != "block":
+			continue
+		out[String(entry.get("name", ""))] = {
+			"shape": String(entry.get("shape", "box")),
+			"params": (entry.get("params", {}) as Dictionary).duplicate(true),
+			"material": (entry.get("material", {}) as Dictionary).duplicate(true),
+		}
+	return out
 
 
 ## F5 — APPEND-ONLY save: version N+1 in the store; prior versions are never touched.
