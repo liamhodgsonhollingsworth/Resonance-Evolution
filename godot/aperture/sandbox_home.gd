@@ -32,6 +32,16 @@ const SceneTransition := preload("res://aperture/scene_transition.gd")
 
 const HOME_WORLD := "home"
 
+# INVENTORY CARRY-THROUGH (Liam spec S4) — FOLLOW-UP, not done in this slice. The door transition is
+# SceneTransition.enter -> change_scene_to_file, which frees the source room's scene (and its held-item /
+# hotbar state) before this scene's _ready rebuilds a FRESH inventory. Carrying the held item across is
+# NON-TRIVIAL here because the source aperture room and this sandbox use DIFFERENT palettes (the room's ~7
+# entries vs the sandbox's ~50 with per-kit tabs), so there is no shared held-item index to copy. Doing it
+# cleanly wants a tiny cross-scene "carried held item" bus (an autoload holding a portable {kind,name,...}
+# descriptor the destination resolves into its own palette) — a small, self-contained follow-up. Left as a
+# TODO per the slice's "don't block on it" instruction; the home area is fully usable without it (you pick
+# from its own inventory on arrival). See the PR body for the follow-up.
+
 
 func _ready() -> void:
 	# Complete a seamless same-window ENTER if we arrived through a door transition — same call the
