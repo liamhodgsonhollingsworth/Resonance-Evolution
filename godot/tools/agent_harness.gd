@@ -58,6 +58,8 @@ var _root_scene: Node = null
 var _scene_path := ""
 var _config: Dictionary = {}
 var _out_shot := "res://live/harness_shot.png"
+var _view_w := 1600.0
+var _view_h := 1000.0
 
 func _initialize() -> void:
 	_run()
@@ -76,6 +78,10 @@ func _run() -> void:
 			_config = parsed
 	if args.has("out"):
 		_out_shot = String(args["out"])
+	if args.has("view"):
+		var wh := String(args["view"]).split("x")
+		if wh.size() == 2:
+			_view_w = float(wh[0]); _view_h = float(wh[1])
 
 	# Load the scene once; every command runs against the same live tree (composable state).
 	if _scene_path != "":
@@ -114,13 +120,20 @@ func _load_scene(path: String) -> Dictionary:
 		for k in _config:
 			merged[k] = _config[k]
 		inst.set("config", merged)
-	get_root().add_child(inst)
+	# A Control scene needs an explicitly-sized parent: the headless main window is tiny (a ScrollContainer
+	# CLIPS hit-testing to its visible rect), so we host the board in a 1600x1000 Control and full-rect it
+	# — the exact pattern the proven board test uses so tile geometry matches the live 4-column layout.
+	if inst is Control:
+		var host := Control.new()
+		host.name = "HarnessHost"
+		host.size = Vector2(int(_view_w), int(_view_h))
+		get_root().add_child(host)
+		host.add_child(inst)
+		(inst as Control).set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	else:
+		get_root().add_child(inst)
 	_root_scene = inst
 	get_root().set_meta("harness_current_scene", inst)
-	# A Control scene needs an explicit size + full-rect (a scripted board child otherwise lays out 0x0).
-	if inst is Control:
-		get_root().size = Vector2(1600, 1000)
-		(inst as Control).set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	await process_frame
 	# If the scene root exposes an async refresh() (the aperture board does), run it so tiles exist.
 	if inst.has_method("refresh"):
@@ -180,27 +193,43 @@ func _ui_click(cmd: Dictionary) -> Dictionary:
 	if cmd.has("at"):
 		var a: Array = cmd["at"]
 		at = Vector2(float(a[0]), float(a[1]))
-	# WHO is topmost at that coord? (a covering node that eats the click is the X-button failure class)
+	# WHO is topmost at that coord? (a covering node that eats the click is the X-button failure class).
+	# Capture the routing decision + node path BEFORE the click, because a handler that removes the tile
+	# (skip / decide) frees the node — get_path_to on a freed node returns "" and topmost recomputes to
+	# null. Recording pre-click preserves the proof that the coord hit the intended element.
 	var topmost := HarnessLib.topmost_control_at(root, at)
+	var target_path := String(root.get_path_to(node))
+	var topmost_path := (String(root.get_path_to(topmost)) if topmost != null else "")
+	var routed_pre := topmost != null and (topmost == node or node.is_ancestor_of(topmost) or topmost.is_ancestor_of(node))
+	# Establish hover on the actual target control first: a Button only fires `pressed` on release when
+	# its INTERNAL hover flag is set. A live mouse sets it via cursor tracking; headless has no cursor,
+	# so we (a) push a mouse-MOTION event to the coord (engages the viewport's own hover walk) and
+	# (b) notify the button directly. This makes the synthesized click fire the handler exactly as a
+	# real click does — without it, a click lands on the rect but the button stays quiet (the exact
+	# false-positive that let a "dead" X button pass a naive rect-only test).
+	HarnessLib.vp_motion(get_root(), at)
+	if node is Control:
+		HarnessLib.hover(node as Control)
+	await process_frame
 	# Synthesize the real press+release at the coord and route through the viewport's hit-test.
 	HarnessLib.vp_click(get_root(), at)
 	await process_frame
 	await process_frame
 	var after := HarnessLib.capture_effect_state(root, _config)
 	var effect := HarnessLib.diff_effect(before, after)
-	var routed_ok := topmost != null and (topmost == node or node.is_ancestor_of(topmost) or topmost.is_ancestor_of(node))
 	var effect_fired := bool(effect.get("changed", false))
-	# PASS when the click landed on (or within) the intended node AND an effect fired. When the caller
-	# gives no assertable side effect (a pure navigation click uses an injected recorder), routed_ok
-	# alone is the gate.
-	var passed := routed_ok and (effect_fired or bool(cmd.get("effect_optional", false)))
+	# PASS when the click landed on (or within) the intended node AND an effect fired. Routing is judged
+	# from the PRE-click topmost (a skip/decide handler frees the node, so a post-click recompute would
+	# wrongly read null). When the caller gives no assertable side effect (a pure navigation click uses
+	# an injected recorder), routed_pre alone is the gate.
+	var passed := routed_pre and (effect_fired or bool(cmd.get("effect_optional", false)))
 	return {
 		"ok": passed,
 		"verb": "ui_click",
 		"clicked_at": [at.x, at.y],
-		"target_node": String(root.get_path_to(node)),
-		"topmost_at_coord": (String(root.get_path_to(topmost)) if topmost != null else null),
-		"routed_to_target": routed_ok,
+		"target_node": target_path,
+		"topmost_at_coord": (topmost_path if topmost_path != "" else null),
+		"routed_to_target": routed_pre,
 		"effect_fired": effect_fired,
 		"effect": effect,
 		"assert": ("PASS" if passed else "FAIL"),

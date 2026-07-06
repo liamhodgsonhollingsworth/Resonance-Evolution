@@ -60,7 +60,10 @@ static func open_board(host: Node) -> CanvasLayer:
 	layer.add_child(bg)
 	var board := ps.instantiate()
 	if board is Control:
-		(board as Control).set_anchors_preset(Control.PRESET_FULL_RECT)
+		# Full-rect WITH offsets (set_anchors_AND_offsets_preset), so the board fills the whole viewport
+		# regardless of its instantiated size — anchors alone can leave a scripted Control at its default
+		# size, which would shrink the tile grid to a single narrow column and pile the ✕/✎/☆ buttons up.
+		(board as Control).set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	layer.add_child(board)
 	# A thin "ESC to leave" ribbon so the exit is discoverable (spec: "which I leave using escape").
 	var ribbon := Label.new()

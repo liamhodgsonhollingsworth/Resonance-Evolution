@@ -152,6 +152,14 @@ static func vp_click(vp: Viewport, pos: Vector2) -> void:
 	vp_button(vp, pos, true)
 	vp_button(vp, pos, false)
 
+## A mouse-motion event to `pos` — engages the viewport's own hover tracking so a following click
+## lands on a control whose internal hover flag is now set (headless has no OS cursor to do this).
+static func vp_motion(vp: Viewport, pos: Vector2) -> void:
+	var ev := InputEventMouseMotion.new()
+	ev.position = pos
+	ev.global_position = pos
+	vp.push_input(ev)
+
 ## Establish hover in headless. BaseButton fires `pressed` on release only if its internal hover flag
 ## is set (NOTIFICATION_MOUSE_ENTER in Godot 4.6); the `mouse_entered` SIGNAL (what the tile reveal
 ## handler listens to) is emitted by live cursor tracking, so emit it explicitly too.
@@ -266,9 +274,10 @@ static func char_action(tree: SceneTree, root: Node, action: String, cmd: Dictio
 	var cam := _find_camera(root)
 	match action:
 		"look":
-			var target := _resolve_point(root, cmd)
-			if target == null:
+			var target_v: Variant = _resolve_point(root, cmd)
+			if target_v == null:
 				return { "ok": false, "verb": "char_look", "error": "need at:[x,y,z] or node:<path>" }
+			var target: Vector3 = target_v
 			if root.has_method("_look_toward"):
 				root.call("_look_toward", target)
 			elif "_yaw" in root and "_pitch" in root and cam != null:
@@ -287,16 +296,16 @@ static func char_action(tree: SceneTree, root: Node, action: String, cmd: Dictio
 		"move":
 			if cam == null:
 				return { "ok": false, "verb": "char_move", "error": "no camera to move" }
-			var dest := _resolve_point(root, cmd)
-			if dest == null and cmd.has("forward"):
+			var dest_v: Variant = _resolve_point(root, cmd)
+			if dest_v == null and cmd.has("forward"):
 				var fwd := -cam.global_transform.basis.z
 				fwd.y = 0.0
-				dest = cam.global_position + fwd.normalized() * float(cmd["forward"])
-			if dest == null:
+				dest_v = cam.global_position + fwd.normalized() * float(cmd["forward"])
+			if dest_v == null:
 				return { "ok": false, "verb": "char_move", "error": "need to:[x,y,z] or forward:<n>" }
 			# Teleport-style move (the harness verifies reachability/state, not the walk animation):
 			# set the camera position directly, preserving y unless a full point was given.
-			cam.global_position = dest
+			cam.global_position = dest_v
 			await tree.process_frame
 			return { "ok": true, "verb": "char_move", "camera_position": _v3(cam.global_position) }
 		"interact":
