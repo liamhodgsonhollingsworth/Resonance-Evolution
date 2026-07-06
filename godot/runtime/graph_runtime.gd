@@ -41,6 +41,14 @@ var descend_budget: int = 0
 func _init() -> void:
 	register("Const", PrimConst)
 	register("Math", PrimMath)
+	# The pure OPERATOR siblings of Math (same source shape, an op table in the DATA). Compare
+	# emits a bool predicate (<,<=,==,!=,>,>=); Logic gates bools (and/or/xor/not/...); Select is
+	# the MUX/ternary (cond ? a : b). Together they make "near Y AND pressed X" and if/else
+	# branches single wire-able nodes — the missing operators for the interaction spine +
+	# visi-sonor's BRAIN threshold logic. New arrangements, never new engine code.
+	register("Compare", PrimCompare)
+	register("Logic", PrimLogic)
+	register("Select", PrimSelect)
 	register("Log", PrimLog)
 	register("Model", PrimModel)
 	register("Transform", PrimTransform)
