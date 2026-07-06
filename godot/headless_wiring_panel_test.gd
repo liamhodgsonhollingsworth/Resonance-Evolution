@@ -73,7 +73,7 @@ func _run() -> void:
 	_check("resolve_target returns the aimed object id", resolved == obj_id)
 
 	# --- 2. #049 GATE: bind via the REAL backend, assert the panel mounts IN THE RUNNING ROOM --------
-	var bound_path := room.call("bind_object", obj_id, true)   # force=true => mount headless (the #049 hook)
+	var bound_path = room.call("bind_object", obj_id, true)   # force=true => mount headless (the #049 hook)
 	await process_frame
 	await process_frame
 	_check("bind_object returned the object's arrangement path", String(bound_path) != "")
@@ -93,7 +93,7 @@ func _run() -> void:
 	GraphPanelMount.close_panel(room)
 	await process_frame
 	_check("panel closed before the text-verb check", not GraphPanelMount.panel_is_open(room))
-	var text_path := room.call("bind_object_text", obj_id)   # headless text verb, no GUI
+	var text_path = room.call("bind_object_text", obj_id)   # headless text verb, no GUI
 	await process_frame
 	await process_frame
 	_check("T: text verb bind_object_text mounted the SAME panel path", String(text_path) == String(bound_path))
@@ -138,10 +138,12 @@ func _run() -> void:
 	# --- 5. CONNECTION-ISOLATED-FAILURE (gate C): severing one wire kills exactly one behaviour -------
 	# Re-seed a 2-wire arrangement: Const->WorldAction(log) AND Const->a second independent Log, so we can
 	# sever ONE and prove the OTHER still runs. Written straight to the file + hot-loaded (the real path).
+	# Const value is a STRING ("go") so it round-trips through the JSON file unambiguously (a JSON number
+	# reloads as a float — 3 -> 3.0 — which would make the message assertion brittle; a string does not).
 	var two := {
 		"format": "resonance.arrangement/v1", "name": "isolation",
 		"nodes": [
-			{ "id": "k", "type": "Const", "params": { "value": 3 } },
+			{ "id": "k", "type": "Const", "params": { "value": "go" } },
 			{ "id": "a", "type": "WorldAction", "params": { "op": "log" } },
 			{ "id": "b", "type": "Log", "params": {} },
 		],
@@ -155,7 +157,7 @@ func _run() -> void:
 	var o_full := rt.evaluate()
 	var a_full: Dictionary = o_full.get("a", {}).get("result", {})
 	_check("C: with both wires, the WorldAction behaviour fires (log got the value)",
-		String(a_full.get("op")) == "log" and String(a_full.get("message")) == "3")
+		String(a_full.get("op")) == "log" and String(a_full.get("message")) == "go")
 	# sever ONLY the wire into 'a'; 'b' keeps its wire.
 	two["wires"] = [ { "from": "k", "out": "value", "to": "b", "in": "in" } ]
 	_write_json(String(bound_path), two)
@@ -166,7 +168,7 @@ func _run() -> void:
 	_check("C: severing a's wire killed EXACTLY a's behaviour (its input is now empty)",
 		String(a_cut.get("message", "")) == "")
 	_check("C: the OTHER node (b) still ran on its intact wire (isolated failure)",
-		b_node != null and Primitive.as_num(b_node.last_value) == 3.0)
+		b_node != null and str(b_node.last_value) == "go")
 
 	# --- 6. CLOSE -----------------------------------------------------------------------------------
 	var closed := GraphPanelMount.close_panel(room)

@@ -32,7 +32,8 @@ func output_ports() -> Array:
 	return [{ "name": "result", "type": "any" }]
 
 func evaluate(inputs: Dictionary) -> Dictionary:
-	var op := String(inputs.get("op", params.get("op", "noop")))
+	# str() (not String()) so a wired `op` Variant coerces safely; String() throws on a non-string.
+	var op := str(inputs.get("op", params.get("op", "noop")))
 	# Merge params defaults with wired inputs (wired inputs WIN), exactly as PrimApertureAction resolves
 	# its action/comment. Only non-null wire values override, so an unwired port falls back to params.
 	var args: Dictionary = {}

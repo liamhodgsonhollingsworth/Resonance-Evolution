@@ -87,7 +87,11 @@ static func _build_overlay(host: Node, panel: GraphPanel, arrangement_path: Stri
 	_size_root_to_viewport(root)
 	var vp := root.get_viewport()
 	if vp != null:
-		vp.size_changed.connect(_size_root_to_viewport.bind(root))
+		# Keep the overlay root sized to the window as it resizes. Guard against a duplicate connect
+		# (reopening the panel while a prior overlay is still queued-free would otherwise re-add this).
+		var cb := _size_root_to_viewport.bind(root)
+		if not vp.size_changed.is_connected(cb):
+			vp.size_changed.connect(cb)
 	return layer
 
 

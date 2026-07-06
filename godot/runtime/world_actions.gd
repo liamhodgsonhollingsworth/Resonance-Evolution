@@ -105,7 +105,9 @@ func _register_builtins() -> void:
 ## "log": record a message through the injected sink (or Godot's print). The simplest real effect —
 ## proves the arrangement can reach the world and get a receipt back.
 func _op_log(args: Dictionary) -> Dictionary:
-	var msg := String(args.get("message", args.get("value", "")))
+	# str() (not String()) — the wired `value` may be any Variant (an int/float from a Const); the
+	# String() type-constructor only accepts String/StringName/NodePath and throws on a bare number.
+	var msg := str(args.get("message", args.get("value", "")))
 	if _log_sink.is_valid():
 		_log_sink.call(msg)
 	else:
@@ -118,8 +120,9 @@ func _op_log(args: Dictionary) -> Dictionary:
 ## as a diff-hotload. This keeps the effect node-not-edit: the action is data; the application is the
 ## already-existing write seam.
 func _op_set_param(args: Dictionary) -> Dictionary:
-	var target := String(args.get("target", ""))
-	var key := String(args.get("key", ""))
+	# str() coerces any wired Variant target/key id to text (String() would throw on a wired number).
+	var target := str(args.get("target", ""))
+	var key := str(args.get("key", ""))
 	if target == "" or key == "":
 		return { "ok": false, "op": "set_param", "error": "target and key are required" }
 	return { "ok": true, "op": "set_param", "target": target, "key": key,
