@@ -45,7 +45,9 @@ func _initialize() -> void:
 	s.add_child(s.assets)
 	s.assets.load_manifest()
 	s._extend_palette_with_assets()
-	get_root().add_child(s)
+	# NB: do NOT add the sandbox script to the SceneTree root — that fires its _ready(), which builds its
+	# OWN store + re-seeds the 40-block starter world, clobbering this test's state. The world-builder test
+	# uses the same detached pattern. We drive the data seams directly (headless).
 
 	var cube := s._palette_index("Cube")
 	var ball := s._palette_index("Ball")
@@ -132,7 +134,6 @@ func _initialize() -> void:
 	s2.add_child(s2.assets)
 	s2.assets.load_manifest()
 	s2._extend_palette_with_assets()
-	get_root().add_child(s2)
 	if asset_id != "":
 		s2.assets.request_sync(asset_id)
 	s2._apply_world_data(arr)   # arr is an arrangement; _apply_world_data deserializes it
@@ -183,10 +184,67 @@ func _initialize() -> void:
 			found_at_x7 = true
 	_check("4c the mutated block moved to world x=7 after hotload", found_at_x7)
 
+	# ══ 5) ON-DISK ROUND-TRIP + LIVE HOTLOAD through the real store (the running-path proof) ═══════
+	# The sandbox saves to disk as a resonance.arrangement/v1 file, the running sandbox reloads it, and
+	# EDITING that file on disk hotloads the LIVE world in place (verification #1 + #2 in the real path).
+	var WorldStoreScript := preload("res://runtime/world_store.gd")
+	var tmp := ProjectSettings.globalize_path("user://test_sandbox_arrangement_store")
+	_rm_rf(tmp)
+	s.store = WorldStoreScript.new(tmp)
+	s.world_name = "arr_world"
+	var vsave: int = s.store.save_version(s.world_name, s._serialize_world())
+	_check("5a save writes v1 to the store", vsave == 1)
+	var on_disk: Dictionary = s.store.load_world(s.world_name)
+	_check("5b the ON-DISK file is a resonance.arrangement/v1 (format survived the store)",
+		WorldArrangement.is_arrangement(on_disk))
+	# reload the on-disk arrangement into a THIRD sandbox -> identical world (disk round-trip)
+	var s3 = SandboxScript.new()
+	s3._headless = true
+	s3._build_palette()
+	s3._default_hotbar()
+	s3._build_world_nodes()
+	s3.assets = AssetLibraryScript.new()
+	s3.add_child(s3.assets)
+	s3.assets.load_manifest()
+	s3._extend_palette_with_assets()
+	if asset_id != "":
+		s3.assets.request_sync(asset_id)
+	s3.store = WorldStoreScript.new(tmp)
+	s3.world_name = "arr_world"
+	var s3_loaded := s3._load_active_world()
+	_check("5c the on-disk arrangement loads back (disk round-trip: 3 blocks + 2 objects)",
+		s3_loaded and s3.world.size() == 3 and s3.objects.size() == 2)
+	# LIVE HOTLOAD: append-only save a MUTATED arrangement (move the (0,0,0) block to cell (5,5,5)),
+	# then the running s3's file watcher (_poll_world_file) picks up the newer version in place.
+	var disk_arr: Dictionary = on_disk.duplicate(true)
+	for n in disk_arr.get("nodes", []):
+		if String(n.get("id", "")) == "blk_0_0_0_at":
+			(n["_sandbox"] as Dictionary)["cell"] = [5, 5, 5]
+			n["params"]["position"] = [5.0, 5.0, 5.0]
+	s.store.save_version(s.world_name, disk_arr)   # writes v2 to the same store dir s3 watches
+	s3._poll_world_file()                          # the running sandbox's on-disk hotload path
+	await process_frame
+	_check("5d live on-disk hotload moved the block to cell (5,5,5) in the running world",
+		s3.world.has(Vector3i(5, 5, 5)) and not s3.world.has(Vector3i(0, 0, 0)) and s3.world.size() == 3)
+	s3.free()
+	_rm_rf(tmp)
+
 	s.free()
 	s2.free()
 	print("RESULT: ", "ALL PASS" if _fail == 0 else "FAILURES PRESENT (%d)" % _fail)
 	quit(0 if _fail == 0 else 1)
+
+
+## Recursive delete of a test dir (absolute path). Only ever pointed at user:// temp dirs.
+func _rm_rf(path: String) -> void:
+	var d := DirAccess.open(path)
+	if d == null:
+		return
+	for f in d.get_files():
+		DirAccess.remove_absolute(path.path_join(f))
+	for sub in d.get_directories():
+		_rm_rf(path.path_join(sub))
+	DirAccess.remove_absolute(path)
 
 
 func _all_node3d(root: Node) -> Array:
