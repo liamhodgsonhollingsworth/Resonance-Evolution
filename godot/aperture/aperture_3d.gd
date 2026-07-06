@@ -167,7 +167,9 @@ func _ready() -> void:
 		_build_hud()
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_apply_camera_rotation()
-	if _shot_board_requested():
+	if _shot_home_door_requested():
+		await _take_home_door_shot()
+	elif _shot_board_requested():
 		await _take_board_shot()
 	elif _shot_requested():
 		await _take_shot()
@@ -888,6 +890,37 @@ func _shot_requested() -> bool:
 
 func _shot_board_requested() -> bool:
 	return "--shot-board" in OS.get_cmdline_user_args() or "--shot-board" in OS.get_cmdline_args()
+
+
+func _shot_home_door_requested() -> bool:
+	return "--shot-home-door" in OS.get_cmdline_user_args() or "--shot-home-door" in OS.get_cmdline_args()
+
+
+## Windowed proof that the NEW Home door is present in the current aperture room (Liam 2026-07-06 slice
+## 1). Frames the +X wall where the Home door sits, so the screenshot shows the glowing door + its
+## "Home" lintel sign inside the room, then quits. --shot-home-door needs a display.
+func _take_home_door_shot() -> void:
+	_did_shot = true
+	if _headless:
+		print("[aperture_3d] --shot-home-door needs a display. Exit 2.")
+		get_tree().quit(2)
+		return
+	# Stand in the room facing the +X wall (where the Home door is at [11.4,0,0]); the door + sign fill frame.
+	_pos = Vector3(4.0, 1.9, 0.0)
+	_cam.position = _pos
+	_yaw = deg_to_rad(-90.0)   # look toward +X
+	_pitch = 0.05
+	_apply_camera_rotation()
+	await get_tree().create_timer(1.0).timeout
+	for _i in 8:
+		await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	var out := "res://docs/aperture_home_door.png"
+	var img := get_viewport().get_texture().get_image()
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://docs"))
+	img.save_png(out)
+	print("[aperture_3d] home-door proof written: %s" % out)
+	get_tree().quit(0)
 
 
 ## Windowed proof that the 3D computer opens the 2D board as a SAME-WINDOW overlay (spec item 4).
