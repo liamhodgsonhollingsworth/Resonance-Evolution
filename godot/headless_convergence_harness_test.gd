@@ -25,6 +25,7 @@ func _initialize() -> void:
 	ok = _converging_contract() and ok
 	ok = _non_converging_contract() and ok
 	ok = _metric_plugin_seam() and ok
+	ok = _adversarial_robustness() and ok
 	ok = _diff_hotload_same_instance() and ok
 	ok = _connection_isolated_failure() and ok
 	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
@@ -167,6 +168,79 @@ func _eval_metric(metric: String, candidate, reference):
 	var v = out.get("d", {}).get("d")
 	_free_rt(rt)
 	return v
+
+## Like _eval_metric but the metric param is passed RAW (untyped) — used by the adversarial cases that
+## drive a NON-STRING metric (int / null) through the node exactly as a malformed arrangement would. The
+## params dict carries whatever Variant is handed in; str() inside CompareDiff.evaluate() must coerce it.
+func _eval_metric_raw(metric, candidate, reference):
+	var rt := GraphRuntime.new()
+	get_root().add_child(rt)
+	var arr := {
+		"format": "resonance.arrangement/v1",
+		"nodes": [
+			{ "id": "c", "type": "Const", "params": { "value": candidate } },
+			{ "id": "r", "type": "Const", "params": { "value": reference } },
+			{ "id": "d", "type": "CompareDiff", "params": { "metric": metric } },
+		],
+		"wires": [
+			{ "from": "c", "out": "value", "to": "d", "in": "candidate" },
+			{ "from": "r", "out": "value", "to": "d", "in": "reference" },
+		],
+	}
+	rt.load_arrangement(arr)
+	var out := rt.evaluate()
+	var v = out.get("d", {}).get("d")
+	_free_rt(rt)
+	return v
+
+# -- ADVERSARIAL ROBUSTNESS: the 3 reproduced defects must be fixed, in the REAL runtime ------------
+# Each case is a live GraphRuntime evaluate() (never an isolated call), reading the wired `d` off the
+# graph — so a regression re-surfaces here exactly as the verifier reproduced it.
+func _adversarial_robustness() -> bool:
+	var ok := true
+
+	# BUG 1 — non-string metric must NOT crash evaluate() (String() constructor threw on a non-string).
+	# It must resolve via str() to a name that isn't registered -> the declared +INF sentinel, no abort.
+	# A crash would make evaluate() return d=<null> instead of +INF; assert we get the sentinel float.
+	var d_int = _eval_metric_raw(42, 1.0, 2.0)
+	ok = _check("ADV BUG1: non-string metric (int 42) => +INF sentinel, no crash (d=%s)" % [d_int],
+		typeof(d_int) == TYPE_FLOAT and d_int == INF) and ok
+	var d_null = _eval_metric_raw(null, 1.0, 2.0)
+	ok = _check("ADV BUG1: null metric => +INF sentinel, no crash (d=%s)" % [d_null],
+		typeof(d_null) == TYPE_FLOAT and d_null == INF) and ok
+
+	# BUG 2 — dict_equality with a Dictionary candidate vs a scalar reference threw "Invalid operands
+	# 'Dictionary' and 'float'"; the error was swallowed and it returned 0.0 ("identical") for values that
+	# are NOT equal. It must now report NON-EQUAL (1.0), never a false 0.0.
+	var d_ds = _eval_metric("dict_equality", {"a": 1}, 5.0)
+	ok = _check("ADV BUG2: dict_equality Dictionary-vs-scalar => 1.0 non-equal (not a false 0.0) (d=%s)" % [d_ds],
+		float(d_ds) == 1.0) and ok
+	# and the symmetric case (scalar candidate vs Dictionary reference) is also non-equal, not a crash.
+	var d_sd = _eval_metric("dict_equality", 5.0, {"a": 1})
+	ok = _check("ADV BUG2: dict_equality scalar-vs-Dictionary => 1.0 non-equal (symmetric) (d=%s)" % [d_sd],
+		float(d_sd) == 1.0) and ok
+	# Regression guard: genuinely deep-equal dicts still score 0.0 (the fix didn't break the happy path).
+	ok = _check("ADV BUG2: dict_equality still 0.0 for deep-equal dicts (happy path intact)",
+		_eval_metric("dict_equality", {"a": [1, 2]}, {"a": [1, 2]}) == 0.0) and ok
+	# and a same-shape but differing dict is still 1.0.
+	ok = _check("ADV BUG2: dict_equality still 1.0 for same-shape differing dicts",
+		_eval_metric("dict_equality", {"a": [1, 2]}, {"a": [1, 9]}) == 1.0) and ok
+
+	# BUG 3 — l2 over RAGGED (mismatched-length) numeric arrays used to fall to as_num(Array)=0 on both
+	# sides and return a FALSE 0.0 "identical" for clearly-different ragged arrays. It must now report a
+	# large/+INF distance (not a false 0). [1,2,3] vs [0,0] are not componentwise-comparable => +INF.
+	var d_ragged = _eval_metric("l2", [1.0, 2.0, 3.0], [0.0, 0.0])
+	ok = _check("ADV BUG3: l2 ragged arrays => +INF, NOT a false 0.0 (d=%s)" % [d_ragged],
+		typeof(d_ragged) == TYPE_FLOAT and d_ragged == INF and float(d_ragged) != 0.0) and ok
+	# shape mismatch (Array vs scalar) is likewise not a false 0.0.
+	var d_shape = _eval_metric("l2", [1.0, 2.0], 0.0)
+	ok = _check("ADV BUG3: l2 Array-vs-scalar => +INF, not a false 0.0 (d=%s)" % [d_shape],
+		typeof(d_shape) == TYPE_FLOAT and d_shape == INF) and ok
+	# Regression guard: equal-length arrays still compute the true Euclidean distance (happy path intact).
+	ok = _check("ADV BUG3: l2 equal-length arrays still correct ([3,4] vs [0,0] == 5)",
+		_eval_metric("l2", [3.0, 4.0], [0.0, 0.0]) == 5.0) and ok
+
+	return ok
 
 # -- D ideal: a candidate hot-load is a DIFF — the SAME CompareDiff instance re-evaluates ----------
 func _diff_hotload_same_instance() -> bool:
