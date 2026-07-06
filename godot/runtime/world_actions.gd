@@ -37,6 +37,12 @@ extends RefCounted
 ## An op absent here is a DECLARED NO-OP (see perform()), never an error.
 var _ops: Dictionary = {}
 
+## The BUILT-IN op names a host-wide registration may NOT shadow. register_host() refuses any op that
+## collides with one of these so a device/ui/app family (or a careless later slice) can never silently
+## override the load-bearing primitives — the exact cross-slice N-violation the Slice-7 verifier flagged.
+## Kept in ONE place so it stays in sync with _register_builtins() (the single source of the builtin set).
+const _BUILTIN_OPS := ["log", "set_param", "noop"]
+
 ## HOST-WIDE ops registered once at boot (Dreams-arc Slice 7 seam). A host with hardware (a room of
 ## lights / an IR blaster) registers its device.* family HERE via register_host() at boot; thereafter
 ## EVERY WorldActions instance — including the fresh one PrimWorldAction builds per-evaluate — inherits
@@ -49,10 +55,21 @@ static var _host_ops: Dictionary = {}
 ## Register (or replace) a HOST-WIDE op that every subsequently-constructed WorldActions inherits. The
 ## boot seam for the device.*/app.* families (a host calls this once; DeviceActions.register_device_ops
 ## routes through here). Additive by construction — never touches the per-instance dispatch.
-static func register_host(op: String, fn: Callable) -> void:
+##
+## THE BUILTIN-SHADOW GUARD (Slice 5, closing the cross-slice N-violation the Slice-7 verifier flagged):
+## a host op that collides with a BUILTIN name (log/set_param/noop) is REFUSED — it is NOT registered and
+## register_host returns false with a warning, rather than silently overriding a load-bearing primitive.
+## This makes "add a world effect == register one op" safe by construction: a new family can never quietly
+## replace the sink the whole system logs through / diff-hotloads through. Returns true iff the op was
+## registered (bool so a boot step / test can assert the refusal). A non-shadowing op registers as before.
+static func register_host(op: String, fn: Callable) -> bool:
 	if op == "":
-		return
+		return false
+	if _BUILTIN_OPS.has(op):
+		push_warning("WorldActions.register_host: refusing to shadow builtin op '%s' (host op ignored)" % op)
+		return false
 	_host_ops[op] = fn
+	return true
 
 
 ## Remove a host-wide op (returns to the "unknown op = declared no-op" baseline for it). No-op if absent.
