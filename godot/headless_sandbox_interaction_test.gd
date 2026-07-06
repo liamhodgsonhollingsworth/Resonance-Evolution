@@ -177,6 +177,22 @@ func _initialize() -> void:
 	# ── C-MAP) the DATA-DRIVEN action map (control extensibility) ─────────────────────────────────────
 	ok = _check("CM1 the action map is a dictionary with the always-on keys (F1 now owned by the global GizmoNote autoload, not this map)", s._key_actions.has(KEY_E) and s._key_actions.has(KEY_Q) and not s._key_actions.has(KEY_F1)) and ok
 
+	# ── C-REACH) CONFIGURABLE REACH (Liam item 1): the params file tunes reach_distance live ──────────
+	var prev_reach: float = s.reach_distance
+	s._apply_settings({ "reach_distance": 3.5 })
+	ok = _check("CR1 params reach_distance is honoured (place/destroy/grab/target reach is configurable)", absf(s.reach_distance - 3.5) < 1e-6) and ok
+	# an object beyond the (now short) reach is NOT targetable; within reach it is.
+	s._seed_world({ "blocks": [] }, true)
+	s._clear_objects()
+	var far_id: String = s._place_block_free(s._palette_index("Cube"), Vector3(0, 0, -6.0), 0.0)
+	s._cam.position = Vector3(0, 0, 0)
+	s._look_toward(Vector3(0, 0, -6.0))
+	ok = _check("CR2 an object beyond reach_distance is NOT picked (reach actually gates targeting)", String((s._pick_object() as Dictionary).get("id", "")) == "") and ok
+	s._apply_settings({ "reach_distance": 10.0 })
+	ok = _check("CR3 widening reach makes the same object targetable again", String((s._pick_object() as Dictionary).get("id", "")) == far_id) and ok
+	s.reach_distance = prev_reach
+	s._clear_objects()
+
 	# ── C-FB) IN-SCENE FEEDBACK (F1) writes a scene_feedback row (overarching ask) ────────────────────
 	var fb_file: String = ProjectSettings.globalize_path("user://test_interaction_feedback.jsonl")
 	if FileAccess.file_exists(fb_file):

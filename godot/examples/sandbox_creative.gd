@@ -2376,6 +2376,9 @@ func _apply_settings(cfg: Dictionary) -> void:
 	grid_size = float(cfg.get("grid_size", GRID))
 	fly_speed = float(cfg.get("fly_speed", 8.0))
 	mouse_sens = float(cfg.get("mouse_sensitivity", 0.0025))
+	# CONFIGURABLE REACH (Liam item 1): the ONE knob for how far place/destroy/grab/target reach, in
+	# metres. Read from the params file (hot-reloadable) so Liam can tune it live; defaults to the export.
+	reach_distance = float(cfg.get("reach_distance", reach_distance))
 	var np := OS.get_environment("SANDBOX_NOTES_PATH")
 	if np == "":
 		np = String(cfg.get("notes_path", DEFAULT_NOTES_PATH))
