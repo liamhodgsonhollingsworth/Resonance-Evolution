@@ -1,0 +1,126 @@
+extends RefCounted
+## WorldActions — a param-configured SIDE-EFFECT SINK REGISTRY (Dreams-arc Slice 1).
+##
+## This is the shared "Action" module: the ONE place a wired arrangement is allowed to reach OUT of
+## pure dataflow and cause an effect in the world. It is modelled DIRECTLY on the proof that such a
+## sink is legal inside a Primitive.evaluate() — ApertureActions (runtime/aperture_actions.gd), wrapped
+## by PrimApertureAction: a params-configured writer whose one public method returns a plain receipt.
+## WorldActions generalizes that from ONE hard-wired effect (a card decision) to a small, EXTENSIBLE
+## registry of named ops, so "add a world effect" == "register one op", never an engine edit.
+##
+## THE CONTRACT (load-bearing, and what the later `device.*` / `app.*` / `spotify.*` families inherit):
+##   • An op is a pure NAME + a param dict + the wire inputs. `perform(op, args)` returns a DATA receipt
+##     `{ ok: bool, op: String, ... }` — never a live node, never a signal. So a WorldAction node stays a
+##     normal dataflow node whose OUTPUT is serialisable, exactly like every other primitive.
+##   • UNKNOWN OP = A DECLARED NO-OP (not an error). `perform("device.ir_send", …)` on a host with no IR
+##     blaster returns `{ ok: true, op: "device.ir_send", noop: true, reason: "unknown op" }`. This is the
+##     property that lets the SAME arrangement run on a game host, a website, a phone, and a room of real
+##     lights: a host simply registers the ops it can honour; everything else silently no-ops. (The wide
+##     device/app catalog is a LATER slice — this module ships the minimal set that proves the seam.)
+##   • Effects are routed through an injectable SINK so a headless test drives the exact same code with
+##     zero real side effects (the aperture_actions file-mode pattern). Default sink = Godot's logger.
+##
+## MINIMAL OP SET (Slice 1 — deliberately tiny; the catalog comes later, per the no-auto-generalize rule):
+##   • "log"       — record a message. args: { message } (or the wired `value`). The canonical harmless
+##                   effect; proves the sink round-trips. Receipt carries the logged text.
+##   • "set_param" — request a single param write on a target node in an arrangement. args:
+##                   { target, key, value }. This does NOT mutate anything by itself — it emits a
+##                   *set_param op receipt* (target/key/value as DATA) that a consumer (the graph_store
+##                   write seam / a host) applies as a diff-hotload. Keeping it declarative preserves
+##                   node-not-edit: the effect is a data receipt, the application is the existing write path.
+##   • "noop"      — an explicit do-nothing (useful as a wired placeholder / disabled action).
+##
+## Portability: no Godot Node/scene types in the public surface — only Dictionaries + Strings + a plain
+## Callable sink. A GDScript ≡ Python ≡ JS re-implementation only has to match `perform`'s receipt dict.
+
+## The ops this registry can honour. name(String) -> Callable(args:Dictionary) -> receipt(Dictionary).
+## An op absent here is a DECLARED NO-OP (see perform()), never an error.
+var _ops: Dictionary = {}
+
+## Where "log"-family effects go. A Callable(String) — default prints through Godot's logger. A test
+## injects its own sink (e.g. append to an Array) so it observes the effect with no real side effect.
+var _log_sink: Callable = Callable()
+
+## Config carried from the node's params (mode / target defaults / by-line etc.), mirrored from the
+## ApertureActions(params) shape. Unused keys are ignored; present so hosts can pass through settings.
+var config: Dictionary = {}
+
+
+## `cfg` mirrors PrimApertureAction's params dict. `log_sink` (optional) overrides where "log" writes;
+## when unset, logs go through Godot's print. Registers the minimal built-in op set.
+func _init(cfg: Dictionary = {}, log_sink: Callable = Callable()) -> void:
+	config = cfg.duplicate(true) if cfg != null else {}
+	_log_sink = log_sink
+	_register_builtins()
+
+
+## Register (or replace) an op. This is the ENTIRE extension surface — a new world effect is one call
+## here (a host registers its `device.*` at boot; a later slice registers the wide catalog). Additive
+## by construction: registering an op never touches the dispatch below.
+func register(op: String, fn: Callable) -> void:
+	if op == "":
+		return
+	_ops[op] = fn
+
+
+## Is `op` honoured by this registry? (False => perform() returns a declared no-op receipt.)
+func has_op(op: String) -> bool:
+	return _ops.has(op)
+
+
+## The sorted list of registered op names (drives the panel's op picker + tests).
+func ops() -> Array:
+	var names := _ops.keys()
+	names.sort()
+	return names
+
+
+## Perform one op. Returns a DATA receipt. The load-bearing rule: an UNKNOWN op is a DECLARED NO-OP
+## (ok:true, noop:true) — NOT an error — so an arrangement authored against a richer host still runs
+## here, its unsupported effects harmlessly skipped. `args` merges the node params with the wire inputs
+## (the caller decides precedence; PrimWorldAction feeds wired inputs over params).
+func perform(op: String, args: Dictionary = {}) -> Dictionary:
+	if op == "" or op == "noop":
+		return { "ok": true, "op": "noop", "noop": true }
+	if not _ops.has(op):
+		# The portability keystone: unknown op is a declared no-op, never a failure.
+		return { "ok": true, "op": op, "noop": true, "reason": "unknown op" }
+	var fn: Callable = _ops[op]
+	if not fn.is_valid():
+		return { "ok": false, "op": op, "error": "op has no valid handler" }
+	var receipt = fn.call(args)
+	if typeof(receipt) != TYPE_DICTIONARY:
+		return { "ok": true, "op": op, "result": receipt }
+	return receipt
+
+
+# --- built-in ops ----------------------------------------------------------------------------------
+
+func _register_builtins() -> void:
+	register("log", _op_log)
+	register("set_param", _op_set_param)
+	register("noop", func(_a): return { "ok": true, "op": "noop", "noop": true })
+
+
+## "log": record a message through the injected sink (or Godot's print). The simplest real effect —
+## proves the arrangement can reach the world and get a receipt back.
+func _op_log(args: Dictionary) -> Dictionary:
+	var msg := String(args.get("message", args.get("value", "")))
+	if _log_sink.is_valid():
+		_log_sink.call(msg)
+	else:
+		print("[WorldActions.log] ", msg)
+	return { "ok": true, "op": "log", "message": msg }
+
+
+## "set_param": emit a DECLARATIVE set-param receipt (target/key/value as DATA). It does NOT mutate a
+## node itself — it returns the write REQUEST, which the existing graph_store / host write path applies
+## as a diff-hotload. This keeps the effect node-not-edit: the action is data; the application is the
+## already-existing write seam.
+func _op_set_param(args: Dictionary) -> Dictionary:
+	var target := String(args.get("target", ""))
+	var key := String(args.get("key", ""))
+	if target == "" or key == "":
+		return { "ok": false, "op": "set_param", "error": "target and key are required" }
+	return { "ok": true, "op": "set_param", "target": target, "key": key,
+		"value": args.get("value") }
