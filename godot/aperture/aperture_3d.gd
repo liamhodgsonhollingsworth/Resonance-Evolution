@@ -52,6 +52,11 @@ const NOTES_PATH := "G:/Wavelet/Alethea-cc/state/sandbox/notes.jsonl"
 const WORLD_NAME := "aperture_room"
 const SHOT_PATH := "res://docs/aperture_3d.png"
 
+# THE ROOM AS A NODE ARRANGEMENT (Liam 2026-07-06): the room shell (floor + ceiling + 4 walls),
+# the always-on sky, and the fill light are all one hotloading arrangement, NOT imperative geometry.
+# Edit this file while the aperture runs and the room diff-hotloads (move/resize a wall, retint the sky).
+const ROOM_ARRANGEMENT_PATH := "res://aperture/aperture_room_shell.json"
+
 const ROOM_HALF := 12.0            # room is 2*ROOM_HALF on X/Z
 const ROOM_HEIGHT := 6.0
 const WALL_MARGIN := 0.4           # keep the player this far off the walls (solid-wall collision)
@@ -73,6 +78,11 @@ var store = null
 var _cam: Camera3D
 var _objects_root: Node3D
 var _doors_root: Node3D
+
+# -- room-as-arrangement (the node-driven shell + sky + lights; diff-hotloads) ----------------------
+var _room_runtime: GraphRuntime = null       # interprets aperture_room_shell.json into live primitives
+var _room_renderer: GodotSceneRenderer = null # the delegate that builds the shell + env + lights
+var _room_arr_mtime := -1                     # mtime of the arrangement JSON (poll for hotload)
 var _hud: CanvasLayer
 var _status: Label
 var _hotbar_ui: HBoxContainer
@@ -94,6 +104,7 @@ var _note_open := false
 var _did_shot := false
 var _headless := false
 var _time := 0.0
+var _time_since_arr_poll := 0.0    # throttles the room-arrangement mtime poll (hotload)
 var _doors: Array = []             # DoorGateway instances (polled for walk-in)
 
 # The doors to place in the room. DATA - each is a SceneTransition target + placement. Adding a portal
@@ -178,6 +189,17 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_time += delta
 	_tick_objects(delta)
+	# HOTLOAD the room arrangement: if aperture_room_shell.json changed on disk, re-load + diff-render
+	# the shell/sky/lights in place (the runtime keeps unchanged primitives; only edited nodes update).
+	# Polled every ~0.4s so an edit-and-save updates the LIVE room without a restart. Skips in a --shot
+	# run (nothing to hotload) and is cheap when the mtime is unchanged.
+	if not _did_shot:
+		_time_since_arr_poll += delta
+		if _time_since_arr_poll >= 0.4:
+			_time_since_arr_poll = 0.0
+			var m := _room_arr_file_mtime()
+			if m != _room_arr_mtime:
+				_reload_room_arrangement()
 	if _headless or _did_shot:
 		return
 	_update_movement(delta)
@@ -188,63 +210,70 @@ func _process(delta: float) -> void:
 # == ROOM (bounded, solid walls) ===================================================================
 
 func _build_room() -> void:
-	# Sky + soft ambient so the room is lit without a sun glare.
-	var env := WorldEnvironment.new()
-	var e := Environment.new()
-	e.background_mode = Environment.BG_COLOR
-	e.background_color = Color(0.06, 0.07, 0.09)
-	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color(0.5, 0.52, 0.58)
-	e.ambient_light_energy = 0.6
-	env.environment = e
-	add_child(env)
-	var key := DirectionalLight3D.new()
-	key.rotation_degrees = Vector3(-55, -35, 0)
-	key.light_energy = 0.8
-	add_child(key)
-	# Floor.
-	var floor_mi := MeshInstance3D.new()
-	var fm := BoxMesh.new()
-	fm.size = Vector3(ROOM_HALF * 2.0, 0.2, ROOM_HALF * 2.0)
-	floor_mi.mesh = fm
-	floor_mi.position = Vector3(0, -0.1, 0)
-	var fmat := StandardMaterial3D.new()
-	fmat.albedo_color = Color(0.22, 0.23, 0.26)
-	fmat.roughness = 0.95
-	floor_mi.material_override = fmat
-	add_child(floor_mi)
-	# Ceiling.
-	var ceil_mi := MeshInstance3D.new()
-	ceil_mi.mesh = fm
-	ceil_mi.position = Vector3(0, ROOM_HEIGHT, 0)
-	var cmat := StandardMaterial3D.new()
-	cmat.albedo_color = Color(0.12, 0.13, 0.15)
-	ceil_mi.material_override = cmat
-	add_child(ceil_mi)
-	# Four solid walls (visual; collision is the movement clamp).
-	var wmat := StandardMaterial3D.new()
-	wmat.albedo_color = Color(0.17, 0.18, 0.22)
-	wmat.roughness = 0.9
-	var walls := [
-		[Vector3(0, ROOM_HEIGHT * 0.5, -ROOM_HALF), Vector3(ROOM_HALF * 2.0, ROOM_HEIGHT, 0.3)],
-		[Vector3(0, ROOM_HEIGHT * 0.5, ROOM_HALF), Vector3(ROOM_HALF * 2.0, ROOM_HEIGHT, 0.3)],
-		[Vector3(-ROOM_HALF, ROOM_HEIGHT * 0.5, 0), Vector3(0.3, ROOM_HEIGHT, ROOM_HALF * 2.0)],
-		[Vector3(ROOM_HALF, ROOM_HEIGHT * 0.5, 0), Vector3(0.3, ROOM_HEIGHT, ROOM_HALF * 2.0)],
-	]
-	for w in walls:
-		var wall := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = w[1]
-		wall.mesh = bm
-		wall.position = w[0]
-		wall.material_override = wmat
-		add_child(wall)
+	# THE ROOM IS A NODE ARRANGEMENT (Liam 2026-07-06): the floor + ceiling + 4 solid walls, the
+	# always-on sky, and the fill light are ONE arrangement (aperture_room_shell.json) the GraphRuntime
+	# interprets into live primitives and the GodotSceneRenderer delegate builds — exactly the
+	# load_arrangement -> evaluate -> render pattern lsystem_scene uses. Editing that JSON while the
+	# aperture runs diff-hotloads the room (see _reload_room_arrangement, polled in _process). We build
+	# geometry (render), sky (apply_environment), and lights (apply_lights) from the SAME evaluate().
+	#
+	# The room renderer mounts into a dedicated child so its shell instances / env / lights sit in a
+	# stable subtree and never collide with the player camera (no View node in the arrangement — the
+	# first-person _cam below stays authoritative), the placed objects, or the doors.
+	var room_root := Node3D.new()
+	room_root.name = "RoomShell"
+	add_child(room_root)
+	_room_runtime = GraphRuntime.new()
+	add_child(_room_runtime)
+	_room_renderer = GodotSceneRenderer.new()
+	room_root.add_child(_room_renderer)
+	_reload_room_arrangement()
+
 	_objects_root = Node3D.new()
 	_objects_root.name = "Objects"
 	add_child(_objects_root)
 	_doors_root = Node3D.new()
 	_doors_root.name = "Doors"
 	add_child(_doors_root)
+
+
+## Load (or hotload) the room arrangement: parse the JSON, DIFF it into the runtime (kept primitives
+## are updated in place, not rebuilt), evaluate the dataflow, then build the shell geometry + sky +
+## lights from the one evaluate() output. Called once at build and again whenever the JSON mtime
+## changes. Fail-open: a missing / malformed arrangement leaves the last-good room standing.
+func _reload_room_arrangement() -> void:
+	if _room_runtime == null or _room_renderer == null:
+		return
+	var data = _load_room_arrangement_data()
+	if typeof(data) != TYPE_DICTIONARY or (data as Dictionary).is_empty():
+		return
+	_room_runtime.load_arrangement(data)
+	var eval_output := _room_runtime.evaluate()
+	# Geometry (shell boxes) — the terminal Group descriptor becomes the live Node3D tree.
+	_room_renderer.render(eval_output, _room_runtime.arrangement)
+	# Sky + sun (mount on this scene so ambient/reflections light the whole room, not just the subtree).
+	_room_renderer.apply_environment(eval_output, _room_runtime.arrangement, self)
+	# Fill light(s) — mounted on this scene alongside the sky's sun.
+	_room_renderer.apply_lights(eval_output, _room_runtime.arrangement, self)
+	_room_arr_mtime = _room_arr_file_mtime()
+
+
+func _load_room_arrangement_data():
+	if not FileAccess.file_exists(ROOM_ARRANGEMENT_PATH):
+		push_warning("aperture_3d: room arrangement missing: %s" % ROOM_ARRANGEMENT_PATH)
+		return {}
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(ROOM_ARRANGEMENT_PATH))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_warning("aperture_3d: room arrangement is not valid JSON: %s" % ROOM_ARRANGEMENT_PATH)
+		return {}
+	return parsed
+
+
+func _room_arr_file_mtime() -> int:
+	var abs := ProjectSettings.globalize_path(ROOM_ARRANGEMENT_PATH)
+	if not FileAccess.file_exists(ROOM_ARRANGEMENT_PATH):
+		return -1
+	return int(FileAccess.get_modified_time(abs))
 
 
 func _build_camera() -> void:

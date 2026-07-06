@@ -74,6 +74,16 @@ func _init() -> void:
 	# Camera3D — and the glTF exporter turns into a glTF camera node, so the same single-scene view
 	# is portable to three.js / <model-viewer> / Blender. The "single scene -> static view" keystone.
 	register("View", PrimView)
+	# Environment: emits a renderer-NEUTRAL sky/environment descriptor as DATA (the always-on iterable
+	# sky as an arrangement, not a host-side sibling config block). Like View emits `view` data the
+	# renderer delegate turns into a live Camera3D, this emits `environment` data GodotSceneRenderer
+	# turns into a live Environment + Sky + sun. The sky is now a NODE on a wire, diff-hotloaded with
+	# the scene, and portable (a three.js delegate reads the same descriptor). See prim_environment.gd.
+	register("Environment", PrimEnvironment)
+	# Light: emits a renderer-NEUTRAL glTF-KHR_lights_punctual light descriptor as DATA (a light as an
+	# arrangement, not a hardcoded DirectionalLight3D). The renderer delegate (apply_lights) builds the
+	# live Godot light; a glTF exporter turns it into a KHR_lights_punctual node. See prim_light.gd.
+	register("Light", PrimLight)
 	# --- The SUPERVISED PAINTERLY EVOLVER as an arrangement (GZ-EVOLVE.1) -----------------------------
 	# The human-in-loop evolver loop is itself a NODE SYSTEM, not new engine logic: four primitives wired
 	# as DATA. The genomes + the evolver's OWN params (the meta_genome) live entirely in node params, so

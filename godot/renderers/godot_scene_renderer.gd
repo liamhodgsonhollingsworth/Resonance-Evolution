@@ -22,6 +22,17 @@ var _instances: Dictionary = {}
 # no View is present this stays null and any pre-existing hardcoded camera remains the active one.
 var _view_camera: Camera3D = null
 
+# The single live WorldEnvironment (+ its co-located sun DirectionalLight3D) this delegate builds from
+# an `environment` descriptor, kept across renders so a hotload RE-DRIVES it. Null until an Environment
+# descriptor is first seen. ADDITIVE: no Environment present -> stays null and any host env is untouched.
+var _world_env: WorldEnvironment = null
+var _env_sun: DirectionalLight3D = null
+
+# Live lights built from `light` descriptors, keyed by their producing (node_id, port) so a hotload
+# RE-DRIVES the same light instance (not rebuild) and vanished lights are pruned. ADDITIVE: an
+# arrangement with no Light node builds no lights and leaves any host lighting untouched.
+var _lights: Dictionary = {}  # key -> Light3D
+
 ## Build / update the live scene from one evaluate() output. Unchanged instances are reused
 ## (a live model survives re-wiring of everything around it); vanished ones are pruned.
 func render(eval_output: Dictionary, arrangement: Dictionary) -> void:
@@ -168,6 +179,160 @@ static func _resolve_aim(view: Dictionary, scene_roots: Array):
 	# Named but unresolved (e.g. the target's not a terminal root): aim at the world origin so a
 	# target-by-id view still frames the scene center instead of silently falling back to rotation.
 	return Vector3.ZERO
+
+# --- environment / sky (the renderer-neutral `environment` descriptor -> a live WorldEnvironment) ---
+# PURELY ADDITIVE, mirroring apply_view: render() is untouched, so an arrangement with no Environment
+# node renders exactly as before and any host-mounted environment stays. apply_environment() runs
+# ALONGSIDE render() only when an Environment descriptor is present; on hotload the SAME WorldEnvironment
+# (+ sun) is re-built from the new descriptor. When the descriptor is REMOVED the delegate's env + sun
+# are released so the had-then-removed contract holds too.
+
+static func is_environment(v) -> bool:
+	return typeof(v) == TYPE_DICTIONARY and String((v as Dictionary).get("kind", "")) == "sky"
+
+## Find the FIRST environment descriptor in an evaluate() output (stable sorted-id scan order).
+static func find_environment(eval_output: Dictionary) -> Dictionary:
+	var ids: Array = eval_output.keys()
+	ids.sort()
+	for node_id in ids:
+		var outs = eval_output[node_id]
+		if typeof(outs) != TYPE_DICTIONARY:
+			continue
+		for port in outs.keys():
+			if is_environment(outs[port]):
+				return outs[port]
+	return {}
+
+## Build / update the live WorldEnvironment + sun from one evaluate() output, ALONGSIDE render(). When
+## the output carries an Environment descriptor, the delegate mounts a WorldEnvironment (procedural sky)
+## + a sun DirectionalLight3D derived from the SAME descriptor (via PainterlySky.build, the single source
+## of truth). On hotload the previous env+sun are freed and rebuilt from the new descriptor (an Environment
+## resource is cheap to rebuild; no live 3D instance is lost). When NO Environment is present the previously
+## built env+sun are RELEASED. Returns the active WorldEnvironment, or null if none. `mount` defaults to
+## this renderer's own parent (so the env sits outside the possibly-transformed renderer subtree).
+func apply_environment(eval_output: Dictionary, _arrangement: Dictionary, mount: Node = null) -> WorldEnvironment:
+	var desc := find_environment(eval_output)
+	var parent: Node = mount if mount != null else (get_parent() if get_parent() != null else self)
+	if desc.is_empty():
+		if _world_env != null and is_instance_valid(_world_env):
+			_world_env.queue_free()
+		if _env_sun != null and is_instance_valid(_env_sun):
+			_env_sun.queue_free()
+		_world_env = null
+		_env_sun = null
+		return null
+	# Rebuild from the descriptor (PainterlySky is the single source of truth for sky+sun). Free the
+	# previous pair first so a hotload re-drives cleanly (no accumulation, no orphaned env).
+	if _world_env != null and is_instance_valid(_world_env):
+		_world_env.queue_free()
+	if _env_sun != null and is_instance_valid(_env_sun):
+		_env_sun.queue_free()
+	var built := PainterlySky.build(desc)
+	_world_env = WorldEnvironment.new()
+	_world_env.name = "ArrangementEnvironment"
+	_world_env.environment = built["environment"]
+	parent.add_child(_world_env)
+	_env_sun = built["sun"]
+	parent.add_child(_env_sun)
+	return _world_env
+
+# --- lights (the renderer-neutral `light` descriptor -> live Light3D nodes) -------------------------
+# PURELY ADDITIVE, mirroring apply_view/apply_environment. apply_lights() builds/re-drives a live
+# Light3D per `light` descriptor found in the evaluate() output, keyed by producing (node_id, port) so a
+# hotload re-drives in place and vanished lights are pruned. No Light node -> no lights built, host
+# lighting untouched.
+
+static func is_light(v) -> bool:
+	return typeof(v) == TYPE_DICTIONARY and String((v as Dictionary).get("kind", "")) == "light"
+
+## Gather every light descriptor in an evaluate() output as { key -> desc }, key = "node_id/port"
+## (stable across sibling churn). Stable sorted-id order for determinism.
+static func gather_lights(eval_output: Dictionary) -> Dictionary:
+	var out := {}
+	var ids: Array = eval_output.keys()
+	ids.sort()
+	for node_id in ids:
+		var outs = eval_output[node_id]
+		if typeof(outs) != TYPE_DICTIONARY:
+			continue
+		for port in outs.keys():
+			if is_light(outs[port]):
+				out["%s/%s" % [String(node_id), String(port)]] = outs[port]
+	return out
+
+## Build / update live Light3D nodes from one evaluate() output, ALONGSIDE render(). Kept lights are
+## re-driven in place (type change rebuilds the one light); vanished lights are pruned. `mount` defaults
+## to this renderer's own parent. Returns the count of active lights.
+func apply_lights(eval_output: Dictionary, _arrangement: Dictionary, mount: Node = null) -> int:
+	var parent: Node = mount if mount != null else (get_parent() if get_parent() != null else self)
+	var want := gather_lights(eval_output)
+	# Prune lights whose descriptor vanished.
+	for key in _lights.keys():
+		if not want.has(key):
+			if is_instance_valid(_lights[key]):
+				_lights[key].queue_free()
+			_lights.erase(key)
+	# Build new / re-drive kept lights.
+	for key in want.keys():
+		var desc: Dictionary = want[key]
+		var wanted_type := String(desc.get("type", "directional"))
+		var light = _lights.get(key)
+		# Rebuild if absent or the light TYPE changed (Directional/Omni/Spot are different classes).
+		if light == null or not is_instance_valid(light) or _light_type_name(light) != wanted_type:
+			if light != null and is_instance_valid(light):
+				light.queue_free()
+			light = _make_light(wanted_type)
+			light.name = "ArrangementLight_" + String(key).replace("/", "_")
+			parent.add_child(light)
+			_lights[key] = light
+		_drive_light(light, desc)
+	return _lights.size()
+
+static func _light_type_name(light: Light3D) -> String:
+	if light is DirectionalLight3D:
+		return "directional"
+	if light is SpotLight3D:
+		return "spot"
+	if light is OmniLight3D:
+		return "point"
+	return "directional"
+
+static func _make_light(type_name: String) -> Light3D:
+	match type_name:
+		"point":
+			return OmniLight3D.new()
+		"spot":
+			return SpotLight3D.new()
+		_:
+			return DirectionalLight3D.new()
+
+## Drive a Light3D from a `light` descriptor (static so a headless test / any host can reuse it).
+## Placement/aim: transform.translation + transform.rotation (glTF quaternion; glTF + Godot both point a
+## directional/spot light down local -Z). color -> light_color; intensity -> light_energy; range/spot/shadow
+## applied per type.
+static func _drive_light(light: Light3D, desc: Dictionary) -> void:
+	var trs: Dictionary = desc.get("transform", {})
+	var pos := _vec3(trs.get("translation", [0, 0, 0]), Vector3.ZERO)
+	var q := _quat(trs.get("rotation", [0, 0, 0, 1]))
+	light.transform = Transform3D(Basis(q), pos)
+	light.light_color = _color(desc.get("color", [1, 1, 1]))
+	light.light_energy = float(desc.get("intensity", 1.0))
+	light.shadow_enabled = bool(desc.get("shadow", false))
+	if light is OmniLight3D and desc.has("range"):
+		(light as OmniLight3D).omni_range = float(desc.get("range"))
+	if light is SpotLight3D:
+		if desc.has("range"):
+			(light as SpotLight3D).spot_range = float(desc.get("range"))
+		var spot: Dictionary = desc.get("spot", {})
+		(light as SpotLight3D).spot_angle = float(spot.get("outer_cone_deg", 30.0))
+
+static func _color(a) -> Color:
+	if a is Color:
+		return a
+	if typeof(a) == TYPE_ARRAY and (a as Array).size() >= 3:
+		var al: float = float(a[3]) if (a as Array).size() >= 4 else 1.0
+		return Color(float(a[0]), float(a[1]), float(a[2]), al)
+	return Color(1, 1, 1, 1)
 
 func _sync(desc: Dictionary, parent: Node, key: String, seen: Dictionary) -> void:
 	seen[key] = true

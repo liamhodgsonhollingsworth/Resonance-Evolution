@@ -1,0 +1,62 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "aperture-room-shell",
+  "_doc": "THE APERTURE ROOM AS A NODE ARRANGEMENT (Liam 2026-07-06: every scene/room is a node arrangement that diff-hotloads). This is the ported shell of aperture_3d.gd's old imperative _build_room(): floor + ceiling + 4 solid walls (Const box scene_node -> Transform placement -> Group), the always-on sky (Environment node -> PainterlySky), and lighting (Environment's derived sun + an explicit fill Light node). Geometry uses the room constants ROOM_HALF=12 (room is 24 on X/Z), ROOM_HEIGHT=6. Edit this file while the aperture runs and the room hotloads: move/resize a wall, retint the sky, move the light. NO View node on purpose — the aperture's first-person player camera stays authoritative (adding a View would steal `current`).",
+  "nodes": [
+    { "id": "floor_box", "type": "Const", "params": { "value": {
+      "name": "floor", "translation": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0],
+      "mesh": { "source": "primitive", "shape": "box", "params": { "width": 24.0, "height": 0.2, "depth": 24.0 } }, "children": [] } } },
+    { "id": "floor_at", "type": "Transform", "params": { "position": [0.0, -0.1, 0.0] } },
+
+    { "id": "ceil_box", "type": "Const", "params": { "value": {
+      "name": "ceiling", "translation": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0],
+      "mesh": { "source": "primitive", "shape": "box", "params": { "width": 24.0, "height": 0.2, "depth": 24.0 } }, "children": [] } } },
+    { "id": "ceil_at", "type": "Transform", "params": { "position": [0.0, 6.0, 0.0] } },
+
+    { "id": "wall_nz_box", "type": "Const", "params": { "value": {
+      "name": "wall_nz", "translation": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0],
+      "mesh": { "source": "primitive", "shape": "box", "params": { "width": 24.0, "height": 6.0, "depth": 0.3 } }, "children": [] } } },
+    { "id": "wall_nz_at", "type": "Transform", "params": { "position": [0.0, 3.0, -12.0] } },
+
+    { "id": "wall_pz_box", "type": "Const", "params": { "value": {
+      "name": "wall_pz", "translation": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0],
+      "mesh": { "source": "primitive", "shape": "box", "params": { "width": 24.0, "height": 6.0, "depth": 0.3 } }, "children": [] } } },
+    { "id": "wall_pz_at", "type": "Transform", "params": { "position": [0.0, 3.0, 12.0] } },
+
+    { "id": "wall_nx_box", "type": "Const", "params": { "value": {
+      "name": "wall_nx", "translation": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0],
+      "mesh": { "source": "primitive", "shape": "box", "params": { "width": 0.3, "height": 6.0, "depth": 24.0 } }, "children": [] } } },
+    { "id": "wall_nx_at", "type": "Transform", "params": { "position": [-12.0, 3.0, 0.0] } },
+
+    { "id": "wall_px_box", "type": "Const", "params": { "value": {
+      "name": "wall_px", "translation": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0, 1.0], "scale": [1.0, 1.0, 1.0],
+      "mesh": { "source": "primitive", "shape": "box", "params": { "width": 0.3, "height": 6.0, "depth": 24.0 } }, "children": [] } } },
+    { "id": "wall_px_at", "type": "Transform", "params": { "position": [12.0, 3.0, 0.0] } },
+
+    { "id": "room", "type": "Group", "params": { "count": 6, "name": "aperture_room_shell" } },
+
+    { "id": "sky", "type": "Environment", "params": {
+      "top_color": [0.32, 0.52, 0.84], "horizon_color": [0.80, 0.88, 0.95], "ground_color": [0.45, 0.46, 0.5],
+      "sun_color": [1.0, 0.96, 0.88], "sun_angle_deg": 42.0, "sun_azimuth_deg": -35.0,
+      "sun_energy": 1.1, "sky_energy": 1.0, "ambient_energy": 0.7 } },
+
+    { "id": "fill_light", "type": "Light", "params": {
+      "type": "directional", "color": [0.85, 0.87, 0.95], "intensity": 0.45,
+      "rotation": [-30.0, 140.0, 0.0], "shadow": false } }
+  ],
+  "wires": [
+    { "from": "floor_box",   "out": "value", "to": "floor_at",   "in": "node" },
+    { "from": "ceil_box",    "out": "value", "to": "ceil_at",    "in": "node" },
+    { "from": "wall_nz_box", "out": "value", "to": "wall_nz_at", "in": "node" },
+    { "from": "wall_pz_box", "out": "value", "to": "wall_pz_at", "in": "node" },
+    { "from": "wall_nx_box", "out": "value", "to": "wall_nx_at", "in": "node" },
+    { "from": "wall_px_box", "out": "value", "to": "wall_px_at", "in": "node" },
+
+    { "from": "floor_at",   "out": "node", "to": "room", "in": "in_0" },
+    { "from": "ceil_at",    "out": "node", "to": "room", "in": "in_1" },
+    { "from": "wall_nz_at", "out": "node", "to": "room", "in": "in_2" },
+    { "from": "wall_pz_at", "out": "node", "to": "room", "in": "in_3" },
+    { "from": "wall_nx_at", "out": "node", "to": "room", "in": "in_4" },
+    { "from": "wall_px_at", "out": "node", "to": "room", "in": "in_5" }
+  ]
+}
