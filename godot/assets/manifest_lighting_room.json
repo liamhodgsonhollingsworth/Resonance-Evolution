@@ -1,0 +1,91 @@
+{
+  "format": "resonance.asset_manifest/v1",
+  "description": "Visi-sonor arc Slice 1C (item 3) — a CC0 LIGHTING-FIXTURE + room-material library for the demo room. Same schema as assets/manifest.json (id/name/path/type/kit/tags), read metadata-only at startup; geometry loads lazily via godot/runtime/asset_library.gd. Every entry carries a REAL CC0 source `url` + `license`; `path` is where the GLB/texture lands under res://assets/vendor/ once fetched. The C-ideal makes this fully usable BEFORE any download: prim_asset_import falls back to a placeholder box/cylinder when `path` is absent, so demo_room.json renders + self-tests headless with zero network fetch, then silently upgrades each fixture to its real GLB when the asset is downloaded. To fetch: py -3 scripts/fetch_lighting_assets.py (best-effort; not required for the slice).",
+  "kits": [
+    "kenney_furniture",
+    "poly_haven",
+    "ambientcg"
+  ],
+  "assets": [
+    {
+      "id": "kenney_furniture__lamp_round_floor",
+      "name": "lamp_round_floor",
+      "path": "res://assets/vendor/kenney_furniture/kenney_furniture__lamp_round_floor.glb",
+      "type": "glb",
+      "kit": "kenney_furniture",
+      "license": "CC0-1.0",
+      "url": "https://kenney.nl/assets/furniture-kit",
+      "tags": ["lamp", "floor", "fixture"]
+    },
+    {
+      "id": "kenney_furniture__lamp_round_table",
+      "name": "lamp_round_table",
+      "path": "res://assets/vendor/kenney_furniture/kenney_furniture__lamp_round_table.glb",
+      "type": "glb",
+      "kit": "kenney_furniture",
+      "license": "CC0-1.0",
+      "url": "https://kenney.nl/assets/furniture-kit",
+      "tags": ["lamp", "table", "fixture"]
+    },
+    {
+      "id": "kenney_furniture__lamp_square_floor",
+      "name": "lamp_square_floor",
+      "path": "res://assets/vendor/kenney_furniture/kenney_furniture__lamp_square_floor.glb",
+      "type": "glb",
+      "kit": "kenney_furniture",
+      "license": "CC0-1.0",
+      "url": "https://kenney.nl/assets/furniture-kit",
+      "tags": ["lamp", "floor", "fixture"]
+    },
+    {
+      "id": "kenney_furniture__ceiling_light",
+      "name": "ceiling_light",
+      "path": "res://assets/vendor/kenney_furniture/kenney_furniture__ceiling_light.glb",
+      "type": "glb",
+      "kit": "kenney_furniture",
+      "license": "CC0-1.0",
+      "url": "https://kenney.nl/assets/furniture-kit",
+      "tags": ["lamp", "ceiling", "fixture"]
+    },
+    {
+      "id": "poly_haven__ceiling_lamp_01",
+      "name": "ceiling_lamp_01",
+      "path": "res://assets/vendor/poly_haven/poly_haven__ceiling_lamp_01.glb",
+      "type": "glb",
+      "kit": "poly_haven",
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/ceiling_lamp_01",
+      "tags": ["lamp", "ceiling", "fixture", "hdri-ready"]
+    },
+    {
+      "id": "poly_haven__floor_lamp_01",
+      "name": "floor_lamp_01",
+      "path": "res://assets/vendor/poly_haven/poly_haven__floor_lamp_01.glb",
+      "type": "glb",
+      "kit": "poly_haven",
+      "license": "CC0-1.0",
+      "url": "https://polyhaven.com/a/floor_lamp_01",
+      "tags": ["lamp", "floor", "fixture"]
+    },
+    {
+      "id": "ambientcg__plaster_wall",
+      "name": "plaster_wall",
+      "path": "res://assets/vendor/ambientcg/Plaster001_1K-JPG_Color.jpg",
+      "type": "texture",
+      "kit": "ambientcg",
+      "license": "CC0-1.0",
+      "url": "https://ambientcg.com/view?id=Plaster001",
+      "tags": ["material", "wall"]
+    },
+    {
+      "id": "ambientcg__wood_floor",
+      "name": "wood_floor",
+      "path": "res://assets/vendor/ambientcg/WoodFloor043_1K-JPG_Color.jpg",
+      "type": "texture",
+      "kit": "ambientcg",
+      "license": "CC0-1.0",
+      "url": "https://ambientcg.com/view?id=WoodFloor043",
+      "tags": ["material", "floor"]
+    }
+  ]
+}

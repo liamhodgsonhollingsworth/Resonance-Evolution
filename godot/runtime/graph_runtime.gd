@@ -206,6 +206,16 @@ func _init() -> void:
 	register("ParamBind", PrimParamBind)
 	register("FreqToColor", PrimFreqToColor)
 	register("SizeSortBind", PrimSizeSortBind)
+	# --- The FIXTURE / ROOM-ASSET family (visi-sonor arc Slice 1C, item 3) ---------------------------
+	# AssetImport: a thin front-end over the lazy asset manifest that emits a Model-shaped scene_node
+	# for a library asset BY ID — and, when the referenced GLB is absent/unknown, falls back to a
+	# placeholder box/cylinder mesh (the C-ideal: a fixture references a not-yet-downloaded lighting
+	# asset and still renders + tests headless, never crashing, silently upgrading when the GLB lands).
+	register("AssetImport", PrimAssetImport)
+	# LedStrip: an array of prim_light descriptors along a path — a controllable, per-pixel-addressable
+	# LED strip drivable by BOTH the 3D renderer (lights port) AND a real WLED (set_led port). It REUSES
+	# PrimLight per pixel; a new strip is a new arrangement, never an engine edit. See prim_led_strip.gd.
+	register("LedStrip", PrimLedStrip)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
