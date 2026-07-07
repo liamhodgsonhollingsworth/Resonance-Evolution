@@ -37,7 +37,7 @@ func evaluate(inputs: Dictionary) -> Dictionary:
 	var k := float(params.get("k", 2.0))
 	if k <= 0.0:
 		k = 1.0
-	return { "y": shape_value(String(params.get("shape", "linear")), x, k) }
+	return { "y": shape_value(str(params.get("shape", "linear")), x, k) }
 
 ## Pure math — the shaping is a deterministic function of (shape, x, k). Exposed STATIC so ParamBind
 ## (and any other node) applies the SAME curve in-line without instancing a node — one definition of the
