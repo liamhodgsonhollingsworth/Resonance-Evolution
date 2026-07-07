@@ -80,11 +80,17 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if room == null or not is_instance_valid(room):
+	if room == null or not is_instance_valid(room) or not _runtimes_ready():
 		return
 	_t += delta
 	drive_once(_player_pos(), delta)
 	_interact_pulse = false   # the interact pulse lasts exactly one evaluate (edge-triggered)
+
+
+## All three runtimes are loaded (a guard so a partially-constructed demo — e.g. a test awaiting frames
+## during setup — never drives a Nil runtime). Fail-safe: drive_once is a no-op until this is true.
+func _runtimes_ready() -> bool:
+	return _rt_dialogue != null and _rt_menu != null and _rt_led != null
 
 
 ## THE ONE BACKEND STEP (text-equivalence anchor, gate T): inject the per-frame frame each arrangement
@@ -92,6 +98,8 @@ func _process(delta: float) -> void:
 ## headless #049 test calls THIS EXACT fn (driving the same runtimes + renderer) — there is no GUI-only
 ## path. Returns the three receipts { dialogue, menu, led } so a test can assert on them directly.
 func drive_once(player_pos: Vector3, dt: float) -> Dictionary:
+	if not _runtimes_ready():
+		return {}
 	# --- demo A: inject the interact pulse; evaluate; render the dialogue receipt --------------------
 	_rt_dialogue.set_input_frame({ "action.interact": (1.0 if _interact_pulse else 0.0) })
 	var out_a := _rt_dialogue.evaluate()
