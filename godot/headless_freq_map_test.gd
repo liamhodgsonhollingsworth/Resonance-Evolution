@@ -92,9 +92,9 @@ func _test_a_freq_to_color() -> void:
 
 	# value_from=amplitude: a louder frame at the same balance yields a brighter (higher-magnitude) color.
 	rt.set_input_frame({ "signal.band.low": 0.9, "signal.band.high": 0.1 })
-	var bright := rt.evaluate().get("col", {}).get("value", {})
+	var bright: Dictionary = rt.evaluate().get("col", {}).get("value", {})
 	rt.set_input_frame({ "signal.band.low": 0.3, "signal.band.high": 0.03 })
-	var dim := rt.evaluate().get("col", {}).get("value", {})
+	var dim: Dictionary = rt.evaluate().get("col", {}).get("value", {})
 	var mag_bright: float = float(bright.get("r", 0.0)) + float(bright.get("g", 0.0)) + float(bright.get("b", 0.0))
 	var mag_dim: float = float(dim.get("r", 0.0)) + float(dim.get("g", 0.0)) + float(dim.get("b", 0.0))
 	_check("(a) value_from=amplitude: louder frame -> brighter color", mag_bright > mag_dim)
@@ -253,21 +253,21 @@ func _test_envelope_follower() -> void:
 		"wires": [ { "from": "x", "out": "value", "to": "env", "in": "x" } ],
 	}
 	rt.load_arrangement(arr)
-	# seed at 0
-	var y0 := float(rt.evaluate().get("env", {}).get("value", -1.0))
+	# seed at 0 (envelope emits on port `y`)
+	var y0 := float(rt.evaluate().get("env", {}).get("y", -1.0))
 	_check("(env) follower seeds at the first input (0.0)", _approx(y0, 0.0))
 	# step to 1.0 -> attack smoothing: prev + attack*(1-prev) = 0 + 0.5*1 = 0.5
 	arr["nodes"][0]["params"] = { "value": 1.0 }
 	rt.load_arrangement(arr)
-	var y_rise := float(rt.evaluate().get("env", {}).get("value", -1.0))
+	var y_rise := float(rt.evaluate().get("env", {}).get("y", -1.0))
 	_check("(env) RISE uses attack coeff: 0 -> 0.5 after one step (attack=0.5)", _approx(y_rise, 0.5))
 	# hold 1.0 another step -> 0.5 + 0.5*(1-0.5) = 0.75 (still rising toward 1)
-	var y_rise2 := float(rt.evaluate().get("env", {}).get("value", -1.0))
+	var y_rise2 := float(rt.evaluate().get("env", {}).get("y", -1.0))
 	_check("(env) RISE continues toward target (0.5 -> 0.75)", _approx(y_rise2, 0.75))
 	# now drop to 0.0 -> release smoothing (slow): prev + release*(0-prev) = 0.75 - 0.1*0.75 = 0.675
 	arr["nodes"][0]["params"] = { "value": 0.0 }
 	rt.load_arrangement(arr)
-	var y_fall := float(rt.evaluate().get("env", {}).get("value", -1.0))
+	var y_fall := float(rt.evaluate().get("env", {}).get("y", -1.0))
 	_check("(env) FALL uses release coeff: 0.75 -> 0.675 (release=0.1, slower than attack)", _approx(y_fall, 0.675))
 	_check("(env) attack step magnitude > release step magnitude (fall is slower)",
 		abs(y_rise - 0.0) > abs(y_rise2 - y_fall))

@@ -1,0 +1,36 @@
+Godot Engine v4.6.3.stable.official.7d41c59c4 - https://godotengine.org
+
+PASS  (a) freq_to_color emits a {r,g,b,addr} color dict (T: plain DATA on the wire)
+PASS  (a) BASS-dominant frame -> WARM hue (r > b)
+PASS  (a) TREBLE-dominant frame -> COOL hue (b > r)
+PASS  (a) value_from=amplitude: louder frame -> brighter color
+PASS  (b) size_sort_bind emits one binding per fixture
+PASS  (b) BIGGEST fixture (idx 0, size 3.0) -> LOWEST band (0 = bass)
+PASS  (b) SMALLEST fixture (idx 1, size 0.5) -> HIGHEST band (3 = treble)
+PASS  (b) 2nd-biggest (idx 2, size 2.0) -> band 1
+PASS  (b) 2nd-smallest (idx 3, size 1.0) -> band 2
+PASS  (b) MONOTONE: bigger fixture never maps to a higher band than a smaller one
+PASS  (b) binding carries the band_key for the biggest fixture
+PASS  (c) FeaturePick(feature=bass) emits the LOW band value
+PASS  (c) REPOINTED to feature=treble -> the same node now follows the HIGH band value (item-8)
+PASS  (c) REPOINTED to feature=energy -> follows signal.energy
+PASS  (c) C: UNKNOWN feature key falls to params.default (no crash)
+PASS  (d) NORMALIZE: x=5 in [0,10] -> 0.5 (got 0.5000, want 0.5000)
+PASS  (d) NORMALIZE: x=in_min -> 0.0 (got 0.0000, want 0.0000)
+PASS  (d) NORMALIZE: x=in_max -> 1.0 (got 1.0000, want 1.0000)
+PASS  (d) NORMALIZE: above in_max clamps to 1.0 (got 1.0000, want 1.0000)
+PASS  (d) REMAP: 0.5 -> [10,20] -> 15 (got 15.0000, want 15.0000)
+PASS  (d) CURVE: exp(k=2) bends 0.5 -> 0.25 (got 0.2500, want 0.2500)
+PASS  (d) CURVE: linear leaves 0.5 -> 0.5 (got 0.5000, want 0.5000)
+PASS  (d) GATE: below gate_min -> 0.0 (got 0.0000, want 0.0000)
+PASS  (d) GATE: above gate_min passes through (got 0.5000, want 0.5000)
+PASS  (env) follower seeds at the first input (0.0)
+PASS  (env) RISE uses attack coeff: 0 -> 0.5 after one step (attack=0.5)
+PASS  (env) RISE continues toward target (0.5 -> 0.75)
+PASS  (env) FALL uses release coeff: 0.75 -> 0.675 (release=0.1, slower than attack)
+PASS  (env) attack step magnitude > release step magnitude (fall is slower)
+PASS  (C) ParamBind with unconnected input -> defined no-op value (no crash)
+PASS  (C) FreqToColor with no inputs + no frame -> defined color (no crash)
+PASS  (C) FeaturePick with no frame -> params.default (no crash)
+PASS  (D) diff-hotload: re-paramed ParamBind now floors at 5.0 without rebuilding the graph
+RESULT: ALL PASS
