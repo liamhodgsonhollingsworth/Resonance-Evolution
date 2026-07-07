@@ -49,7 +49,9 @@ static func _build_overlay(host: Node) -> CanvasLayer:
 	var layer := CanvasLayer.new()
 	layer.name = OVERLAY_NAME
 	layer.layer = 48   # below the GraphPanel overlay (64), above the room HUD
-	var renderer := load("res://aperture/ui_action_renderer.gd").new()
+	# NOT `:=` — load(path).new() is an untyped Variant (load() returns a Resource/Variant), so `:=`
+	# fails to infer a type and BLOCKS COMPILATION ("Cannot infer the type of 'renderer'"). Explicit Node.
+	var renderer: Node = load("res://aperture/ui_action_renderer.gd").new()
 	renderer.name = "UiActionRenderer"
 	layer.add_child(renderer)
 
