@@ -1,0 +1,50 @@
+{
+	"name": "light_calibration",
+	"description": "CAMERA-FEEDBACK LIGHT CALIBRATION (visi-sonor item 5) built by RE-WIRING THE SAME projection-mapping nodes VERBATIM: CalibrationPattern -> ProjectionMap -> Projector -> ProjectionObserve -> ProjectionCalibration, plus a device.set_led emit step (the actuator differs; the closed loop is identical). Each fiducial is one addressable light's COMMANDED position; the witness camera observes where it ACTUALLY landed; the observe->calibrate->re-map loop SOLVES the per-light random spatial offset the SAME way projection-mapping does (the loop driver copies calib.warp into map.matrix each iteration = diff-hotload). Re-running the loop at a low rate with damped gain < 1 IS the live-drift tracker. TemporalOffsetEstimate adds the TIME axis: cross-correlate the emitted pulse vs the observed brightness -> latency ms + the per-light correction record transports ride under device.*. The control-METHOD taxonomy (ir / bluetooth / networked_precise / random) is a per-node metadata field on observe, not behaviour.",
+	"nodes": [
+		{ "id": "pattern", "type": "CalibrationPattern",
+			"params": { "cols": 5, "rows": 3, "margin": 0.14, "dot_radius": 0.012 } },
+		{ "id": "surface", "type": "ProjectionSurface",
+			"params": { "kind": "plane", "origin": [0.0, 1.0, 0.0], "rotation": [-20.0, 0.0, 0.0], "size": [2.6, 1.8] } },
+		{ "id": "map", "type": "ProjectionMap",
+			"params": { "matrix": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] } },
+		{ "id": "projector", "type": "Projector",
+			"params": { "position": [0.35, 3.0, 1.4], "look_at": [0.0, 1.0, 0.0], "yfov": 30.0, "resolution": [960, 540] } },
+		{ "id": "view", "type": "View",
+			"params": { "position": [0.0, 1.6, 2.8], "look_at": [0.0, 1.0, 0.0], "yfov": 48.0, "znear": 0.05, "zfar": 100.0 } },
+		{ "id": "observe", "type": "ProjectionObserve",
+			"params": { "resolution": [640, 360], "target_rect": [0.32, 0.32, 0.70, 0.70], "quantize": 0.25, "method": "random" } },
+		{ "id": "calib", "type": "ProjectionCalibration",
+			"params": { "gain": 0.7, "threshold": 1.0 } },
+
+		{ "id": "cmd_color", "type": "Const",
+			"params": { "value": { "r": 0.8, "g": 0.5, "b": 0.2, "addr": 0 } } },
+		{ "id": "emit", "type": "WorldAction",
+			"params": { "op": "device.set_led" } },
+
+		{ "id": "emitted_pulse", "type": "Const",
+			"params": { "value": [0,0,0,0, 0.33,0.66,1.0,1.0,0.66,0.33, 0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0] } },
+		{ "id": "observed_pulse", "type": "Const",
+			"params": { "value": [0,0,0,0,0,0,0, 0.33,0.66,1.0,1.0,0.66,0.33, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0] } },
+		{ "id": "cmd_rgb", "type": "Const", "params": { "value": [0.8, 0.5, 0.2] } },
+		{ "id": "obs_rgb", "type": "Const", "params": { "value": [0.62, 0.5, 0.28] } },
+		{ "id": "toffset", "type": "TemporalOffsetEstimate",
+			"params": { "dt_ms": 10.0, "max_lag": 16, "method": "random" } }
+	],
+	"wires": [
+		{ "from": "pattern", "out": "pattern", "to": "projector", "in": "pattern" },
+		{ "from": "map", "out": "map", "to": "projector", "in": "map" },
+		{ "from": "projector", "out": "projector", "to": "observe", "in": "projector" },
+		{ "from": "surface", "out": "surface", "to": "observe", "in": "surface" },
+		{ "from": "view", "out": "view", "to": "observe", "in": "view" },
+		{ "from": "observe", "out": "correspondences", "to": "calib", "in": "correspondences" },
+		{ "from": "map", "out": "map", "to": "calib", "in": "map" },
+
+		{ "from": "cmd_color", "out": "value", "to": "emit", "in": "value" },
+
+		{ "from": "emitted_pulse", "out": "value", "to": "toffset", "in": "emitted" },
+		{ "from": "observed_pulse", "out": "value", "to": "toffset", "in": "observed" },
+		{ "from": "cmd_rgb", "out": "value", "to": "toffset", "in": "commanded_rgb" },
+		{ "from": "obs_rgb", "out": "value", "to": "toffset", "in": "observed_rgb" }
+	]
+}
