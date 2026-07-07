@@ -67,7 +67,7 @@ func evaluate(inputs: Dictionary) -> Dictionary:
 	var feature := str(params.get("feature", "energy"))
 	var override := str(params.get("frame_key", ""))
 	var key := resolve_key(feature, override)
-	var fallback := params.get("default", 0.0)
+	var fallback = params.get("default", 0.0)
 
 	# A wired-in `frame` dict takes precedence (testability + composition: a synthetic frame producer
 	# can feed this node without a mounted runtime). Otherwise read the runtime's per-frame frame.

@@ -96,8 +96,8 @@ func _warm_cool_ramp(inputs: Dictionary, pal: Dictionary, sat: float, addr: int,
 	var treble := as_num(inputs.get("treble"))
 	var thr := float(params.get("threshold", 0.0))
 	# Apply the silence threshold: sub-threshold band energy does not pull the ramp.
-	var b := max(0.0, bass - thr)
-	var t := max(0.0, treble - thr)
+	var b := maxf(0.0, bass - thr)
+	var t := maxf(0.0, treble - thr)
 	var total := b + t
 	var pos := 0.5   # a balanced (no-signal) frame sits mid-ramp rather than snapping to an endpoint
 	if total > 0.0:
@@ -106,34 +106,34 @@ func _warm_cool_ramp(inputs: Dictionary, pal: Dictionary, sat: float, addr: int,
 	var ramp := float(params.get("ramp", 1.0))
 	if ramp <= 0.0:
 		ramp = 1.0
-	pos = pow(clamp(pos, 0.0, 1.0), ramp)
+	pos = pow(clampf(pos, 0.0, 1.0), ramp)
 
 	var warm: Array = pal.get("warm", [1.0, 0.2, 0.0])
 	var cool: Array = pal.get("cool", [0.0, 0.2, 1.0])
-	var r := lerp(float(warm[0]), float(cool[0]), pos)
-	var g := lerp(float(warm[1]), float(cool[1]), pos)
-	var bl := lerp(float(warm[2]), float(cool[2]), pos)
+	var r := lerpf(float(warm[0]), float(cool[0]), pos)
+	var g := lerpf(float(warm[1]), float(cool[1]), pos)
+	var bl := lerpf(float(warm[2]), float(cool[2]), pos)
 
 	# Saturation: desaturate toward the channel-average grey.
 	if sat < 1.0:
 		var grey := (r + g + bl) / 3.0
-		r = lerp(grey, r, sat); g = lerp(grey, g, sat); bl = lerp(grey, bl, sat)
+		r = lerpf(grey, r, sat); g = lerpf(grey, g, sat); bl = lerpf(grey, bl, sat)
 
 	# Brightness: value_from=amplitude scales by total band energy (louder = brighter). "fixed" = full.
 	var bright := 1.0
 	if value_from == "amplitude":
 		var amp = inputs.get("amplitude")
-		bright = clamp(as_num(amp) if amp != null else clamp(bass + treble, 0.0, 1.0), 0.0, 1.0)
+		bright = clampf(as_num(amp) if amp != null else clampf(bass + treble, 0.0, 1.0), 0.0, 1.0)
 	r *= bright; g *= bright; bl *= bright
 	return { "r": r, "g": g, "b": bl, "addr": addr }
 
 # pitch_class: hue from a 0..1 chromatic position; sat/value from amplitude. The colour-wheel alternate.
 func _pitch_class(inputs: Dictionary, sat: float, addr: int, value_from: String) -> Dictionary:
-	var pitch: float = clamp(as_num(inputs.get("pitch")), 0.0, 1.0)
+	var pitch := clampf(as_num(inputs.get("pitch")), 0.0, 1.0)
 	var bright := 1.0
 	if value_from == "amplitude":
 		var amp = inputs.get("amplitude")
-		bright = clamp(as_num(amp) if amp != null else 1.0, 0.0, 1.0)
+		bright = clampf(as_num(amp) if amp != null else 1.0, 0.0, 1.0)
 	var col := Color.from_hsv(pitch, sat, bright)
 	return { "r": col.r, "g": col.g, "b": col.b, "addr": addr }
 

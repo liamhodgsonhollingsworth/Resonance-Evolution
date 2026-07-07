@@ -188,6 +188,24 @@ func _init() -> void:
 	register("AudioSource", PrimAudioSource)
 	register("Spectrum", PrimSpectrum)
 	register("SpectrumBands", PrimSpectrumBands)
+	# --- The FREQ-MAPPING + UNIVERSAL BIND cluster (visi-sonor light-show Slice 1B, items 6+8) --------
+	# The binding seam that unifies lighting (items 2/3/6) and screen effects (item 7) into ONE operation:
+	# a light's brightness and a visual bar's height are BOTH a bound feature. All renderer-neutral DATA
+	# on wires (T), all NEW types (N — no primitive edits), all "unknown/absent input = declared no-op" (C).
+	#   FeaturePick     — route any {sub..treble/energy/centroid/flux/beat/tempo_phase} off the band frame.
+	#   EnvelopeFollower — asymmetric attack/release "fall" smoother (the substrate's stateful kind).
+	#   ResponseCurve   — reusable shaping curve (linear/exp/log/s) as DATA; static shape_value() shared.
+	#   ParamBind       — the highest-leverage node: normalize -> curve -> envelope -> gate -> remap.
+	#   FreqToColor     — bass->warm / treble->cool ramp (+ pitch_class); ONE relinkable palette by handle.
+	#   SizeSortBind    — monotone size->frequency auto-assign (big fixtures->bass, small->treble).
+	# See prim_feature_pick/prim_envelope_follower/prim_response_curve/prim_param_bind/prim_freq_to_color/
+	# prim_size_sort_bind.gd + headless_freq_map_test.gd.
+	register("FeaturePick", PrimFeaturePick)
+	register("EnvelopeFollower", PrimEnvelopeFollower)
+	register("ResponseCurve", PrimResponseCurve)
+	register("ParamBind", PrimParamBind)
+	register("FreqToColor", PrimFreqToColor)
+	register("SizeSortBind", PrimSizeSortBind)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
