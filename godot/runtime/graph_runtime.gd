@@ -133,6 +133,12 @@ func _init() -> void:
 	register("ProjectionMap", PrimProjectionMap)
 	register("ProjectionObserve", PrimProjectionObserve)
 	register("ProjectionCalibration", PrimProjectionCalibration)
+	# TemporalOffsetEstimate: the TEMPORAL analog of the spatial homography step, for LIGHT CALIBRATION
+	# (visi-sonor 3B, item 5). Cross-correlates a commanded light's emitted-pulse timeline vs its camera-
+	# observed brightness timeline -> latency ms, and packs the per-light correction record (timing/color/
+	# intensity) transports ride under device.*. Re-uses the SAME observe->calibrate loop for the spatial
+	# offset; this adds only the time axis. Additive registered TYPE. See prim_temporal_offset_estimate.gd.
+	register("TemporalOffsetEstimate", PrimTemporalOffsetEstimate)
 	# StereoRender: ONE viewing-geometry parameter set (viewer distance / IPD / focal plane /
 	# depth budget / screen DPI, all DATA on the wire) drives MULTIPLE stereo output modes from
 	# the same scene — depth map, autostereogram (SIRDS), stereo pair, anaglyph — and the same
