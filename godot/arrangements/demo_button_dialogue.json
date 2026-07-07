@@ -1,0 +1,22 @@
+{
+	"format": "resonance.arrangement/v1",
+	"name": "demo_button_dialogue",
+	"_doc": "DEMO A of the Slice-5 interaction demo — BUTTON -> DIALOGUE. An Input SOURCE reads the abstract 'action.interact' key from the per-frame input frame (the F2 portability seam: the room injects action.interact=true the tick the player presses the interact key while targeting the bound object). A Compare gates it (interact truthy, i.e. > 0.5) into a Select that picks the dialogue payload when pressed and an empty payload otherwise. The WorldAction fires dialogue.show with the picked { speaker, text }, which the mounted UI renderer draws. Portable: on a host with no UI surface, dialogue.show falls through WorldActions' unknown-op declared-no-op — the same arrangement runs anywhere. NO new primitive — Input/Const/Compare/Select/WorldAction are all landed.",
+	"nodes": [
+		{ "id": "interact", "type": "Input", "params": { "input_id": "action.interact", "default": 0 } },
+		{ "id": "thr", "type": "Const", "params": { "value": 0.5 } },
+		{ "id": "pressed", "type": "Compare", "params": { "op": "gt" } },
+		{ "id": "line", "type": "Const", "params": { "value": { "speaker": "Terminal", "text": "You pressed interact on the bound object. This dialogue is a dialogue.show receipt rendered in-world." } } },
+		{ "id": "silent", "type": "Const", "params": { "value": { "speaker": "", "text": "" } } },
+		{ "id": "pick", "type": "Select", "params": { "default_cond": false } },
+		{ "id": "say", "type": "WorldAction", "params": { "op": "dialogue.show" } }
+	],
+	"wires": [
+		{ "from": "interact", "out": "value", "to": "pressed", "in": "a" },
+		{ "from": "thr", "out": "value", "to": "pressed", "in": "b" },
+		{ "from": "pressed", "out": "result", "to": "pick", "in": "cond" },
+		{ "from": "line", "out": "value", "to": "pick", "in": "a" },
+		{ "from": "silent", "out": "value", "to": "pick", "in": "b" },
+		{ "from": "pick", "out": "result", "to": "say", "in": "value" }
+	]
+}

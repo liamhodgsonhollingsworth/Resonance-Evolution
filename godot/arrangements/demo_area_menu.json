@@ -1,0 +1,26 @@
+{
+	"format": "resonance.arrangement/v1",
+	"name": "demo_area_menu",
+	"_doc": "DEMO B of the Slice-5 interaction demo — AREA -> MENU. A Sensor in proximity mode emits the DISTANCE between the player position (an Input reading the abstract 'player.pos' [x,y,z] from the per-frame frame, injected by the room each tick) and a fixed area centre (a Const vector). A Compare thresholds that distance against a radius (distance < radius => inside the area). A Select picks the menu payload when inside and an empty payload otherwise; the WorldAction fires ui.menu.open with the picked { title, items }, which the mounted UI renderer draws. Entering the area opens the menu; leaving it closes (empty payload). Sensor/Input/Compare/Select/WorldAction are all landed — no new primitive.",
+	"nodes": [
+		{ "id": "player", "type": "Input", "params": { "input_id": "player.pos", "default": [0, 0, 0] } },
+		{ "id": "area", "type": "Const", "params": { "value": [4.0, 1.7, -4.0] } },
+		{ "id": "dist", "type": "Sensor", "params": { "mode": "proximity", "target_id": "menu_area" } },
+		{ "id": "radius", "type": "Const", "params": { "value": 2.5 } },
+		{ "id": "inside", "type": "Compare", "params": { "op": "lt" } },
+		{ "id": "menu", "type": "Const", "params": { "value": { "title": "Area Menu", "items": ["Say hello", "Open the board", "Close"] } } },
+		{ "id": "empty", "type": "Const", "params": { "value": { "title": "", "items": [] } } },
+		{ "id": "pick", "type": "Select", "params": { "default_cond": false } },
+		{ "id": "open", "type": "WorldAction", "params": { "op": "ui.menu.open" } }
+	],
+	"wires": [
+		{ "from": "player", "out": "value", "to": "dist", "in": "pos_a" },
+		{ "from": "area", "out": "value", "to": "dist", "in": "pos_b" },
+		{ "from": "dist", "out": "value", "to": "inside", "in": "a" },
+		{ "from": "radius", "out": "value", "to": "inside", "in": "b" },
+		{ "from": "inside", "out": "result", "to": "pick", "in": "cond" },
+		{ "from": "menu", "out": "value", "to": "pick", "in": "a" },
+		{ "from": "empty", "out": "value", "to": "pick", "in": "b" },
+		{ "from": "pick", "out": "result", "to": "open", "in": "value" }
+	]
+}
