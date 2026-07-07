@@ -65,10 +65,10 @@ func _run() -> void:
 			break
 	_check("found a manifest id whose GLB is present on disk (for the glb-source path)", present_id != "")
 
-	var imp := load("res://primitives/prim_asset_import.gd").new()
+	var imp: Node = load("res://primitives/prim_asset_import.gd").new()
 	imp.params = { "id": present_id, "manifest_path": "res://assets/manifest.json" }
 	get_root().add_child(imp)
-	var present_out := imp.evaluate({})
+	var present_out: Dictionary = imp.evaluate({})
 	var pnode = present_out.get("node")
 	_check("AssetImport(present id) emits a scene_node", typeof(pnode) == TYPE_DICTIONARY and pnode.has("mesh"))
 	_check("AssetImport(present id) -> mesh.source='glb' (real asset path)",
@@ -79,11 +79,11 @@ func _run() -> void:
 	# An id from the LIGHTING manifest whose GLB is NOT downloaded -> placeholder primitive box/cylinder.
 	# (manifest_lighting_room.json ships REAL urls but the GLB bytes are absent until fetched — the
 	#  whole point of the C-ideal: fully headless-testable without any network fetch.)
-	var imp2 := load("res://primitives/prim_asset_import.gd").new()
+	var imp2: Node = load("res://primitives/prim_asset_import.gd").new()
 	imp2.params = { "id": "kenney_furniture__lamp_round_floor", "manifest_path": "res://assets/manifest_lighting_room.json",
 		"placeholder_shape": "cylinder" }
 	get_root().add_child(imp2)
-	var absent_out := imp2.evaluate({})
+	var absent_out: Dictionary = imp2.evaluate({})
 	var anode = absent_out.get("node")
 	_check("AssetImport(absent GLB) still emits a scene_node (no crash)", typeof(anode) == TYPE_DICTIONARY)
 	_check("AssetImport(absent GLB) -> PLACEHOLDER mesh.source='primitive' (box/cylinder)",
@@ -94,19 +94,19 @@ func _run() -> void:
 		String(anode["mesh"].get("shape")) == "cylinder")
 
 	# An UNKNOWN id (not in ANY manifest) -> placeholder too, never a crash.
-	var imp3 := load("res://primitives/prim_asset_import.gd").new()
+	var imp3: Node = load("res://primitives/prim_asset_import.gd").new()
 	imp3.params = { "id": "no_such_asset_xyz", "manifest_path": "res://assets/manifest_lighting_room.json" }
 	get_root().add_child(imp3)
-	var unk_out := imp3.evaluate({})
+	var unk_out: Dictionary = imp3.evaluate({})
 	_check("AssetImport(unknown id) -> placeholder, no crash (C-ideal declared no-op)",
 		typeof(unk_out.get("node")) == TYPE_DICTIONARY and unk_out.get("placeholder") == true
 		and String(unk_out["node"]["mesh"].get("source")) == "primitive")
 
 	# The wired `id` input overrides params.id (rewireable — a different id is a data change, gate T).
-	var imp4 := load("res://primitives/prim_asset_import.gd").new()
+	var imp4: Node = load("res://primitives/prim_asset_import.gd").new()
 	imp4.params = { "id": "no_such_asset_xyz", "manifest_path": "res://assets/manifest.json" }
 	get_root().add_child(imp4)
-	var wired_out := imp4.evaluate({ "id": present_id })
+	var wired_out: Dictionary = imp4.evaluate({ "id": present_id })
 	_check("AssetImport reads the wired `id` input (overrides params) — rewireable",
 		String(wired_out["node"]["mesh"].get("source")) == "glb")
 
@@ -130,14 +130,14 @@ func _run() -> void:
 		lights_with_addr == light_count and light_count > 0)
 
 	# --- 4. prim_led_strip: array of addressable prim_light pixels -----------------------------------
-	var strip := load("res://primitives/prim_led_strip.gd").new()
+	var strip: Node = load("res://primitives/prim_led_strip.gd").new()
 	strip.params = {
 		"count": 8, "base_addr": 100,
 		"start": [0.0, 2.0, 0.0], "end": [3.0, 2.0, 0.0],
 		"color": [0.2, 0.6, 1.0], "intensity": 1.0,
 	}
 	get_root().add_child(strip)
-	var strip_out := strip.evaluate({})
+	var strip_out: Dictionary = strip.evaluate({})
 	var pixels = strip_out.get("lights")
 	_check("LedStrip emits an ARRAY of prim_light descriptors (one per pixel)",
 		typeof(pixels) == TYPE_ARRAY and (pixels as Array).size() == 8)
@@ -167,20 +167,20 @@ func _run() -> void:
 		and int(payloads[3]["addr"]) == 103)
 
 	# A wired per-pixel color array drives exactly its pixel (drivable by device.set_led -> rewireable).
-	var strip2 := load("res://primitives/prim_led_strip.gd").new()
+	var strip2: Node = load("res://primitives/prim_led_strip.gd").new()
 	strip2.params = { "count": 4, "base_addr": 0, "start": [0, 0, 0], "end": [1, 0, 0] }
 	get_root().add_child(strip2)
 	# `colors` input: per-pixel [r,g,b]; pixel 2 is red.
-	var driven := strip2.evaluate({ "colors": [[0, 0, 0], [0, 0, 0], [1.0, 0.0, 0.0], [0, 0, 0]] })
+	var driven: Dictionary = strip2.evaluate({ "colors": [[0, 0, 0], [0, 0, 0], [1.0, 0.0, 0.0], [0, 0, 0]] })
 	var dpix = driven.get("lights")
 	_check("LedStrip drives a per-pixel wired color to EXACTLY that pixel (pixel 2 = red)",
 		abs(float(dpix[2]["color"][0]) - 1.0) < 0.001 and abs(float(dpix[0]["color"][0]) - 0.0) < 0.001)
 
 	# C-ideal: zero pixels -> empty arrays, never a crash.
-	var strip0 := load("res://primitives/prim_led_strip.gd").new()
+	var strip0: Node = load("res://primitives/prim_led_strip.gd").new()
 	strip0.params = { "count": 0 }
 	get_root().add_child(strip0)
-	var empty := strip0.evaluate({})
+	var empty: Dictionary = strip0.evaluate({})
 	_check("LedStrip(count=0) -> empty arrays, no crash (C-ideal)",
 		typeof(empty.get("lights")) == TYPE_ARRAY and (empty.get("lights") as Array).is_empty()
 		and typeof(empty.get("set_led")) == TYPE_ARRAY and (empty.get("set_led") as Array).is_empty())
