@@ -173,6 +173,21 @@ func _init() -> void:
 	# so the same arrangement runs on any host. New arrangement/metric, never engine code. See
 	# prim_compare_diff.gd.
 	register("CompareDiff", PrimCompareDiff)
+	# --- The AUDIO ANALYSIS chain (visi-sonor arc, Slice 1A) ------------------------------------------
+	# The MUSIC-INPUT head every effect + light reads: prim_audio_source -> prim_spectrum ->
+	# prim_spectrum_bands -> (a host injector writes) set_input_frame(signal.band.low/mid/high). All THREE
+	# are NEW source-category types (siblings of Input/Sensor), never edits to an existing primitive; the
+	# seam is GENERAL (source_kind=mp3|stream|mic|loopback) but ONLY mp3 is wired — the rest are declared
+	# no-ops, so a future source is a new injector into the SAME frame keys, not engine code. Bands are
+	# plain float DATA on wires (T ideal), so any downstream node subscribes. See prim_audio_source.gd /
+	# prim_spectrum.gd / prim_spectrum_bands.gd.
+	#   AudioSource   — mode=mp3 owns an AudioStreamPlayer on a dedicated bus; emits pcm_stream + playhead.
+	#   Spectrum      — wraps Godot's built-in AudioEffectSpectrumAnalyzer on that bus -> N log-spaced,
+	#                   EMA-smoothed bands (no custom FFT).
+	#   SpectrumBands — folds the raw bands into named sub/bass/lowmid/mid/highmid/treble + low/mid/high.
+	register("AudioSource", PrimAudioSource)
+	register("Spectrum", PrimSpectrum)
+	register("SpectrumBands", PrimSpectrumBands)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
