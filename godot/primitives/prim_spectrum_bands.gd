@@ -25,9 +25,10 @@ extends Primitive
 ## (max, not mean, so a strong single sub-band still reads as "low present" — the demo wants presence.)
 ##
 ## params:
-##   band_edges_hz — the ascending edge list carving the named bands. Default [20,60,250,2000,6000,20000]
-##                   (6 edges => the 6 canonical names). If a different-length list is given, the names are
-##                   generated positionally (band0..bandN) so the node stays defined for any edge count.
+##   band_edges_hz — the ascending edge list carving the named bands. Default
+##                   [20,60,250,500,2000,6000,20000] (7 edges => the 6 canonical named bands). If a list
+##                   whose (count-1) != 6 is given, the names are generated positionally (band0..bandN) so
+##                   the node stays defined for any edge count.
 ##   min_hz/max_hz — the log range the incoming raw `bands` spans (must match prim_spectrum). Defaults
 ##                   20 .. 20000. Used to compute each raw band's center frequency for assignment.
 ##
@@ -37,12 +38,19 @@ extends Primitive
 ##   n_bands — (optional) the raw band count. Falls back to bands.size() when unconnected.
 ##
 ## outputs:
-##   named   — a Dictionary { sub, bass, lowmid, mid, highmid, treble, low, mid, high } of 0..1 scalars.
+##   named   — a Dictionary of 0..1 scalars: the six canonical bands { sub, bass, lowmid, mid_band,
+##             highmid, treble } PLUS the seam triple { low, mid, high }. The name "mid" resolves to the
+##             seam PRESENCE value (max of lowmid+mid); the raw canonical mid band is preserved under
+##             "mid_band" so every band stays retrievable despite the name collision.
 ##   low / mid / high — the three convenience scalars, ALSO surfaced as their own ports so an arrangement
-##                      can wire a single named band without unpacking the dict.
+##                      can wire a single named band without unpacking the dict. These are the exact keys
+##                      the existing set_input_frame seam speaks (signal.band.low/mid/high).
 
-const DEFAULT_EDGES := [20.0, 60.0, 250.0, 2000.0, 6000.0, 20000.0]
-# The canonical names for the 6-edge default. A non-default edge count generates band0..bandN instead.
+# SEVEN edges carve SIX named bands (sub/bass/lowmid/mid/highmid/treble). The plan lists the six
+# canonical NAMES; six bands need seven boundaries, so the default edge list has 7 entries spanning
+# 20 Hz .. 20 kHz on musically-sensible splits (a mid split at 500 Hz separates low-mid from mid).
+const DEFAULT_EDGES := [20.0, 60.0, 250.0, 500.0, 2000.0, 6000.0, 20000.0]
+# The canonical names for the 7-edge default (6 bands). A non-matching edge count generates band0..bandN.
 const DEFAULT_NAMES := ["sub", "bass", "lowmid", "mid", "highmid", "treble"]
 
 func _init() -> void:
@@ -97,15 +105,21 @@ func evaluate(inputs: Dictionary) -> Dictionary:
 
 	var named := {}
 	for k in range(name_count):
-		var e_lo := edges[k]
-		var e_hi := edges[k + 1]
+		var e_lo: float = edges[k]
+		var e_hi: float = edges[k + 1]
 		named[names[k]] = _mean_in_range(bands, n, lo, hi, e_lo, e_hi)
 
 	# The low/mid/high convenience triple derived from the named bands (see the docstring). Uses max so a
 	# strong single band still registers as "present". Falls back gracefully for non-default name sets.
+	# NOTE the "mid" name COLLIDES: it is both a canonical band AND the mid-presence key. We compute the
+	# presence triple from the canonical bands FIRST (they are already in `named`), then preserve the raw
+	# canonical mid band under "mid_band" before "mid" is overwritten with the presence value — so every
+	# canonical band stays retrievable AND the seam's low/mid/high triple is authoritative in `named`.
 	var low := _presence(named, ["sub", "bass"], bands, n, name_count, 0)
 	var mid := _presence(named, ["lowmid", "mid"], bands, n, name_count, 1)
 	var high := _presence(named, ["highmid", "treble"], bands, n, name_count, 2)
+	if named.has("mid"):
+		named["mid_band"] = named["mid"]   # preserve the canonical mid band before the presence overwrite
 	named["low"] = low
 	named["mid"] = mid
 	named["high"] = high
