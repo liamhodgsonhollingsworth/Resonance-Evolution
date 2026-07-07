@@ -124,6 +124,15 @@ func _init() -> void:
 	register("Render2D", PrimRender2D)
 	register("ApertureSurface", PrimApertureSurface)
 	register("Breed", PrimBreed)
+	# --- The SCREEN / VIDEO family (Visi-sonor Wave 1D, item 10 core) ---------------------------------
+	# A TV/screen in the room + a video frame provider, both as renderer-NEUTRAL DATA (no projection
+	# mapping). VideoSource decodes a video to a per-frame texture (PNG-path on the wire, PrimRender2D's
+	# portability invariant) and syncs its playhead to an external mp3 playhead; Screen is a flat quad
+	# whose albedo texture is that video frame (music_video) OR an audio-driven classic viz. A missing
+	# media file degrades to a synthetic animated pattern (C-ideal), never a crash. New arrangements,
+	# never new engine code, add a screen. See prim_video_source.gd + prim_screen.gd.
+	register("VideoSource", PrimVideoSource)
+	register("Screen", PrimScreen)
 	# --- The PROJECTION-MAPPING family (projection-sim foundation) ------------------------------------
 	# A simulated projector + camera-feedback calibration, all as DATA (the shared substrate the
 	# drum-teaching / laser / projection-audio-sync arcs inherit). CPU math seam: runtime/projection_math.gd.
