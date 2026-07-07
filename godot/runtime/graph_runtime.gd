@@ -225,6 +225,15 @@ func _init() -> void:
 	# LED strip drivable by BOTH the 3D renderer (lights port) AND a real WLED (set_led port). It REUSES
 	# PrimLight per pixel; a new strip is a new arrangement, never an engine edit. See prim_led_strip.gd.
 	register("LedStrip", PrimLedStrip)
+	# --- Visi-sonor Wave 3A: DMX/LIGHTING TRANSPORT substrate (item 2 — the real hardware seam). ---
+	# ADDITIVE primitive TYPES: a DMX/pixel framebuffer, a fixture descriptor, a logical->channel map,
+	# and a zero-hardware virtual-strip sink. The real transport SINKS (DDP/WLED over UDP; Art-Net/sACN
+	# declared no-ops) are NOT primitives — they register as NEW device.* host ops via runtime/transports/*
+	# so device.set_led stays untouched (N-ideal). A universe/fixture/colour is plain DATA on a wire.
+	register("DmxUniverse", PrimDmxUniverse)   # 512-ch / pixel framebuffer. See prim_dmx_universe.gd.
+	register("Fixture", PrimFixture)           # OFL/GDTF-style fixture descriptor. See prim_fixture.gd.
+	register("ChannelMap", PrimChannelMap)     # logical (r,g,b,dimmer) -> universe channels. See prim_channel_map.gd.
+	register("LightSim", PrimLightSim)         # zero-hardware virtual strip sink. See prim_light_sim.gd.
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
