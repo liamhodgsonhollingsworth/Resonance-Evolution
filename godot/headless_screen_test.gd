@@ -68,6 +68,7 @@ func _variance_of_png(path: String) -> float:
 func _run() -> void:
 	var rt := GraphRuntime.new()
 	get_root().add_child(rt)
+	await process_frame   # let the node enter the tree (same pattern as headless_sensor_test.gd)
 	_check("GraphRuntime built (the real runtime a mounted panel hot-loads into)", rt != null and rt.is_inside_tree())
 
 	# --- (a1) MUSIC_VIDEO screen fed by a VideoSource frame renders a NON-BLANK texture -------------
