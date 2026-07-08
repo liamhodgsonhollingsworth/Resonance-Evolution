@@ -21,6 +21,10 @@ row (mark it) rather than deleting, so the history of what has bitten us stays i
 | FM-07 | **Unwired seam emits zero** — a live path (e.g. audio analyzer) that nothing feeds returns all-zeros while a synthetic test fixture masks it | "works in tests, dead live" | run the LIVE path (real mp3 / real input), not only the synthetic fixture; assert non-zero | 2026-07-07 (1A analyzer bus gap) |
 | FM-08 | **Dummy audio/GL driver in `--headless`** — `--headless` uses stub drivers; `get_image()` is blank, analyzer bands are zero | headless "render/audio ok" that is meaningless | render checks MUST use the console exe WITHOUT `--headless` (real GL); audio-live checks need a real driver | 2026-07-07 |
 | FM-09 | **Headless-with-rebuilt-cache masks a cold-launch bug** — a test that rebuilds the cache before running never sees FM-01/FM-05 | ships a grey screen that "passed all tests" | the battery smoketests scenes on a COLD cache; never rebuild-then-headless as the render gate | 2026-07-08 |
+| FM-10 | **Flaky test** — a test whose PASS/FAIL varies between identical runs (timing/physics/order dependence) | "passed last time" — intermittent red hiding a real bug behind luck | run a suite ≥2×; a differing verdict = flaky (e.g. `headless_feature_smoke_test` E1 char_move: 20-PASS-0-FAIL one run, 19-PASS-1-FAIL the next) | 2026-07-08 |
+| FM-11 | **Scene hangs on load / never self-quits** — a scene whose `_ready` blocks (heavy synchronous gen, an await that never resolves) | a one-click launch that "hangs"; the window never becomes interactive | `scene_smoketest.py` → "launch timed out" / "no verdict" (e.g. painterly_scene, lsystem_scene) | 2026-07-08 |
+
+**FM-03 precision note (2026-07-08):** a blanket `String(` lint flagged 1310 mostly-legit uses. The detector now flags ONLY `String(params.get(…))` / `String(inputs.get(…))` in non-test code — the runtime-Variant coercion that actually throws (codebase convention: `str()`, never `String()`, for a Variant — see prim_feature_pick:67). The remaining hits are a real low-severity cleanup list (convert to `str()`), not false positives.
 
 ## How the battery uses this
 

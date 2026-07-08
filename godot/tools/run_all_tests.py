@@ -72,17 +72,24 @@ def run(cmd, timeout, no_window=True):
 
 
 def classify_headless(log: str, timed_out: bool):
-    errs = re.findall(r"(?:SCRIPT ERROR|Parse Error).*", log)
     if timed_out:
         return "FAIL", ["timed out"]
+    errs = re.findall(r"(?:SCRIPT ERROR|Parse Error).*", log)
     if errs:
         return "FAIL", [e.strip() for e in errs[:4]]
-    if "RESULT: ALL PASS" in log:
-        return "PASS", []
-    fails = re.findall(r"(?:RESULT:.*FAIL.*|^\s*FAIL\b.*)", log, re.MULTILINE)
-    if fails:
+    # Explicit failure sentinels first (so "0 FAIL" / "FAILURES PRESENT (1)" are read correctly).
+    if re.search(r"RESULT:\s*FAILURES PRESENT", log) or re.search(r"RESULT:.*\b([1-9]\d*)\s+FAIL", log):
+        fails = re.findall(r"(?:RESULT:.*|^\s*FAIL\b.*)", log, re.MULTILINE)
         return "FAIL", [f.strip() for f in fails[:4]]
-    return "UNKNOWN", ["no RESULT sentinel"]
+    # Pass sentinels: "RESULT: ALL PASS", or an explicit "… 0 FAIL", or "N PASS, 0 FAIL".
+    if ("RESULT: ALL PASS" in log
+            or re.search(r"RESULT:.*\bPASS\b.*\b0\s+FAIL", log)
+            or re.search(r"RESULT:.*\b0\s+FAIL", log)):
+        return "PASS", []
+    # A lone unqualified "FAIL" line with no RESULT verdict → still a fail signal.
+    if re.search(r"^\s*FAIL\b", log, re.MULTILINE) and "RESULT:" not in log:
+        return "FAIL", [m.strip() for m in re.findall(r"^\s*FAIL\b.*", log, re.MULTILINE)[:4]]
+    return "UNKNOWN", ["no recognized RESULT sentinel"]
 
 
 def rebuild_cache():
@@ -108,15 +115,21 @@ def smoketest_scene(scene: str, timeout: int):
 
 
 def static_lints(filter_sub: str):
-    """FM-03 / FM-04 static detectors over the .gd source (excluding tests + comments where cheap)."""
+    """FM-03 / FM-04 static detectors over the .gd source. Precision-tuned from the 2026-07-08 sweep:
+    a blanket `String(` flagged 1310 mostly-legit uses (String(dict.get(...)) is fine). FM-03 now flags
+    ONLY the shape that actually crashed (String() coercing a runtime Variant param/input — a non-string
+    there throws), and skips test files (tests assert on known-string values)."""
     findings = []
     gd_files = [p for p in PROJECT.rglob("*.gd") if ".godot" not in p.parts]
-    string_cast = re.compile(r"(?<![A-Za-z_])String\(")          # FM-03: String() used as a cast
+    # FM-03: String(params.get(...)) / String(inputs.get(...)) — the runtime-Variant coercion that throws.
+    string_cast = re.compile(r"(?<![A-Za-z_])String\(\s*(?:params|inputs)\.get\(")
     untyped_new = re.compile(r":=\s*(?:load|preload)\([^)]*\)\.new\(\)")  # FM-04
     for p in gd_files:
         rel = str(p.relative_to(PROJECT)).replace("\\", "/")
         if filter_sub and filter_sub not in rel:
             continue
+        if p.name.startswith("headless_") or p.name.endswith("_test.gd") or "tests" in p.parts:
+            continue  # test code asserts on known-typed values — not the runtime risk
         try:
             lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
