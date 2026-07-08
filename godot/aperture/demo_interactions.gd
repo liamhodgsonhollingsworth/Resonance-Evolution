@@ -57,6 +57,7 @@ const PrimParamBindRef := preload("res://primitives/prim_param_bind.gd")
 const PrimScreenRef := preload("res://primitives/prim_screen.gd")
 const PrimVideoSourceRef := preload("res://primitives/prim_video_source.gd")
 const PickupInteractorScript := preload("res://walkabout/pickup_interactor.gd")  # reused proximity register/refresh seam (REQ 3)
+const PrimFeaturePickRef := preload("res://primitives/prim_feature_pick.gd")      # feature-name -> frame-key router (REQ 4 rewire)
 
 # The demo audio clip + the audio bus that carries the analyzer. Selection is a 3-tier graceful
 # degradation (REQ 2, C-ideal), resolved at RUNTIME by _resolve_demo_mp3():
@@ -806,6 +807,37 @@ func drive_visisonor(bands: Dictionary) -> void:
 
 	# The screen: classic spectrum-bars off the SAME (low,mid,high) band frame.
 	_update_screen(bands)
+
+
+# =====================================================================================================
+# BACKEND REWIRE (REQ 4) — repoint a lamp's lighting feature at RUNTIME, as pure DATA (no code change).
+# The rewire seam already exists: PrimFeaturePick maps a feature NAME (bass/treble/mid/beat/energy/...) to
+# its canonical frame key, and drive_visisonor reads each fixture's bound frame key from _addr_band. So a
+# rewire is a one-value change to that binding dict — exactly the backend a future rewire UI calls. Liam:
+# the UI is LATER; this ships the tested BACKEND now. (N-ideal: functionality is data, not new code.)
+# =====================================================================================================
+
+## REWIRE a fixture's LIGHTING feature at runtime. `light_key` names the fixture (its render key, e.g.
+## "r:lamp_a_light/light"); `feature` is a visi-sonor feature name (bass/treble/sub/mid/highmid/lowmid/
+## energy/beat/centroid/flux/tempo_phase). Resolves the feature to its frame key via PrimFeaturePick's
+## canonical table (the SAME vocabulary an arrangement author writes — reused, not reinvented), then
+## repoints every fixture sharing that light_key. The NEXT drive_visisonor reads the new band, so the LIVE
+## output changes (the moved-to feature now drives that lamp's brightness/colour). Unknown feature =>
+## PrimFeaturePick treats it as a raw frame key (never a hard error) — the same C-ideal no-op posture.
+func rewire_fixture(light_key: String, feature: String) -> void:
+	var new_key := PrimFeaturePickRef.resolve_key(feature, "")
+	for f in _fixtures:
+		if str(f.get("light_key", "")) == light_key:
+			_addr_band[int(f["addr"])] = new_key
+
+
+## The frame key a fixture (by light_key) is currently bound to ("" if unknown). Lets the rewire UI / a
+## test read the live binding state — the readback half of the rewire backend.
+func fixture_feature_key(light_key: String) -> String:
+	for f in _fixtures:
+		if str(f.get("light_key", "")) == light_key:
+			return str(_addr_band.get(int(f["addr"]), ""))
+	return ""
 
 
 ## Give the freq_to_color receipt this fixture's addr (the payload carries addr:0 from the node default).
