@@ -43,3 +43,7 @@ state/
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# ephemeral render-smoketest / launcher outputs
+godot/artifacts/smoketest.*
+godot/artifacts/launch_scene.log
