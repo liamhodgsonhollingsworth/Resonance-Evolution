@@ -56,6 +56,7 @@ const PrimSizeSortBindRef := preload("res://primitives/prim_size_sort_bind.gd")
 const PrimParamBindRef := preload("res://primitives/prim_param_bind.gd")
 const PrimScreenRef := preload("res://primitives/prim_screen.gd")
 const PrimVideoSourceRef := preload("res://primitives/prim_video_source.gd")
+const PickupInteractorScript := preload("res://walkabout/pickup_interactor.gd")  # reused proximity register/refresh seam (REQ 3)
 
 # The demo audio clip + the audio bus that carries the analyzer. Selection is a 3-tier graceful
 # degradation (REQ 2, C-ideal), resolved at RUNTIME by _resolve_demo_mp3():
@@ -120,6 +121,16 @@ var _led_receipts: Dictionary = {}
 # The bindings SizeSortBind produced (addr -> band_key). Recomputed once at setup (sizes are static).
 var _addr_band: Dictionary = {}
 
+# --- SANDBOX pick-up/move state (REQ 3, additive) --------------------------------------------------
+# Every furniture/lamp/screen fixture is a NODE the player can pick up and MOVE (live reposition — NOT
+# inventory-remove). The proximity/register seam is PickupInteractor (reused verbatim); the grab->follow->
+# drop live-move mirrors aperture_3d's _grabbing pattern. A grabbed fixture's PRIMARY node follows the look
+# ray each frame; linked nodes (a lamp's glow bulb, the screen's bezel) translate by the same delta.
+const SANDBOX_GRAB_RADIUS := 3.0
+var _mover: PickupInteractor = null
+var _movables: Dictionary = {}    # id -> { "primary": Node3D, "linked": Array[Node3D] }
+var _grab_id := ""                # the currently-grabbed fixture id ("" = empty hand)
+
 
 func _ready() -> void:
 	_headless = DisplayServer.get_name() == "headless"
@@ -145,6 +156,9 @@ func _ready() -> void:
 	# 4b. VISI-SONOR: mount the analyzer bus, build the audio chain, load + render the room, wire fixtures.
 	setup_visisonor()
 
+	# 4c. SANDBOX (REQ 3): register every lamp/furniture/screen fixture as a pick-up-and-move node.
+	setup_sandbox_movers()
+
 	# 5. a visible red marker at the area centre so the player can see where to walk (demo B). Additive.
 	if not _headless:
 		_place_area_marker()
@@ -155,6 +169,10 @@ func _process(delta: float) -> void:
 	if room == null or not is_instance_valid(room) or not _runtimes_ready():
 		return
 	_t += delta
+	# SANDBOX (REQ 3): a grabbed fixture follows the look ray each frame (live move) BEFORE the light show
+	# drives — so the moved lamp is re-driven at its new position (same node, its light still responds).
+	if _grab_id != "" and not _headless:
+		move_grabbed(_room_ray_point())
 	drive_once(_player_pos(), delta)
 	_interact_pulse = false   # the interact pulse lasts exactly one evaluate (edge-triggered)
 
@@ -227,6 +245,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_P:
 				if event.pressed:
 					_toggle_play()
+			KEY_G:
+				if event.pressed:
+					_toggle_grab()   # SANDBOX: grab the nearest fixture / drop the held one (REQ 3)
 
 
 # =====================================================================================================
@@ -241,6 +262,165 @@ func setup_visisonor() -> void:
 	_build_audio_chain()
 	_build_room_and_screen()
 	_build_fixture_bindings()
+
+
+# =====================================================================================================
+# SANDBOX PICK-UP / MOVE LAYER (REQ 3) — every lamp/furniture/screen fixture is a node you pick up + move.
+# Reuses PickupInteractor (register/refresh/available_ids) for the proximity seam + a grab->follow->drop
+# live-move mirroring aperture_3d's _grabbing pattern. It is a LIVE reposition: the SAME node moves, so a
+# moved lamp's light still responds to its band (drive_visisonor re-drives by light identity, not position).
+# =====================================================================================================
+
+## Register every drivable/visible fixture as a movable node: the 3 lamp lights (each co-moving its glow
+## bulb), the 3 lamp furniture meshes, and the TV screen (co-moving its bezel). The LED strip is a purely
+## DEVICE-ADDRESSED fixture (addr 100..111) with no live scene node in this room arrangement, so there is
+## nothing spatial to grab — its band response is unaffected by any move (receipts are addr-keyed). C-ideal:
+## a fixture whose node is absent is simply skipped, never a crash.
+func setup_sandbox_movers() -> void:
+	_mover = PickupInteractorScript.new()
+	_mover.name = "VisiSonorSandboxMover"
+	add_child(_mover)
+	# The 3 lamps: primary = the live Light3D; linked = its emissive glow bulb (they move as one lamp).
+	for spec in [
+		{ "id": "lamp_a", "lkey": "r:lamp_a_light/light" },
+		{ "id": "lamp_b", "lkey": "r:lamp_b_light/light" },
+		{ "id": "lamp_c", "lkey": "r:lamp_c_light/light" },
+	]:
+		var light = _resolve_fixture_light(str(spec["lkey"]))
+		var glow = _lamp_glow_meshes.get(str(spec["lkey"]))
+		var linked: Array = []
+		if glow != null and is_instance_valid(glow):
+			linked.append(glow)
+		_register_movable(str(spec["id"]), light, linked)
+	# The 3 lamp FURNITURE meshes (the AssetImport lamp bodies) — individually movable.
+	var room_group := _find_child_named(_vs_renderer, "demo_visisonor_room")
+	if room_group != null:
+		for fname in ["lamp_a", "lamp_b", "lamp_c"]:
+			var fnode := _find_child_named(room_group, fname)
+			_register_movable("furniture_" + fname, fnode, [])
+	# The TV/screen: primary = the quad; linked = its dark bezel.
+	var bezel := _find_child_named(room, "VisiSonorScreenBezel")
+	var scr_linked: Array = []
+	if bezel != null and is_instance_valid(bezel):
+		scr_linked.append(bezel)
+	_register_movable("screen", _screen_quad, scr_linked)
+
+
+## Register ONE movable fixture with the PickupInteractor proximity seam + record its move-group (primary
+## node + linked nodes that translate with it). A null/invalid primary is skipped (C-ideal). `primary` is
+## the node whose position IS the fixture position (what the test asserts + what the ray follow drives).
+func _register_movable(id: String, primary, linked: Array) -> void:
+	if primary == null or not is_instance_valid(primary):
+		return
+	_movables[id] = { "primary": primary, "linked": linked }
+	_mover.register(id, primary, SANDBOX_GRAB_RADIUS)
+
+
+## Grab a fixture BY ID (direct seam; the headless test drives this). Returns true iff it is a known movable.
+func grab(id: String) -> bool:
+	if not _movables.has(id):
+		return false
+	_grab_id = id
+	return true
+
+
+## Grab the NEAREST in-range fixture to `player_pos` (the live "grab what you walked up to" path). Reuses
+## PickupInteractor.refresh + available_ids for the proximity gate, then picks the nearest by primary pos.
+## Returns the grabbed id, or "" if nothing is in range.
+func grab_nearest(player_pos: Vector3) -> String:
+	if _mover == null:
+		return ""
+	_mover.refresh(player_pos)
+	var best := ""
+	var best_d := INF
+	for id in _mover.available_ids():
+		if not _movables.has(id):
+			continue
+		var pnode = _movables[id]["primary"]
+		if not is_instance_valid(pnode):
+			continue
+		var d := player_pos.distance_squared_to(pnode.global_position)
+		if d < best_d:
+			best_d = d
+			best = str(id)
+	_grab_id = best
+	return best
+
+
+## Move the grabbed fixture so its PRIMARY node sits at `target_pos`; every linked node translates by the
+## SAME delta (a lamp's glow bulb / the screen's bezel follow). LIVE move — the same node is repositioned,
+## NOT removed to an inventory. Returns true iff something moved.
+func move_grabbed(target_pos: Vector3) -> bool:
+	if _grab_id == "" or not _movables.has(_grab_id):
+		return false
+	var m: Dictionary = _movables[_grab_id]
+	var primary: Node3D = m["primary"]
+	if not is_instance_valid(primary):
+		return false
+	var delta := target_pos - primary.global_position
+	primary.global_position = target_pos
+	for ln in m["linked"]:
+		if is_instance_valid(ln):
+			(ln as Node3D).global_position += delta
+	return true
+
+
+## Drop the grabbed fixture (empty hand). The fixture stays where it was last moved (live reposition).
+func drop() -> void:
+	_grab_id = ""
+
+
+## Live toggle (the G key): grab the nearest fixture, or drop the one already held.
+func _toggle_grab() -> void:
+	if _grab_id != "":
+		drop()
+	else:
+		grab_nearest(_player_pos())
+
+
+## The look-ray point the grabbed fixture follows, read off the room's own first-person camera (a point a
+## few metres down the look direction). Headless callers drive move_grabbed() with an explicit target.
+func _room_ray_point() -> Vector3:
+	if room != null and is_instance_valid(room):
+		var cam = room.get("_cam")
+		if cam != null and is_instance_valid(cam):
+			var from: Vector3 = cam.global_position
+			var dir: Vector3 = -cam.global_transform.basis.z
+			return from + dir * 3.0
+	return _player_pos()
+
+
+## Find the first descendant named `name` under `root` (depth-first). Used to locate the furniture meshes +
+## the screen bezel without the renderer exposing them — a demo-side, additive reach-in (no primitive edit).
+func _find_child_named(root: Node, name: String) -> Node:
+	if root == null or not is_instance_valid(root):
+		return null
+	for c in root.get_children():
+		if str(c.name) == name:
+			return c
+		var found := _find_child_named(c, name)
+		if found != null:
+			return found
+	return null
+
+
+# --- sandbox test seams (the headless test drives THESE; no GUI-only path) -------------------------
+
+## The ids of every registered movable fixture (lamps + furniture + screen).
+func movable_ids() -> Array:
+	return _movables.keys()
+
+
+## The current world position of a movable fixture's primary node (Vector3.INF if unknown).
+func fixture_position(id: String) -> Vector3:
+	if _movables.has(id) and is_instance_valid(_movables[id]["primary"]):
+		return (_movables[id]["primary"] as Node3D).global_position
+	return Vector3.INF
+
+
+## The currently-grabbed fixture id ("" = empty hand).
+func grabbed_id() -> String:
+	return _grab_id
 
 
 ## Resolve the mp3 path at RUNTIME (REQ 2, 3-tier graceful degradation): the real Shelter mp3 if it is
@@ -640,11 +820,8 @@ func _freq_to_color_addr_override(col: Dictionary, addr: int) -> void:
 func _recolor_fixture_light(light_key: String, receipt: Dictionary, band_val: float) -> void:
 	if light_key == "" or _vs_renderer == null:
 		return
-	var lights: Dictionary = _vs_renderer.get("_lights")
-	if lights == null or not lights.has(light_key):
-		return
-	var light = lights[light_key]
-	if not is_instance_valid(light):
+	var light = _resolve_fixture_light(light_key)
+	if light == null or not is_instance_valid(light):
 		return
 	var col := Color(
 		clampf(float(receipt.get("r", 0.0)), 0.0, 1.0),
@@ -661,6 +838,23 @@ func _recolor_fixture_light(light_key: String, receipt: Dictionary, band_val: fl
 			var m: StandardMaterial3D = gm.material_override
 			m.emission = col
 			m.emission_energy_multiplier = 1.5 + 4.0 * clampf(band_val, 0.0, 1.0)
+
+
+## Resolve a fixture's live Light3D from _vs_renderer._lights. _fixtures carries the render-key form
+## "r:<node_id>/<port>" (which the glow-mesh dict also uses), but GodotSceneRenderer.gather_lights keys
+## _lights as "<node_id>/<port>" WITHOUT the "r:" scene-node prefix — so a bare `_lights[light_key]` never
+## matched and the live pools never re-drove (only the glow meshes pulsed). Try the stored key first, then
+## the un-prefixed key, so the real room lights pulse (the behaviour this file's own docstring promises).
+func _resolve_fixture_light(light_key: String):
+	var lights: Dictionary = _vs_renderer.get("_lights")
+	if lights == null:
+		return null
+	if lights.has(light_key):
+		return lights[light_key]
+	var bare := light_key.trim_prefix("r:")
+	if lights.has(bare):
+		return lights[bare]
+	return null
 
 
 ## Re-texture the screen quad with a fresh classic-viz frame from the (low,mid,high) band levels. Records
