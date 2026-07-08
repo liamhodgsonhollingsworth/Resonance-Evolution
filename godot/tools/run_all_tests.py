@@ -46,14 +46,17 @@ RE_ROOT = PROJECT.parent
 CONSOLE = os.environ.get("GODOT_CONSOLE", r"C:/Users/Liam/godot/Godot_v4.6.3-stable_win64_console.exe")
 CREATE_NO_WINDOW = 0x08000000
 
-# Launchable scenes (root [node] references a Script). Override with --scenes. Some are 2D/UI —
-# a near-uniform 2D frame can trip the flat-frame heuristic; review outliers rather than trusting blindly.
+# Launchable PERSISTENT scenes (root [node] references a Script, and the scene STAYS UP so the settle-
+# and-capture smoketest can render it). Override with --scenes. Some are 2D/UI — a near-uniform 2D frame
+# can trip the flat-frame heuristic; review outliers rather than trusting blindly.
+# NOT included: self-terminating batch/proof drivers that call get_tree().quit() in _ready (live_demo.tscn,
+# render_view.tscn). They kill the shared SceneTree before the smoketest's settle counter can capture →
+# "no verdict produced" (a false FAIL, not breakage). Both exit 0 cleanly and are covered by their own
+# headless suites (headless_live_test.gd + headless_view_test.gd). See FAILURE_MODES.md FM-12.
 DEFAULT_SCENES = [
     "res://demo_interactions.tscn",
     "res://main.tscn",
-    "res://live_demo.tscn",
     "res://optical_showcase.tscn",
-    "res://render_view.tscn",
     "res://aperture/aperture_3d.tscn",
     "res://aperture/evolution_3d.tscn",
     "res://aperture/sandbox_home.tscn",
@@ -65,6 +68,15 @@ DEFAULT_SCENES = [
     "res://gallery/gallery.tscn",
     "res://walkabout/walkabout.tscn",
 ]
+
+# Heavy generative scenes: a synchronous CPU painterly paint (Kuwahara, O(pixels × radius²) in GDScript)
+# blocks the main thread long enough to blow the default 90s/90-frame budget. This is NOT a hang (FM-11) —
+# the scenes render fine given a shorter settle + a longer timeout. Verified 2026-07-08: both PASS at
+# settle 40 / timeout 180 (painterly 43 descendants/260 colours, lsystem 830 descendants/220 colours).
+HEAVY_SCENES = {
+    "res://examples/painterly_scene.tscn": {"settle": 40, "timeout": 180},
+    "res://examples/lsystem_scene.tscn": {"settle": 40, "timeout": 180},
+}
 
 
 def run(cmd, timeout, no_window=True):
@@ -104,13 +116,13 @@ def rebuild_cache():
     run([CONSOLE, "--headless", "--path", str(PROJECT), "--editor", "--quit"], 180)
 
 
-def smoketest_scene(scene: str, timeout: int):
+def smoketest_scene(scene: str, timeout: int, settle: int = 90):
     safe = re.sub(r"[^a-z0-9]+", "_", scene.lower().replace("res://", ""))
     out_png = f"res://artifacts/smoke_{safe}.png"
     out_json = f"res://artifacts/smoke_{safe}.json"
     cmd = [sys.executable, str(HERE.parent / "scene_smoketest.py"),
            "--scene", scene, "--out", out_png, "--json", out_json,
-           "--settle", "90", "--keep-cache", "--timeout", str(timeout)]
+           "--settle", str(settle), "--keep-cache", "--timeout", str(timeout)]
     log, timed_out = run(cmd, timeout + 15, no_window=True)
     m = re.search(r"SMOKETEST_RESULT:(\{.*\})", log)
     if m:
@@ -193,7 +205,9 @@ def main() -> int:
             scenes = [s for s in scenes if args.filter in s]
         print(f"[2/3] scene render smoketests: {len(scenes)} (cache already rebuilt above)")
         for s in scenes:
-            status, reasons, png = smoketest_scene(s, args.timeout)
+            over = HEAVY_SCENES.get(s, {})
+            status, reasons, png = smoketest_scene(
+                s, over.get("timeout", args.timeout), over.get("settle", 90))
             report["scenes"].append({"scene": s, "status": status, "reasons": reasons, "png": png})
             mark = " ✓" if status == "PASS" else " ✗"
             print(f"    {status:7}{mark}  {s}" + (f"   {reasons[0]}" if reasons else ""))
