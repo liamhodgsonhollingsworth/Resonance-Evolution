@@ -123,6 +123,9 @@ func _smoke_explore() -> void:
 	if cam == null:
 		s.queue_free(); await process_frame; return
 
+	# Settle the CharacterBody3D player onto the floor FIRST (it spawns airborne and falls under
+	# gravity). Without this the teleport below races the still-moving body → intermittent E1 flake.
+	await _await_settle(cam)
 	# MOVE — teleport to a known point; assert the camera position changed to it.
 	var start := cam.global_position
 	var move_res = await Harness.char_action(self, s, "move", { "to": [2.0, 1.5, 2.0] })
@@ -245,6 +248,29 @@ func _find_cam(node: Node) -> Camera3D:
 		if hit != null:
 			return hit
 	return null
+
+## Advance PHYSICS frames until a node stops moving (settled for N consecutive frames), bounded.
+## The dungeon player is a CharacterBody3D still falling onto the floor right after spawn; teleporting
+## its child camera before the body rests lets the next physics frame drag the just-placed camera
+## (the FM-10 flake in E1). Settling first makes the move land on a body at rest — deterministic —
+## and does NOT weaken the assertion (it still checks the camera reached the exact requested point).
+func _await_settle(node: Node3D, max_frames := 180) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	var prev: Vector3 = node.global_position
+	var still := 0
+	for _i in max_frames:
+		await physics_frame
+		if not is_instance_valid(node):
+			return
+		var now: Vector3 = node.global_position
+		if now.distance_to(prev) < 1.0e-5:
+			still += 1
+			if still >= 4:
+				return
+		else:
+			still = 0
+		prev = now
 
 func _ok(label: String, cond: bool) -> void:
 	if cond:

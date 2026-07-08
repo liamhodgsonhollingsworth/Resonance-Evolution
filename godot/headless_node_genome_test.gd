@@ -46,6 +46,8 @@ func _initialize() -> void:
 	_test_convergence_harness()
 	_test_helper_seam()
 	print("=== %d passed, %d failed ===" % [_pass, _fail])
+	# Standard battery sentinel (run_all_tests.py classifies on "RESULT: ALL PASS" / "… N FAIL").
+	print("RESULT: %s" % ("ALL PASS" if _fail == 0 else "%d PASS, %d FAIL" % [_pass, _fail]))
 	quit(0 if _fail == 0 else 1)
 
 # ---------------------------------------------------------------------------------------------------

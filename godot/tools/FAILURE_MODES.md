@@ -22,7 +22,26 @@ row (mark it) rather than deleting, so the history of what has bitten us stays i
 | FM-08 | **Dummy audio/GL driver in `--headless`** — `--headless` uses stub drivers; `get_image()` is blank, analyzer bands are zero | headless "render/audio ok" that is meaningless | render checks MUST use the console exe WITHOUT `--headless` (real GL); audio-live checks need a real driver | 2026-07-07 |
 | FM-09 | **Headless-with-rebuilt-cache masks a cold-launch bug** — a test that rebuilds the cache before running never sees FM-01/FM-05 | ships a grey screen that "passed all tests" | the battery smoketests scenes on a COLD cache; never rebuild-then-headless as the render gate | 2026-07-08 |
 | FM-10 | **Flaky test** — a test whose PASS/FAIL varies between identical runs (timing/physics/order dependence) | "passed last time" — intermittent red hiding a real bug behind luck | run a suite ≥2×; a differing verdict = flaky (e.g. `headless_feature_smoke_test` E1 char_move: 20-PASS-0-FAIL one run, 19-PASS-1-FAIL the next) | 2026-07-08 |
-| FM-11 | **Scene hangs on load / never self-quits** — a scene whose `_ready` blocks (heavy synchronous gen, an await that never resolves) | a one-click launch that "hangs"; the window never becomes interactive | `scene_smoketest.py` → "launch timed out" / "no verdict" (e.g. painterly_scene, lsystem_scene) | 2026-07-08 |
+| FM-11 | **Scene hangs on load / never self-quits** — a scene whose `_ready` blocks (heavy synchronous gen, an await that never resolves) | a one-click launch that "hangs"; the window never becomes interactive | `scene_smoketest.py` → "launch timed out" / "no verdict" (e.g. painterly_scene, lsystem_scene — heavy CPU paint; NOT a true hang, they finish with a longer `--timeout`) | 2026-07-08 |
+| FM-12 | **Self-terminating batch/proof scene** — a scene that calls `get_tree().quit()` inside `_ready` (a run-and-quit proof driver, not a persistent scene) | `scene_smoketest.py` → "no verdict produced": the scene kills the shared SceneTree before the settle counter captures. NOT breakage — the scene exits 0 cleanly | keep such scenes OUT of the persistent-render manifest (`DEFAULT_SCENES`); cover them via their own `headless_*_test.gd` (e.g. live_demo→headless_live_test, render_view→headless_view_test) | 2026-07-08 |
+
+**FM-10 resolution note (2026-07-08):** `headless_feature_smoke_test` E1 char_move was flaky because the
+dungeon player (a `CharacterBody3D`) spawns airborne and is still falling under gravity when the harness
+teleports its child camera — a physics frame then drags the just-placed camera past the 0.01 tolerance,
+but only when a physics frame happened to interleave (race). Fixed by settling the body onto the floor
+first (`_await_settle` advances physics frames until the camera stops moving) BEFORE the teleport. The
+assertion is unchanged (still requires the camera to reach the exact requested point) — only the pre-move
+state is made deterministic. Verified 5/5 runs `20 PASS, 0 FAIL`.
+
+**FM-01/FM-09 precision note (2026-07-08):** the `scene_smoketest.gd` "built NOTHING (0 descendants)"
+detector false-flagged legit **immediate-mode 2D scenes** — a `Node2D` that renders via `_draw()`
+(e.g. `examples/wfc_demo.tscn`) has 0 child nodes by design yet paints a full varied frame. The detector
+now fires "built NOTHING" ONLY when `descendant_count == 0` **AND** the frame lacks content (flat/blank).
+A real grey-screen parse-fail is flat AND has 0 descendants, so it is still caught (by both this gate and
+the FLAT pixel check) — the change removes a false positive without weakening real-bug coverage.
+Also: `scene_smoketest.py` / `run_all_tests.py` now `reconfigure` stdout to UTF-8 — the ✓/✗ verdict
+glyphs raised `UnicodeEncodeError` on a cp1252 console and SUPPRESSED the `SMOKETEST_RESULT` line
+(read downstream as "no verdict produced").
 
 **FM-03 precision note (2026-07-08):** a blanket `String(` lint flagged 1310 mostly-legit uses. The detector now flags ONLY `String(params.get(…))` / `String(inputs.get(…))` in non-test code — the runtime-Variant coercion that actually throws (codebase convention: `str()`, never `String()`, for a Variant — see prim_feature_pick:67). The remaining hits are a real low-severity cleanup list (convert to `str()`), not false positives.
 

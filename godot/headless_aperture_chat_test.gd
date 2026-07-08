@@ -40,7 +40,8 @@ func _initialize() -> void:
 		_test_live_spawn()
 
 	_cleanup(tmp)
-	print("RESULT: %s" % ("PASS" if _ok else "FAIL"))
+	# Standard battery sentinel (run_all_tests.py classifies on "RESULT: ALL PASS" / "… N FAIL").
+	print("RESULT: %s" % ("ALL PASS" if _ok else "FAILURES PRESENT"))
 	quit(0 if _ok else 1)
 
 

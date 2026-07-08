@@ -21,6 +21,7 @@ const WorldStoreScript := preload("res://runtime/world_store.gd")
 const Behaviors := preload("res://runtime/sandbox_behaviors.gd")
 const SandboxScript := preload("res://examples/sandbox_creative.gd")
 const WorldArrangement := preload("res://runtime/world_arrangement.gd")
+const ItemsScript := preload("res://runtime/sandbox_items.gd")   # tool registry (source of truth for the held-tool count)
 
 var _fails := 0
 
@@ -165,13 +166,21 @@ func _initialize() -> void:
 	s.add_child(s.assets)
 	s.assets.load_manifest()
 	s._extend_palette_with_assets()
-	# Palette = 14 generic blocks + the held tools (Sticky Note) + ALL imported assets. Count the
-	# non-asset entries robustly rather than baking in a fixed total (the tool set may grow).
-	var non_assets := 0
+	# Palette = 14 generic blocks + the held tools + ALL 34 imported assets. Count each kind
+	# robustly and tie the expected tool count to the real registry (the tool set may grow — the
+	# Manipulation Wand joined the Sticky Note as "Liam item 3"), so a new tool never falsely fails.
+	var blocks := 0
+	var tools := 0
+	var asset_entries := 0
 	for e in s.palette:
-		if String(e.get("kind", "block")) != "asset":
-			non_assets += 1
-	ok = _check("E1 inventory palette = 14 blocks + tools + ALL 34 imported assets", non_assets == 15 and s.palette.size() == non_assets + 34) and ok
+		match String(e.get("kind", "block")):
+			"asset": asset_entries += 1
+			"tool": tools += 1
+			_: blocks += 1
+	var expected_tools: int = (ItemsScript.tool_palette_entries() as Array).size()
+	ok = _check("E1 inventory palette = 14 blocks + %d tool(s) + ALL 34 imported assets" % expected_tools,
+		blocks == 14 and tools == expected_tools and asset_entries == 34
+		and s.palette.size() == blocks + tools + asset_entries) and ok
 	ok = _check("E2 categories = 3 block tabs + Tools + one per kit", (s._categories() as Array).size() == 6 and (s._categories() as Array).has("Tools")) and ok
 	var tmp_e := ProjectSettings.globalize_path("user://test_wb_integration")
 	_rm_rf(tmp_e)
