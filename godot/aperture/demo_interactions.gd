@@ -100,6 +100,10 @@ var _screen_mat: StandardMaterial3D = null       # its material (albedo_texture 
 var _screen_phase := 0                           # classic-viz animation phase
 var _last_screen_stats := { "mean": 0.0, "variance": 0.0 }
 
+# --- LIGHT-SHOW LOOK state (Wave 4 polish, demo-side) ----------------------------------------------
+var _demo_world_env: WorldEnvironment = null     # the ONE dark light-show environment (dark bg + glow)
+var _lamp_glow_meshes: Dictionary = {}           # light_key -> emissive glow MeshInstance3D at each lamp
+
 # Fixture table: one entry per drivable light/pixel. { addr, size, light_key } — `size` feeds SizeSortBind
 # (big=bass), `light_key` re-drives the matching live Light3D. Built from the room's evaluated fixtures.
 var _fixtures: Array = []
@@ -316,6 +320,15 @@ func _build_room_and_screen() -> void:
 	var screen_desc: Dictionary = eval.get("screen", {}).get("screen", {})
 	_build_screen_quad(screen_desc)
 
+	# DEMO LIGHT-SHOW LOOK (Wave 4 polish, demo-side only — no primitive edits). A light show needs a DARK
+	# room so the colored reactive lights POP; the default procedural sky + near-white placeholder walls read
+	# as blown-out. This override runs AFTER the renderers have mounted their environments: it (1) mounts ONE
+	# dark WorldEnvironment (dark bg, tiny ambient, ACES tonemap, glow/bloom so bright reactive lights bloom),
+	# retiring any brighter env the room/renderer mounted; (2) darkens the placeholder shell + floor so light
+	# pools show; (3) dims the room's daytime sun; (4) drops a small emissive glow mesh at each lamp so the
+	# fixture visibly emits. All of this is demo-setup tuning — the shared primitives are untouched.
+	_apply_light_show_look()
+
 
 ## Build the flat TV/screen quad in-room from the Screen descriptor: a QuadMesh with an unshaded
 ## StandardMaterial3D whose albedo_texture is swapped each frame (the classic-viz PNG). Non-blank on open.
@@ -330,9 +343,143 @@ func _build_screen_quad(desc: Dictionary) -> void:
 	_screen_mat = StandardMaterial3D.new()
 	_screen_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_screen_mat.albedo_color = Color(1, 1, 1)
+	# UNSHADED already makes the albedo render at full brightness regardless of room ambient, but flag the
+	# quad emissive too (so bloom catches the bright bars) and disable fog so the bars stay crisp in a dark
+	# room. The classic-viz PNG is swapped into albedo_texture each frame; unshaded => it reads at full
+	# contrast even in a near-black room (the fix for "bars invisible because ambient washed the quad out").
+	_screen_mat.disable_receive_shadows = true
+	_screen_mat.emission_enabled = true
+	_screen_mat.emission = Color(1, 1, 1)
+	_screen_mat.emission_energy_multiplier = 1.6
+	_screen_mat.emission_texture = null   # emission comes from albedo_texture via emission_operator below
+	_screen_mat.emission_operator = BaseMaterial3D.EMISSION_OP_ADD
 	_screen_quad.material_override = _screen_mat
 	_screen_quad.position = pos
 	room.add_child(_screen_quad)
+	# A thin dark bezel behind the screen so the bright bars read against a frame, not the wall.
+	var bezel := MeshInstance3D.new()
+	bezel.name = "VisiSonorScreenBezel"
+	var bqm := QuadMesh.new()
+	bqm.size = size * 1.08
+	bezel.mesh = bqm
+	var bmat := StandardMaterial3D.new()
+	bmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bmat.albedo_color = Color(0.02, 0.02, 0.03)
+	bezel.material_override = bmat
+	bezel.position = pos + Vector3(0, 0, -0.02)
+	room.add_child(bezel)
+
+
+## DEMO LIGHT-SHOW LOOK — mount ONE dark WorldEnvironment (dark bg, tiny ambient, ACES tonemap, glow),
+## darken the placeholder shell/floor so light pools show, dim the daytime sun, and add a glow mesh at each
+## lamp. Demo-side only: it tunes the LIVE Environment/materials the renderers produced; it does not edit
+## prim_environment / prim_light / the scene renderer. Idempotent-safe (re-running rebuilds the demo env).
+func _apply_light_show_look() -> void:
+	# 1. Retire every WorldEnvironment already in the scene (the Aperture3D room mounts its own bright sky,
+	#    and _vs_renderer.apply_environment mounts a second) and any daytime sun, so only OUR dark env + the
+	#    reactive lights light the room. We dim (not delete) the suns so shadows/keys still exist faintly.
+	for we in _find_nodes_of_type(get_tree().get_root(), "WorldEnvironment"):
+		if we != _demo_world_env:
+			we.queue_free()
+	for dl in _find_nodes_of_type(get_tree().get_root(), "DirectionalLight3D"):
+		(dl as DirectionalLight3D).light_energy = 0.08   # a whisper of key light, not a daytime sun
+
+	# 2. Build the dark light-show environment.
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.015, 0.015, 0.025)      # near-black room
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.04, 0.045, 0.06)     # a faint cool fill so shadows aren't pure black
+	env.ambient_light_energy = 0.35
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES        # filmic rolloff so bright pools don't clip white
+	env.tonemap_exposure = 0.9
+	env.tonemap_white = 4.0
+	# GLOW / BLOOM — the thing that makes a light show read as a light show: bright reactive pools + the
+	# screen bars bloom. Threshold below 1.0 so the emissive lamps/screen catch it.
+	env.glow_enabled = true
+	env.glow_intensity = 0.9
+	env.glow_strength = 1.1
+	env.glow_bloom = 0.35
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
+	env.glow_hdr_threshold = 0.85
+	# Enable the mid glow levels for a broad, soft bloom.
+	env.set("glow_levels/2", true)
+	env.set("glow_levels/3", true)
+	env.set("glow_levels/4", true)
+	# A gentle dark fog for depth so the far wall recedes into the dark (adds atmosphere, keeps focus on light).
+	env.fog_enabled = true
+	env.fog_light_color = Color(0.02, 0.02, 0.04)
+	env.fog_density = 0.015
+	_demo_world_env = WorldEnvironment.new()
+	_demo_world_env.name = "VisiSonorLightShowEnv"
+	_demo_world_env.environment = env
+	room.add_child(_demo_world_env)
+
+	# 3. Darken the placeholder shell + floor so colored light pools are clearly visible against them.
+	_darken_room_surfaces()
+
+	# 4. A small emissive glow mesh at each lamp position so you can SEE the fixture emitting (bloom-friendly).
+	_build_lamp_glow_meshes()
+
+
+## Walk the rendered shell subtree and give every placeholder MeshInstance3D a mid-dark matte material so
+## colored light reads against it (the placeholder box shell + cylinders default to a bright white material).
+## Only the demo's own rendered fixtures/shell are touched (under _vs_renderer); the Aperture3D room's own
+## geometry keeps its material. Skips the screen quad + its bezel + lamp glow meshes (those are emissive).
+func _darken_room_surfaces() -> void:
+	if _vs_renderer == null or not is_instance_valid(_vs_renderer):
+		return
+	var wall := StandardMaterial3D.new()
+	wall.albedo_color = Color(0.10, 0.10, 0.13)   # dark blue-grey walls
+	wall.roughness = 0.95
+	wall.metallic = 0.0
+	for mi in _find_nodes_of_type(_vs_renderer, "MeshInstance3D"):
+		var n := str((mi as Node).name)
+		if n.begins_with("VisiSonor") or n.find("Glow") >= 0:
+			continue
+		(mi as MeshInstance3D).material_override = wall
+
+
+## Drop a small unshaded emissive sphere at each lamp's position so the fixture visibly emits (and blooms).
+## The glow colour is re-driven each frame by drive_visisonor via _recolor_fixture_light's sibling call, so
+## the emitter pulses with the light. Additive demo geometry — not part of any arrangement/primitive.
+func _build_lamp_glow_meshes() -> void:
+	var lamp_positions := {
+		"r:lamp_a_light/light": Vector3(-2.5, 2.2, -2.5),
+		"r:lamp_b_light/light": Vector3(2.5, 1.6, -2.5),
+		"r:lamp_c_light/light": Vector3(0.0, 3.6, 0.0),
+	}
+	for key in lamp_positions.keys():
+		var mi := MeshInstance3D.new()
+		mi.name = "VisiSonorLampGlow_" + str(key).replace("/", "_").replace(":", "_")
+		var sph := SphereMesh.new()
+		sph.radius = 0.18
+		sph.height = 0.36
+		mi.mesh = sph
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.emission_enabled = true
+		mat.emission = Color(1, 1, 1)
+		mat.emission_energy_multiplier = 2.0
+		mat.albedo_color = Color(1, 1, 1)
+		mi.material_override = mat
+		mi.position = lamp_positions[key]
+		room.add_child(mi)
+		_lamp_glow_meshes[str(key)] = mi
+
+
+## Depth-first search for every node of a class (by class name string) under `root`. Used to find the
+## live WorldEnvironment / DirectionalLight3D / MeshInstance3D nodes the renderers built, so the demo can
+## tune them WITHOUT the renderer exposing them — a demo-side, additive reach-in (no primitive edit).
+func _find_nodes_of_type(root: Node, cls: String) -> Array:
+	var out: Array = []
+	if root == null or not is_instance_valid(root):
+		return out
+	if root.is_class(cls):
+		out.append(root)
+	for c in root.get_children():
+		out.append_array(_find_nodes_of_type(c, cls))
+	return out
 
 
 ## Compute the static size->band fixture bindings once (SizeSortBind), and record the light_key each
@@ -451,11 +598,21 @@ func _recolor_fixture_light(light_key: String, receipt: Dictionary, band_val: fl
 	var light = lights[light_key]
 	if not is_instance_valid(light):
 		return
-	light.light_color = Color(
+	var col := Color(
 		clampf(float(receipt.get("r", 0.0)), 0.0, 1.0),
 		clampf(float(receipt.get("g", 0.0)), 0.0, 1.0),
 		clampf(float(receipt.get("b", 0.0)), 0.0, 1.0))
-	light.light_energy = 1.0 + 3.0 * clampf(band_val, 0.0, 1.0)
+	light.light_color = col
+	# Vivid reactive pools in a dark room: a strong floor so a lit fixture always throws a visible colored
+	# pool/cone, scaling up hard with the band so the beat clearly pulses. (The dark env + glow make this read.)
+	light.light_energy = 2.5 + 6.0 * clampf(band_val, 0.0, 1.0)
+	# Pulse the matching emissive glow mesh so the fixture itself visibly emits + blooms with its band.
+	if _lamp_glow_meshes.has(light_key):
+		var gm = _lamp_glow_meshes[light_key]
+		if is_instance_valid(gm) and gm.material_override != null:
+			var m: StandardMaterial3D = gm.material_override
+			m.emission = col
+			m.emission_energy_multiplier = 1.5 + 4.0 * clampf(band_val, 0.0, 1.0)
 
 
 ## Re-texture the screen quad with a fresh classic-viz frame from the (low,mid,high) band levels. Records
