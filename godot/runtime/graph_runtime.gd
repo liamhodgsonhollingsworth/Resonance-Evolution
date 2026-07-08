@@ -234,6 +234,30 @@ func _init() -> void:
 	register("Fixture", PrimFixture)           # OFL/GDTF-style fixture descriptor. See prim_fixture.gd.
 	register("ChannelMap", PrimChannelMap)     # logical (r,g,b,dimmer) -> universe channels. See prim_channel_map.gd.
 	register("LightSim", PrimLightSim)         # zero-hardware virtual strip sink. See prim_light_sim.gd.
+	# --- Visi-sonor Wave 2A: REACTIVE VIZ-EFFECT NODES (items 7+8). ----------------------------------
+	# The audio-reactive effect library people use on music videos. Each is a NEW type (N — no primitive
+	# edits) that reads its driving values off GENERIC feature WIRES (via FeaturePick), so it is
+	# rewireable to ANY part of the music (item-8) — a re-param, never a hardwire to one band. The viz
+	# nodes emit renderer-NEUTRAL DRAW-LIST descriptors (T — plain DATA, no Godot Image on any port);
+	# pixel realization lives in a shared static rasterizer (PrimVizSpectrumBars.rasterize) so they
+	# render through the EXISTING prim_render2d / prim_effect_stack seam (R). Absent/unknown feature or
+	# empty input = a defined no-op (C). See prim_viz_*.gd + the beat family + headless_effects_reactive_test.gd.
+	#   VizSpectrumBars — bands[] -> bars (linear|radial, mirror, freq_to_color tint). DEMO-CRITICAL viz.
+	#   VizWaveform     — oscilloscope / lissajous line whose excursion is a driving feature.
+	#   VizReactiveShape — pulsing blob: radius<-feature, per-vertex deform<-feature (Milkdrop-in-miniature).
+	#   VizParticles    — emit_rate<-energy, force<-bands, color<-freq_to_color (stateful sim).
+	#   VizFlash        — trigger/onset -> a decaying fullscreen tint (the screen twin of a strobe light).
+	#   OnsetDetect     — energy-flux onset with an ADAPTIVE EMA threshold; band-parameterized (one node = kick/snare/hihat).
+	#   BeatTempo       — inter-onset BPM + phase estimate (item-13 anticipation).
+	#   TriggerLatch    — an onset -> a usable decaying envelope (shared by lights AND viz — item-8).
+	register("VizSpectrumBars", PrimVizSpectrumBars)
+	register("VizWaveform", PrimVizWaveform)
+	register("VizReactiveShape", PrimVizReactiveShape)
+	register("VizParticles", PrimVizParticles)
+	register("VizFlash", PrimVizFlash)
+	register("OnsetDetect", PrimOnsetDetect)
+	register("BeatTempo", PrimBeatTempo)
+	register("TriggerLatch", PrimTriggerLatch)
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
