@@ -1,0 +1,8 @@
+WARNING: WorldActions.register_host: refusing to shadow builtin op 'log' (host op ignored)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] register_host (res://runtime/world_actions.gd:69)
+       [1] _run (res://headless_demo_interactions_test.gd:55)
+       [2] _initialize (res://headless_demo_interactions_test.gd:44)
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2663)

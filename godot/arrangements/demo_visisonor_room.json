@@ -1,0 +1,33 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "demo_visisonor_room",
+  "_doc": "ITEM-10 DEMO (visi-sonor near-term anchor) — the small 3D room the light show plays in, authored as a NODE ARRANGEMENT (room-is-an-arrangement). NO projector (color/brightness/timing only); a TV/SCREEN with NO projection mapping. It composes ONLY already-merged primitives: Environment (iterable sky) + AssetImport (shell + lamp GLBs, placeholder-safe) + TextureApply (ambientCG CC0 wall/floor) + 3 Light fixtures each with a device addr + 1 LedStrip (per-pixel-addressable) + 1 Screen quad running the classic spectrum-bars visualization off the SAME set_input_frame band seam the lights read. The shell + fixtures compose into ONE scene_node via the Group; the Screen is a standalone node whose `screen` descriptor the demo controller reads + mounts (Group skips non-scene_node children by design). The AUDIO -> band -> freq_to_color -> device.set_led wiring is driven per-frame by the demo controller (aperture/demo_interactions.gd), which injects the live analyzer bands into set_input_frame; this room supplies the drivable fixtures + the screen. Each fixture is drivable by BOTH the 3D renderer (its Light descriptor) AND a real WLED strip (its addr via device.set_led) — one descriptor, any sink. Shell/lamp GLBs are absent until fetched; AssetImport falls back to placeholder box/cylinder meshes so this renders + self-tests headless with zero network fetch (C-ideal). Builds ON demo_room.json (Slice 1C) by ADDING the screen; it is a new arrangement, not an edit to a primitive (N-ideal).",
+  "nodes": [
+    { "id": "sky", "type": "Environment", "params": { "top_color": [0.02, 0.02, 0.05], "horizon_color": [0.04, 0.04, 0.08], "ground_color": [0.01, 0.01, 0.02], "sun_energy": 0.15, "sky_energy": 0.2, "ambient_energy": 0.06 } },
+
+    { "id": "shell", "type": "AssetImport", "params": { "id": "room_shell", "manifest_path": "res://assets/manifest_lighting_room.json", "name": "room_shell", "placeholder_shape": "box", "placeholder_params": { "width": 8.0, "height": 4.0, "depth": 8.0 } } },
+    { "id": "floor_mat", "type": "TextureApply", "params": { "cell": [0, 0, 0], "material": { "albedo_texture": "res://assets/vendor/ambientcg/WoodFloor043_1K-JPG_Color.jpg", "albedo": [0.55, 0.42, 0.28], "roughness": 0.8 } } },
+    { "id": "wall_mat", "type": "TextureApply", "params": { "cell": [0, 1, 0], "material": { "albedo_texture": "res://assets/vendor/ambientcg/Plaster001_1K-JPG_Color.jpg", "albedo": [0.86, 0.84, 0.80], "roughness": 0.9 } } },
+
+    { "id": "lamp_a_mesh", "type": "AssetImport", "params": { "id": "kenney_furniture__lamp_round_floor", "manifest_path": "res://assets/manifest_lighting_room.json", "name": "lamp_a", "placeholder_shape": "cylinder" } },
+    { "id": "lamp_a_light", "type": "Light", "params": { "type": "point", "color": [1.0, 0.55, 0.2], "intensity": 6.0, "position": [-2.5, 2.2, -2.5], "range": 9.0, "addr": 0 } },
+
+    { "id": "lamp_b_mesh", "type": "AssetImport", "params": { "id": "kenney_furniture__lamp_round_table", "manifest_path": "res://assets/manifest_lighting_room.json", "name": "lamp_b", "placeholder_shape": "cylinder" } },
+    { "id": "lamp_b_light", "type": "Light", "params": { "type": "point", "color": [0.3, 0.7, 1.0], "intensity": 5.0, "position": [2.5, 1.6, -2.5], "range": 8.0, "addr": 1 } },
+
+    { "id": "lamp_c_mesh", "type": "AssetImport", "params": { "id": "poly_haven__ceiling_lamp_01", "manifest_path": "res://assets/manifest_lighting_room.json", "name": "lamp_c", "placeholder_shape": "cylinder" } },
+    { "id": "lamp_c_light", "type": "Light", "params": { "type": "spot", "color": [0.7, 1.0, 0.85], "intensity": 8.0, "position": [0.0, 3.8, 0.0], "rotation": [-90.0, 0.0, 0.0], "range": 10.0, "inner_cone_deg": 22.0, "outer_cone_deg": 42.0, "addr": 2 } },
+
+    { "id": "strip", "type": "LedStrip", "params": { "count": 12, "base_addr": 100, "start": [-3.0, 2.7, 3.0], "end": [3.0, 2.7, 3.0], "color": [0.2, 0.6, 1.0], "intensity": 3.0, "range": 4.0 } },
+
+    { "id": "screen", "type": "Screen", "params": { "source": "classic_viz", "size": [2.4, 1.35], "position": [0.0, 1.7, -3.9], "rotation": [0.0, 0.0, 0.0], "width": 96, "height": 54, "band_keys": ["signal.band.low", "signal.band.mid", "signal.band.high"] } },
+
+    { "id": "room", "type": "Group", "params": { "count": 4, "name": "demo_visisonor_room" } }
+  ],
+  "wires": [
+    { "from": "shell", "out": "node", "to": "room", "in": "in_0" },
+    { "from": "lamp_a_mesh", "out": "node", "to": "room", "in": "in_1" },
+    { "from": "lamp_b_mesh", "out": "node", "to": "room", "in": "in_2" },
+    { "from": "lamp_c_mesh", "out": "node", "to": "room", "in": "in_3" }
+  ]
+}
