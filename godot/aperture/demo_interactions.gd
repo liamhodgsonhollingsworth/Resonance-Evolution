@@ -348,10 +348,12 @@ func _build_screen_quad(desc: Dictionary) -> void:
 	# room. The classic-viz PNG is swapped into albedo_texture each frame; unshaded => it reads at full
 	# contrast even in a near-black room (the fix for "bars invisible because ambient washed the quad out").
 	_screen_mat.disable_receive_shadows = true
+	# UNSHADED already renders albedo_texture at full brightness. A light emission ADD lets the bright bars
+	# tip past 1.0 so bloom catches them, WITHOUT lifting the dark background of the viz frame into gray
+	# (the background pixels are ~0.06, so +0.06*energy stays near-black; the bars ~1.0 bloom).
 	_screen_mat.emission_enabled = true
 	_screen_mat.emission = Color(1, 1, 1)
-	_screen_mat.emission_energy_multiplier = 1.6
-	_screen_mat.emission_texture = null   # emission comes from albedo_texture via emission_operator below
+	_screen_mat.emission_energy_multiplier = 0.8
 	_screen_mat.emission_operator = BaseMaterial3D.EMISSION_OP_ADD
 	_screen_quad.material_override = _screen_mat
 	_screen_quad.position = pos
@@ -605,7 +607,7 @@ func _recolor_fixture_light(light_key: String, receipt: Dictionary, band_val: fl
 	light.light_color = col
 	# Vivid reactive pools in a dark room: a strong floor so a lit fixture always throws a visible colored
 	# pool/cone, scaling up hard with the band so the beat clearly pulses. (The dark env + glow make this read.)
-	light.light_energy = 2.5 + 6.0 * clampf(band_val, 0.0, 1.0)
+	light.light_energy = 1.6 + 8.0 * clampf(band_val, 0.0, 1.0)
 	# Pulse the matching emissive glow mesh so the fixture itself visibly emits + blooms with its band.
 	if _lamp_glow_meshes.has(light_key):
 		var gm = _lamp_glow_meshes[light_key]

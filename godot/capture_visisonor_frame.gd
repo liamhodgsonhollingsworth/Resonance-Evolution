@@ -4,90 +4,78 @@ extends SceneTree
 ##
 ##   <godot_gui.exe> --path godot -s res://capture_visisonor_frame.gd
 ##
-## It (1) builds the DemoInteractions controller (room + lights + screen + audio chain), (2) plays the
-## bundled mp3 on the VisiSonor analyzer bus, (3) drives the light show while the mp3 sweeps bass->mid->treble,
-## (4) prints the LIVE analyzer bands (proof the real mp3->analyzer->bands path is non-zero), and
-## (5) saves SEVERAL proof frames to godot/artifacts/:
-##      visisonor_demo_wide.png    — a wide shot of the whole room light show (from the back of the room).
-##      visisonor_demo_screen.png  — a shot facing the TV/screen so the spectrum bars are clearly visible.
-##      visisonor_demo_t0/_t1/_t2  — the WIDE shot at ~0s (bass/warm), ~4s (mid), ~8s (treble/cool), so the
-##                                   colors visibly DIFFER across the sweep.
-##      visisonor_demo_frame.png   — overwritten with the good wide shot (the legacy name the PR referenced).
-## Then quits. Uses its OWN capture Camera3D (made current) so framing is deterministic, not the room's.
+## It builds the DemoInteractions controller (room + lights + screen + audio chain), plays the bundled mp3
+## on the VisiSonor analyzer bus, drives the light show while the mp3 sweeps bass->mid->treble, prints the
+## LIVE analyzer bands (proof the real mp3->analyzer->bands path is non-zero), and saves proof frames to
+## godot/artifacts/:
+##   visisonor_demo_wide.png    — a wide shot of the whole room light show.
+##   visisonor_demo_screen.png  — a shot facing the TV/screen so the spectrum bars are clearly visible.
+##   visisonor_demo_t0/_t1/_t2  — the WIDE shot at ~0s (bass/warm), ~4s (mid), ~8s (treble/cool).
+##   visisonor_demo_frame.png   — overwritten with the good wide shot (the legacy name the PR referenced).
+##
+## Uses its OWN capture Camera3D (made current) so framing is deterministic. CRITICAL: in a SceneTree the
+## viewport image reflects the frame drawn BEFORE this tick, so we AIM on one tick and GRAB on the NEXT —
+## a two-phase (aim, settle, grab) schedule so each shot captures its own camera + audio moment.
 
 const DemoScript := preload("res://aperture/demo_interactions.gd")
 const PrimSpectrumBandsRef := preload("res://primitives/prim_spectrum_bands.gd")
 
-# Wide-shot camera: stand at the back of the 8x8 room, eye height, looking toward the fixtures + far wall.
-const WIDE_POS := Vector3(0.0, 2.2, 6.6)
-const WIDE_LOOK := Vector3(0.0, 1.6, -3.0)
-# Screen-facing camera: closer, centered on the screen quad at (0,1.7,-3.9), looking straight at it.
-const SCREEN_POS := Vector3(0.0, 1.7, 0.5)
+# Wide-shot camera: stand near the back wall INSIDE the 8x8 room (z in -4..4), eye height, looking at the
+# fixtures + screen wall. Screen-facing camera: centered on the screen quad at (0,1.7,-3.9), close on it.
+const WIDE_POS := Vector3(0.0, 2.4, 3.4)
+const WIDE_LOOK := Vector3(0.0, 1.5, -3.2)
+const SCREEN_POS := Vector3(0.0, 1.7, -1.2)
 const SCREEN_LOOK := Vector3(0.0, 1.7, -3.9)
 
 var _demo = null
 var _cam: Camera3D = null
 var _frames := 0
-var _shots: Array = []     # queue of { at_frame, name, pos, look }
 var _did_probe := false
+# Each shot: aim at `aim_at`, wait `settle` ticks, then grab as `name`. Scheduled by absolute frame number.
+# Spread across the mp3 sweep (bass early -> treble late) so t0/t1/t2 clearly differ in color.
+var _schedule: Array = []
+var _sidx := 0
 
 func _initialize() -> void:
 	_demo = DemoScript.new()
 	get_root().add_child(_demo)
-	# Our own capture camera, made current so IT frames the shot (not the room's first-person camera).
 	_cam = Camera3D.new()
 	_cam.name = "CaptureCam"
-	_cam.fov = 68.0
+	_cam.fov = 70.0
 	_cam.near = 0.05
 	_cam.far = 100.0
 	get_root().add_child(_cam)
-	_aim(WIDE_POS, WIDE_LOOK)
+	# look_at_from_position works whether or not the node is settled in the tree (unlike look_at).
+	_cam.look_at_from_position(WIDE_POS, WIDE_LOOK, Vector3.UP)
 	_cam.make_current()
-	# Schedule the timed shots. The mp3 sweeps bass->treble over ~8s; at ~60fps a frame is ~1/60s, but the
-	# analyzer needs ~1s to fill, so the t-shots are spread across the render loop by frame count. We give
-	# generous spacing so the live sweep (when the audio driver is present) clearly changes the colors.
-	_shots = [
-		{ "at": 70,  "name": "wide",   "pos": WIDE_POS,   "look": WIDE_LOOK },
-		{ "at": 80,  "name": "t0",     "pos": WIDE_POS,   "look": WIDE_LOOK },
-		{ "at": 320, "name": "t1",     "pos": WIDE_POS,   "look": WIDE_LOOK },
-		{ "at": 560, "name": "t2",     "pos": WIDE_POS,   "look": WIDE_LOOK },
-		{ "at": 600, "name": "screen", "pos": SCREEN_POS, "look": SCREEN_LOOK },
+	# (aim_frame, grab_frame, name, pos, look). grab_frame > aim_frame so the re-aimed camera is drawn first.
+	_schedule = [
+		{ "aim": 68,  "grab": 72,  "name": "wide",   "pos": WIDE_POS,   "look": WIDE_LOOK },
+		{ "aim": 78,  "grab": 82,  "name": "t0",     "pos": WIDE_POS,   "look": WIDE_LOOK },
+		{ "aim": 300, "grab": 304, "name": "t1",     "pos": WIDE_POS,   "look": WIDE_LOOK },
+		{ "aim": 540, "grab": 544, "name": "t2",     "pos": WIDE_POS,   "look": WIDE_LOOK },
+		{ "aim": 580, "grab": 590, "name": "screen", "pos": SCREEN_POS, "look": SCREEN_LOOK },
+		{ "aim": 596, "grab": 600, "name": "frame",  "pos": WIDE_POS,   "look": WIDE_LOOK },
 	]
 
 func _process(_dt: float) -> bool:
 	_frames += 1
-	# Drive the demo each frame so the lights + screen react to the playing mp3. A steady dt so the synthetic
-	# fallback (if the audio driver is absent) still sweeps its kick+sweep across the same frame budget.
 	if _demo != null and is_instance_valid(_demo) and _demo.room != null:
 		_demo.drive_once(Vector3(0, 1.7, 8), 0.033)
-	# Probe the live bands once, early enough that the analyzer has filled.
-	if _frames == 65 and not _did_probe:
+	if _frames == 60 and not _did_probe:
 		_probe_live_bands()
 		_did_probe = true
-	# Fire each scheduled shot at its frame.
-	for shot in _shots:
-		if int(shot["at"]) == _frames:
-			_aim(shot["pos"], shot["look"])
-			# One extra frame settle so the re-aimed camera renders before grab: defer the grab by returning
-			# and grabbing next tick would complicate the loop; instead aim, then grab the CURRENT frame (the
-			# camera transform is applied before the viewport draws this tick in the SceneTree main loop).
+	for shot in _schedule:
+		if int(shot["aim"]) == _frames:
+			_cam.look_at_from_position(shot["pos"], shot["look"], Vector3.UP)
+			_cam.make_current()
+		if int(shot["grab"]) == _frames:
 			_grab_named(str(shot["name"]))
-	if _frames >= 620:
-		# Overwrite the legacy single-frame name with the good wide shot for back-compat with the PR text.
-		_aim(WIDE_POS, WIDE_LOOK)
-		_grab_named("frame")
+	if _frames >= 610:
 		quit(0)
 	return false
 
-func _aim(pos: Vector3, look: Vector3) -> void:
-	if _cam == null or not is_instance_valid(_cam):
-		return
-	_cam.position = pos
-	if not pos.is_equal_approx(look):
-		_cam.look_at(look, Vector3.UP)
-
-## Read the LIVE analyzer bands straight off the VisiSonor bus (the real mp3 is playing) and print them,
-## so a reviewer sees the real path produced non-zero energy — the evidence the task asks for.
+## Read the LIVE analyzer bands off the VisiSonor bus and print them — evidence the real path is non-zero.
 func _probe_live_bands() -> void:
 	var spec: Node = PrimSpectrum.new()
 	get_root().add_child(spec)
@@ -113,7 +101,8 @@ func _probe_live_bands() -> void:
 	spec.free()
 	nb.free()
 
-## Save the current rendered viewport to godot/artifacts/visisonor_demo_<name>.png (visual proof).
+## Save the current rendered viewport to godot/artifacts/visisonor_demo_<name>.png. Also prints the screen
+## quad's texture presence + a small screen-region average so a reviewer can see the bars are non-black.
 func _grab_named(name: String) -> void:
 	var vp := get_root()
 	var img := vp.get_texture().get_image()
