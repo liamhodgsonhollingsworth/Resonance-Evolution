@@ -115,7 +115,7 @@ func evaluate(inputs: Dictionary) -> Dictionary:
 # Particle color from the band balance via freq_to_color's palette (bass=warm, treble=cool). Absent
 # bands -> the warm endpoint (a defined default, C).
 func _particle_color(inputs: Dictionary) -> Array:
-	var pal := FreqToColorRef.PALETTES.get(str(params.get("palette", "default")), FreqToColorRef.PALETTES["default"])
+	var pal: Dictionary = FreqToColorRef.PALETTES.get(str(params.get("palette", "default")), FreqToColorRef.PALETTES["default"])
 	var bass: float = clampf(as_num(inputs.get("bass")), 0.0, 1.0)
 	var treble: float = clampf(as_num(inputs.get("treble")), 0.0, 1.0)
 	var total := bass + treble
