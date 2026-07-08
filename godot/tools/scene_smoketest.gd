@@ -88,22 +88,8 @@ func _capture_and_verdict() -> void:
 	var stats := {}
 	var reasons: Array = []
 
-	# --- structural signals (independent of the pixels) ---
-	var child_count := 0
-	var descendant_count := 0
-	var has_current_camera := false
-	var root_has_script := false
-	if _root_inst != null and is_instance_valid(_root_inst):
-		child_count = _root_inst.get_child_count()
-		descendant_count = _count_descendants(_root_inst)
-		root_has_script = _root_inst.get_script() != null
-	has_current_camera = _find_current_camera(get_root()) != null
-
-	# a scene whose root script failed to parse never runs _ready → builds nothing.
-	if descendant_count == 0:
-		reasons.append("scene built NOTHING (0 descendants) — root script likely failed to parse (grey-screen shape)")
-
-	# --- pixel health signals ---
+	# --- pixel health signals (computed FIRST — the frame is the ground truth of what rendered) ---
+	var frame_has_content := false     # the frame shows real variety (not the flat grey/blank default)
 	if img == null:
 		reasons.append("no viewport image (are you running with a real GL context, i.e. the GUI exe not --headless?)")
 	else:
@@ -112,7 +98,9 @@ func _capture_and_verdict() -> void:
 		var std := float(stats["lum_std"])
 		var uniq := int(stats["unique_colors"])
 		# FLAT/BLANK: near-uniform single color → the grey default viewport (or flat black/white).
-		if std < 0.02 and uniq <= 3:
+		var is_flat := std < 0.02 and uniq <= 3
+		frame_has_content = not is_flat
+		if is_flat:
 			reasons.append("FLAT frame (lum_std=%.4f, unique_colors=%d) — a blank/grey screen, nothing rendered" % [std, uniq])
 		# BLOWN-OUT: near-white wash (the two-competing-WorldEnvironments over-exposure bug).
 		if mean > 0.95:
@@ -125,6 +113,25 @@ func _capture_and_verdict() -> void:
 		if dir != "" and not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(dir)):
 			DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
 		img.save_png(_out_png)
+
+	# --- structural signals ---
+	var child_count := 0
+	var descendant_count := 0
+	var has_current_camera := false
+	var root_has_script := false
+	if _root_inst != null and is_instance_valid(_root_inst):
+		child_count = _root_inst.get_child_count()
+		descendant_count = _count_descendants(_root_inst)
+		root_has_script = _root_inst.get_script() != null
+	has_current_camera = _find_current_camera(get_root()) != null
+
+	# A scene whose root script failed to parse never runs _ready → builds nothing AND shows the flat
+	# grey default viewport. Fire "built NOTHING" ONLY when the frame ALSO lacks content: an immediate-
+	# mode 2D scene (a Node2D rendering via _draw(), e.g. examples/wfc_demo) legitimately has 0
+	# descendants yet paints a full, varied frame — that is NOT a parse failure and must not be flagged.
+	# A real grey screen is flat AND has 0 descendants, so it is still caught (by both this and FLAT).
+	if descendant_count == 0 and not frame_has_content:
+		reasons.append("scene built NOTHING (0 descendants) and the frame has no content — root script likely failed to parse (grey-screen shape)")
 
 	var verdict := {
 		"scene": _scene_path,

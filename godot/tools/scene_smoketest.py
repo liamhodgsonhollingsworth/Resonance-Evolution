@@ -27,6 +27,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+# The verdict lines print ✓/✗/· — on a Windows cp1252 console these raise UnicodeEncodeError and
+# SUPPRESS the machine-readable SMOKETEST_RESULT line, so the caller reads "no verdict". Force UTF-8.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, ValueError):
+    pass
+
 HERE = Path(__file__).resolve()
 DEFAULT_PROJECT = HERE.parents[1]  # <re>/godot
 # Console exe: real GL render (no --headless) AND writes stdout/stderr (unlike the GUI-subsystem exe).

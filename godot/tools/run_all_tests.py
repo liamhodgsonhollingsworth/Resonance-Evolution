@@ -32,6 +32,14 @@ import sys
 import time
 from pathlib import Path
 
+# The matrix prints ✓/✗ marks — on a Windows cp1252 console these raise UnicodeEncodeError mid-report.
+# Force UTF-8 so the summary + RESULT line always print regardless of the console code page.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, ValueError):
+    pass
+
 HERE = Path(__file__).resolve()
 PROJECT = HERE.parents[1]                 # <re>/godot
 RE_ROOT = PROJECT.parent

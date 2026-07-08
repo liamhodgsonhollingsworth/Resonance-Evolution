@@ -24,6 +24,16 @@ row (mark it) rather than deleting, so the history of what has bitten us stays i
 | FM-10 | **Flaky test** — a test whose PASS/FAIL varies between identical runs (timing/physics/order dependence) | "passed last time" — intermittent red hiding a real bug behind luck | run a suite ≥2×; a differing verdict = flaky (e.g. `headless_feature_smoke_test` E1 char_move: 20-PASS-0-FAIL one run, 19-PASS-1-FAIL the next) | 2026-07-08 |
 | FM-11 | **Scene hangs on load / never self-quits** — a scene whose `_ready` blocks (heavy synchronous gen, an await that never resolves) | a one-click launch that "hangs"; the window never becomes interactive | `scene_smoketest.py` → "launch timed out" / "no verdict" (e.g. painterly_scene, lsystem_scene) | 2026-07-08 |
 
+**FM-01/FM-09 precision note (2026-07-08):** the `scene_smoketest.gd` "built NOTHING (0 descendants)"
+detector false-flagged legit **immediate-mode 2D scenes** — a `Node2D` that renders via `_draw()`
+(e.g. `examples/wfc_demo.tscn`) has 0 child nodes by design yet paints a full varied frame. The detector
+now fires "built NOTHING" ONLY when `descendant_count == 0` **AND** the frame lacks content (flat/blank).
+A real grey-screen parse-fail is flat AND has 0 descendants, so it is still caught (by both this gate and
+the FLAT pixel check) — the change removes a false positive without weakening real-bug coverage.
+Also: `scene_smoketest.py` / `run_all_tests.py` now `reconfigure` stdout to UTF-8 — the ✓/✗ verdict
+glyphs raised `UnicodeEncodeError` on a cp1252 console and SUPPRESSED the `SMOKETEST_RESULT` line
+(read downstream as "no verdict produced").
+
 **FM-03 precision note (2026-07-08):** a blanket `String(` lint flagged 1310 mostly-legit uses. The detector now flags ONLY `String(params.get(…))` / `String(inputs.get(…))` in non-test code — the runtime-Variant coercion that actually throws (codebase convention: `str()`, never `String()`, for a Variant — see prim_feature_pick:67). The remaining hits are a real low-severity cleanup list (convert to `str()`), not false positives.
 
 ## How the battery uses this
