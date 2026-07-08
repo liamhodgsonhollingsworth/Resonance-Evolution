@@ -83,13 +83,13 @@ var _led_swatch: ColorRect = null
 var _led_label: Label = null
 
 # --- VISI-SONOR layer state (Wave 4, additive) -----------------------------------------------------
-var _audio_src: PrimAudioSource = null           # mp3 source on the VisiSonor bus (null in fallback mode)
-var _spectrum: PrimSpectrum = null               # reads the analyzer on the bus -> raw log bands
-var _spectrum_bands: PrimSpectrumBands = null    # raw bands -> named + low/mid/high
-var _demo_loop: PrimDemoAudioLoop = null         # synthetic fallback source (when no mp3 or no live audio)
-var _freq_to_color: PrimFreqToColor = null       # bass=warm / treble=cool ramp per fixture
-var _size_sort: PrimSizeSortBind = null          # big lamps->bass, small strip pixels->treble
-var _param_bind: PrimParamBind = null            # fixture band value -> shaped brightness (item 8)
+var _audio_src = null           # mp3 source on the VisiSonor bus (null in fallback mode)
+var _spectrum = null               # reads the analyzer on the bus -> raw log bands
+var _spectrum_bands = null    # raw bands -> named + low/mid/high
+var _demo_loop = null         # synthetic fallback source (when no mp3 or no live audio)
+var _freq_to_color = null       # bass=warm / treble=cool ramp per fixture
+var _size_sort = null          # big lamps->bass, small strip pixels->treble
+var _param_bind = null            # fixture band value -> shaped brightness (item 8)
 var _analyzer_ready := false                     # the AudioEffectSpectrumAnalyzer is mounted on the bus
 var _audio_live := false                         # a real mp3 stream is loaded + playing (vs fallback)
 
@@ -668,7 +668,7 @@ func screen_stats() -> Dictionary:
 
 
 ## The FreqToColor node (the test asserts warm-for-bass / cool-for-treble directly).
-func freq_to_color_node() -> PrimFreqToColor:
+func freq_to_color_node():
 	return _freq_to_color
 
 
