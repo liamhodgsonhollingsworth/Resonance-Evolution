@@ -258,6 +258,16 @@ func _init() -> void:
 	register("OnsetDetect", PrimOnsetDetect)
 	register("BeatTempo", PrimBeatTempo)
 	register("TriggerLatch", PrimTriggerLatch)
+	# --- Visi-sonor Wave 2B: EFFECTS MENU + REGISTRY + DEMO/LIVE TOGGLE (item 7). ---------------------
+	# The UI-INDEPENDENT effects-library backend: a registry the menu reads, a VIEW over it (2d_grid now /
+	# 3d_panel later — same backend, swappable renderer), and the demo-loop + demo|live performance toggle.
+	# A new reactive effect is a NEW REGISTRATION in EffectRegistry (node-not-edit, N-ideal); the menu view
+	# only selects/previews. DemoAudioLoop emits a synthetic spectrum into the SAME set_input_frame seam the
+	# live analyzer fills — the demo source AND the headless fixture. AudioRouteSwitch re-sources demo<->live.
+	register("EffectRegistry", PrimEffectRegistry)   # additive effect-registration store. See prim_effect_registry.gd.
+	register("EffectMenuView", PrimEffectMenuView)   # a VIEW over the registry (2d_grid/3d_panel). See prim_effect_menu_view.gd.
+	register("DemoAudioLoop", PrimDemoAudioLoop)     # synthetic spectrum -> frame seam (demo loop + fixture). See prim_demo_audio_loop.gd.
+	register("AudioRouteSwitch", PrimAudioRouteSwitch) # demo|live frame-source toggle. See prim_audio_route_switch.gd.
 
 func register(type_name: String, prim_class) -> void:
 	_registry[type_name] = prim_class
