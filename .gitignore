@@ -29,6 +29,15 @@ output/
 # "merged updates must reach the shortcut" guarantee). Untracked; regenerated on open.
 *.import
 
+# Godot headless test-capture scratch — stdout/stderr redirects captured at the repo root
+# when running headless Godot suites (e.g. `godot ... > out.txt 2> err.txt`). Captured console
+# output, not source; accidentally committed by de3e600 (#181). Root-anchored so real .txt files
+# (godot/**/LICENSE.txt, logs/sample_chat.txt) stay tracked.
+/out.txt
+/err.txt
+/*_out.txt
+/*_err.txt
+
 # Workflow shell runtime state (sessions, raw logs, local inbox)
 state/
 
