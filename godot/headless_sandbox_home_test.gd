@@ -97,4 +97,10 @@ func _run(out: Dictionary) -> void:
 func _finish(out: Dictionary) -> void:
 	print("HOME_TEST_JSON:", JSON.stringify(out))
 	print("HOME_TEST_RESULT:", "PASS" if out["ok"] else "FAIL")
+	# Standard battery sentinel (run_all_tests.py classifies on "RESULT: ALL PASS" / "… N FAIL").
+	var n_fail := 0
+	for c in out["checks"]:
+		if not bool((c as Dictionary).get("pass", false)):
+			n_fail += 1
+	print("RESULT: %s" % ("ALL PASS" if out["ok"] else "%d FAIL" % n_fail))
 	quit(0 if out["ok"] else 1)
