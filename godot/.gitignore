@@ -14,3 +14,8 @@
 # generations + Liam's pins (a load-bearing Wavelet lesson). User-interaction state never lives in a
 # git-tracked file. (Mirrors /live/* and the root state/ rule.)
 /state/evolver/
+# COPYRIGHTED demo audio — the real Shelter (Porter Robinson & Madeon) mp3 used by the visi-sonor
+# demo when present (REQ 2). It is a local-only asset (graceful-degradation: a fresh checkout without
+# it falls back to demo_tone_sweep_beat.mp3). NEVER commit it. The committed demo_tone_sweep_beat.mp3
+# stays tracked — only shelter.mp3 is ignored.
+/assets/audio/shelter.mp3

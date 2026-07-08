@@ -57,9 +57,15 @@ const PrimParamBindRef := preload("res://primitives/prim_param_bind.gd")
 const PrimScreenRef := preload("res://primitives/prim_screen.gd")
 const PrimVideoSourceRef := preload("res://primitives/prim_video_source.gd")
 
-# The bundled demo clip + the audio bus that carries the analyzer. If the clip is absent the demo falls
-# back to the synthetic PrimDemoAudioLoop, so the room is always audio-reactive on open (C-ideal).
-const DEMO_MP3 := "res://assets/audio/demo_tone_sweep_beat.mp3"
+# The demo audio clip + the audio bus that carries the analyzer. Selection is a 3-tier graceful
+# degradation (REQ 2, C-ideal), resolved at RUNTIME by _resolve_demo_mp3():
+#   1. PREFERRED — the REAL Shelter (Porter Robinson & Madeon) mp3, if present. It is a COPYRIGHTED,
+#      local-only, GITIGNORED asset (never committed), so a fresh checkout simply won't have it.
+#   2. FALLBACK  — the committed royalty-free demo_tone_sweep_beat.mp3 (always present in the repo).
+#   3. If NEITHER file exists, PrimAudioSource emits its declared MISSING no-op and the synthetic
+#      PrimDemoAudioLoop carries the light show, so the room is audio-reactive on open regardless.
+const DEMO_MP3_PREFERRED := "res://assets/audio/shelter.mp3"
+const DEMO_MP3_FALLBACK := "res://assets/audio/demo_tone_sweep_beat.mp3"
 const VS_BUS := "VisiSonor"
 const VS_ROOM := "res://arrangements/demo_visisonor_room.json"
 
@@ -92,6 +98,8 @@ var _size_sort = null          # big lamps->bass, small strip pixels->treble
 var _param_bind = null            # fixture band value -> shaped brightness (item 8)
 var _analyzer_ready := false                     # the AudioEffectSpectrumAnalyzer is mounted on the bus
 var _audio_live := false                         # a real mp3 stream is loaded + playing (vs fallback)
+var _active_audio_path := ""                     # the mp3 path _resolve_demo_mp3() selected this run
+var _audio_src_ok := false                       # PrimAudioSource loaded the mp3 into a valid stream
 
 var _vs_room_rt: GraphRuntime = null             # the demo_visisonor_room.json runtime
 var _vs_renderer = null                          # GodotSceneRenderer instance building the room in-tree
@@ -235,6 +243,38 @@ func setup_visisonor() -> void:
 	_build_fixture_bindings()
 
 
+## Resolve the mp3 path at RUNTIME (REQ 2, 3-tier graceful degradation): the real Shelter mp3 if it is
+## present (copyrighted, gitignored, local-only), else the committed demo tone, else "" (PrimAudioSource
+## then emits its declared MISSING no-op and the synthetic loop carries the demo). FileAccess.file_exists
+## works headless (no import step needed — prim_audio_source reads raw bytes), so a test sees the same pick.
+func _resolve_demo_mp3() -> String:
+	if FileAccess.file_exists(DEMO_MP3_PREFERRED):
+		return DEMO_MP3_PREFERRED
+	if FileAccess.file_exists(DEMO_MP3_FALLBACK):
+		return DEMO_MP3_FALLBACK
+	return ""
+
+
+## The mp3 path the demo selected this run (REQ 2). "" means neither file was present (synthetic fallback).
+func active_audio_path() -> String:
+	return _active_audio_path
+
+
+## True iff PrimAudioSource loaded the selected mp3 into a valid, non-null stream (the SOURCE head of the
+## analyzer chain is live on the real file). Provable headless; distinct from audio_is_live() which also
+## needs the real analyzer driver (GUI only). The REQ-2 anti-FM-07 seam: proves the real file is not dead.
+func audio_source_ok() -> bool:
+	return _audio_src_ok
+
+
+## The live AudioStreamMP3 the source loaded (or null). Lets a test assert the real file yielded real PCM
+## (get_length() > 0) — the honest "the mp3 is non-empty + decodable" check the analyzer would consume.
+func audio_stream():
+	if _audio_src == null:
+		return null
+	return _audio_src.get("_stream")
+
+
 ## THE 1A GAP FIX: create the VisiSonor audio bus and MOUNT an AudioEffectSpectrumAnalyzer onto it, so the
 ## LIVE mp3 path actually produces non-zero analyzer magnitudes. prim_spectrum only READS the analyzer on
 ## the bus — nothing else mounts it — so without this the live path would read all-zero bands. Idempotent:
@@ -286,12 +326,18 @@ func _build_audio_chain() -> void:
 	_param_bind.params = { "in_min": 0.0, "in_max": 1.0, "curve_shape": "exp", "curve_k": 1.5, "attack": 0.6, "release": 0.25, "out_min": 0.15, "out_max": 1.0 }
 
 	# The LIVE mp3 source + analyzer reader. In headless the audio driver is dummy (no real magnitudes),
-	# so the fallback carries the demo; live (GUI) the analyzer produces real bands.
+	# so the fallback carries the demo; live (GUI) the analyzer produces real bands. The path is resolved
+	# at runtime (REQ 2): the real Shelter mp3 if present, else the committed demo tone, else "" (missing).
+	_active_audio_path = _resolve_demo_mp3()
 	_audio_src = PrimAudioSourceRef.new()
 	add_child(_audio_src)
-	_audio_src.params = { "source_kind": "mp3", "path": DEMO_MP3, "bus": VS_BUS, "autoplay": true, "loop": true }
+	_audio_src.params = { "source_kind": "mp3", "path": _active_audio_path, "bus": VS_BUS, "autoplay": true, "loop": true }
 	var out: Dictionary = _audio_src.evaluate({})
-	_audio_live = bool(out.get("ok", false)) and out.get("pcm_stream") != null and _analyzer_ready
+	# _audio_src_ok = the SOURCE head is live on the real file (bytes read -> a valid AudioStreamMP3). This
+	# is provable headless (FileAccess, no audio driver). _audio_live additionally requires the analyzer bus,
+	# which only produces real magnitudes under a real GL/audio driver (GUI) — headless stays in fallback.
+	_audio_src_ok = bool(out.get("ok", false)) and out.get("pcm_stream") != null
+	_audio_live = _audio_src_ok and _analyzer_ready
 
 	_spectrum = PrimSpectrumRef.new()
 	add_child(_spectrum)
