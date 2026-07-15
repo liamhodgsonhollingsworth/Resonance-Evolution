@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Steampunk stool -- interactive 3D mockup</title>
+<link rel="stylesheet" href="static/style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="viewport"></div>
+
+<div class="toolbar">
+  <h1>Steampunk pipe stool -- interactive 3D mockup</h1>
+  <span class="badge" id="glb-badge">loading…</span>
+  <span class="spacer"></span>
+  <button id="wireframe-btn">Wireframe</button>
+  <button id="rotate-btn">Auto-rotate</button>
+  <button id="reset-view-btn">Reset view</button>
+  <select id="tuner-mode" disabled>
+    <option value="off">Tuning panel: off</option>
+    <option value="embedded" selected>Tuning panel: embedded (in-tab)</option>
+    <option value="popout">Tuning panel: popout window</option>
+  </select>
+</div>
+
+<div id="banner"></div>
+<div id="part-label"></div>
+
+<div id="embedded-panel">
+  <div class="panel-titlebar"><b>Tuning panel</b> drag to move -- iframe: tuner.html</div>
+  <iframe id="embedded-iframe" title="Stool parameter tuner"></iframe>
+</div>
+
+<script type="module" src="static/viewer.js"></script>
+</body>
+</html>

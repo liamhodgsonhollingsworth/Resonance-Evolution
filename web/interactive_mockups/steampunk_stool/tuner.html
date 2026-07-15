@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stool tuner</title>
+<link rel="stylesheet" href="static/style.css">
+</head>
+<body style="background: var(--bg-panel);">
+<div class="tuner-body">
+  <h2>Steampunk stool — live tuning</h2>
+  <p class="sub">Every real dimension of the proc3d generator, wired live over param_channel.</p>
+
+  <div class="conn-status">
+    <span class="conn-dot" id="conn-dot"></span>
+    <span id="conn-label">connecting…</span>
+  </div>
+
+  <div id="offline-note" style="display:none; font-size:11.5px; color: var(--warn); margin-bottom: 12px;"></div>
+
+  <div id="params"></div>
+
+  <div class="tuner-footer">
+    <button id="reset-btn">Reset to defaults</button>
+  </div>
+</div>
+<script src="static/tuner.js"></script>
+</body>
+</html>

@@ -1,0 +1,203 @@
+/* style.css -- shared chrome for the interactive 3D steampunk-stool mockup
+   (viewer page + tuner panel, embedded-iframe AND popout contexts). */
+
+:root {
+  --bg: #16130f;
+  --bg-panel: #201b15;
+  --bg-panel-2: #2a231a;
+  --ink: #ecdfc8;
+  --ink-dim: #a89980;
+  --brass: #c9924a;
+  --brass-bright: #e8b06a;
+  --steel: #6f7a82;
+  --ok: #7fbf6a;
+  --warn: #d99a3d;
+  --err: #d9613d;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+body {
+  overflow: hidden;
+}
+
+#viewport {
+  position: fixed;
+  inset: 0;
+}
+
+.toolbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, rgba(22,19,15,0.92), rgba(22,19,15,0.55));
+  border-bottom: 1px solid #3a2f22;
+  backdrop-filter: blur(2px);
+}
+
+.toolbar h1 {
+  font-size: 15px;
+  margin: 0 12px 0 0;
+  color: var(--brass-bright);
+  letter-spacing: 0.02em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.toolbar .spacer { flex: 1; }
+
+button, select {
+  background: var(--bg-panel-2);
+  color: var(--ink);
+  border: 1px solid #4a3d2b;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+button:hover, select:hover { border-color: var(--brass); color: var(--brass-bright); }
+button.active { background: var(--brass); color: #201b0e; border-color: var(--brass-bright); font-weight: 600; }
+button:disabled { opacity: 0.45; cursor: default; }
+
+.badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid #4a3d2b;
+  color: var(--ink-dim);
+}
+.badge.ok { color: var(--ok); border-color: var(--ok); }
+.badge.warn { color: var(--warn); border-color: var(--warn); }
+.badge.err { color: var(--err); border-color: var(--err); }
+
+#banner {
+  position: fixed;
+  top: 52px; left: 14px; right: 14px;
+  z-index: 9;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(217, 154, 61, 0.14);
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  font-size: 12.5px;
+  display: none;
+}
+#banner.show { display: block; }
+#banner code {
+  background: rgba(0,0,0,0.3);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+#part-label {
+  position: fixed;
+  z-index: 12;
+  pointer-events: none;
+  background: rgba(20,17,13,0.92);
+  border: 1px solid var(--brass);
+  color: var(--brass-bright);
+  padding: 4px 9px;
+  border-radius: 5px;
+  font-size: 12px;
+  display: none;
+  white-space: nowrap;
+}
+
+/* embedded ("separate window within the browser tab") docked panel */
+#embedded-panel {
+  position: fixed;
+  top: 56px; right: 14px;
+  width: 340px;
+  height: min(78vh, 720px);
+  z-index: 8;
+  background: var(--bg-panel);
+  border: 1px solid #4a3d2b;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+  overflow: hidden;
+  display: none;
+  flex-direction: column;
+}
+#embedded-panel.show { display: flex; }
+#embedded-panel .panel-titlebar {
+  padding: 8px 10px;
+  background: var(--bg-panel-2);
+  border-bottom: 1px solid #4a3d2b;
+  font-size: 12px;
+  color: var(--ink-dim);
+  display: flex;
+  align-items: center;
+  cursor: move;
+}
+#embedded-panel .panel-titlebar b { color: var(--brass-bright); margin-right: 6px; }
+#embedded-panel iframe {
+  flex: 1;
+  border: none;
+  width: 100%;
+  background: var(--bg-panel);
+}
+
+/* ---- tuner.html's own content (rendered inline OR inside the iframe) ---- */
+.tuner-body {
+  background: var(--bg-panel);
+  color: var(--ink);
+  padding: 12px 14px 20px;
+  height: 100%;
+  overflow-y: auto;
+}
+.tuner-body h2 {
+  font-size: 13px;
+  margin: 0 0 4px;
+  color: var(--brass-bright);
+}
+.tuner-body .sub {
+  font-size: 11px;
+  color: var(--ink-dim);
+  margin: 0 0 14px;
+}
+.param-row {
+  margin-bottom: 14px;
+}
+.param-row .row-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.param-row label { color: var(--ink); }
+.param-row .val { color: var(--brass-bright); font-variant-numeric: tabular-nums; }
+.param-row input[type="range"] {
+  width: 100%;
+  accent-color: var(--brass);
+}
+.tuner-footer {
+  margin-top: 16px;
+  display: flex;
+  gap: 8px;
+}
+.conn-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  margin-bottom: 12px;
+  color: var(--ink-dim);
+}
+.conn-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--err);
+}
+.conn-dot.connected { background: var(--ok); }
+.conn-dot.connecting { background: var(--warn); }
