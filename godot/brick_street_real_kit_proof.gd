@@ -7,12 +7,17 @@ extends Node3D
 ## script's own real-asset LOAD verification -- every mesh below is `ResourceLoader.load()`ed off the
 ## real vendored GLB bytes, not a placeholder) -> `KitGridPlacer.place()` -> `KitGridPlacer.instantiate()`.
 ##
-## GRID: the peer `StreetGridScaffold` generator (DQ-1bcb379f, Project A) had not merged at build time
-## (only uncommitted work in a peer worktree) -- per this task's own fallback instruction, this uses the
-## SAME synthetic StreetGridScaffold-SHAPED grid `kit_grid_placement_demo.py` / the Python-side real-kit
-## test already prove (`cells_from_footprints`/`cells_from_street_polygon`, the exact placement seam a
-## live scaffold would hand this module once merged -- swapping in the real grid is then a one-line
-## call-site change, no algorithm change).
+## GRID (DQ-cff253c7, real-grid swap-in): now driven by the REAL `StreetGridScaffold.build()`
+## (DQ-1bcb379f, merged #202) instead of the earlier synthetic StreetGridScaffold-SHAPED
+## two-cell placeholder -- exactly the one-line call-site change the module docstrings already
+## documented (`cells_from_footprints`/`cells_from_street_polygon` consume the scaffold's
+## `building_footprints`/`street_polygon` verbatim, zero conversion). One real chunk's worth of
+## BSP-packed lots/streets feeds the SAME three fill modes below, unchanged.
+##
+## NOT attempted here (documented follow-up, no-auto-generalization rule): connectivity-aware
+## road-tile fill (matching adjacent tile orientations across a real multi-lot street network) --
+## `KitGridPlacer`/`kit_grid_placement.py` are tag-weighted-random by design, not connectivity-aware;
+## queued as DQ-c05c0b4f.
 ##
 ## THREE FILL MODES, same shape the synthetic proof already established, now with REAL geometry:
 ##   * tile_fill      -- an 8x3m street strip tiled edge-to-edge with 1.0x1.0m road/tile pieces
@@ -31,6 +36,17 @@ extends Node3D
 const SHOT_OUT := "res://live/brick_street_real_kit_proof.png"
 const MANIFEST_PATH := "res://assets/ingested/manifest.json"
 const KIT_ID := "kenney_city_roads"
+
+# The real StreetGridScaffold chunk this proof renders (DQ-cff253c7). Small enough that ~1m road
+# modules tile it legibly at this camera distance, big enough to show real BSP-packed multi-lot
+# structure (not just the old 2-cell synthetic placeholder).
+const WORLD_SEED := 2026
+const CHUNK_COORD := Vector2i(0, 0)
+const CHUNK_SIZE := 16.0
+const LOT_SIZE_MIN := 3.0
+const LOT_SIZE_MAX := 6.0
+const STREET_WIDTH := 1.5
+const PACKING_SEED := 7
 
 var _shot_frames := 0
 
@@ -59,10 +75,14 @@ func _ready() -> void:
 	print("[brick_street_real_kit_proof] instantiated %d real kenney_city_roads pieces (kit CC0 1.0 Universal, https://kenney.nl/assets/city-kit-roads)" % placed)
 
 func _build_env() -> void:
+	# Oblique aerial over the whole real chunk (CHUNK_SIZE x CHUNK_SIZE, origin at chunk (0,0)'s
+	# min corner) -- legible enough to show the BSP-packed lot/street structure the real grid
+	# produces, the same "show the scaffold's real data output" framing as the Wave-A1 proof.
+	var center := Vector3(CHUNK_SIZE * 0.5, 0.0, CHUNK_SIZE * 0.5)
 	var cam := Camera3D.new()
-	var cpos := Vector3(5.0, 4.2, 8.5)
-	cam.transform = Transform3D(Basis.looking_at(Vector3(5.0, 0.2, 1.2) - cpos, Vector3.UP), cpos)
-	cam.fov = 55.0
+	var cpos := center + Vector3(CHUNK_SIZE * 0.55, CHUNK_SIZE * 0.85, CHUNK_SIZE * 0.55)
+	cam.transform = Transform3D(Basis.looking_at(center - cpos, Vector3.UP), cpos)
+	cam.fov = 50.0
 	add_child(cam)
 	var light := DirectionalLight3D.new()
 	light.rotation_degrees = Vector3(-55, -35, 0)
@@ -70,9 +90,9 @@ func _build_env() -> void:
 	light.shadow_enabled = true
 	add_child(light)
 	var fill := OmniLight3D.new()
-	fill.position = Vector3(5.0, 3.0, 5.0)
+	fill.position = center + Vector3(0.0, CHUNK_SIZE * 0.4, 0.0)
 	fill.light_energy = 2.0
-	fill.omni_range = 15.0
+	fill.omni_range = CHUNK_SIZE * 1.2
 	add_child(fill)
 	var env_node := WorldEnvironment.new()
 	var env := Environment.new()
@@ -84,12 +104,12 @@ func _build_env() -> void:
 	env_node.environment = env
 	add_child(env_node)
 
-	# ground slab under the street/lot so the kit reads as sitting ON a surface, not floating
+	# ground slab under the whole chunk so the kit reads as sitting ON a surface, not floating
 	var ground := MeshInstance3D.new()
 	var ground_mesh := BoxMesh.new()
-	ground_mesh.size = Vector3(14.0, 0.1, 6.0)
+	ground_mesh.size = Vector3(CHUNK_SIZE, 0.1, CHUNK_SIZE)
 	ground.mesh = ground_mesh
-	ground.position = Vector3(5.0, -0.05, 1.5)
+	ground.position = Vector3(center.x, -0.05, center.z)
 	var ground_mat := StandardMaterial3D.new()
 	ground_mat.albedo_color = Color(0.36, 0.42, 0.3)  # grass verge either side of the road module
 	ground.material_override = ground_mat
@@ -105,12 +125,16 @@ func _build_scene() -> int:
 		push_error("brick_street_real_kit_proof: 0 pieces loaded from manifest kit '%s'" % KIT_ID)
 		return 0
 
-	# the same StreetGridScaffold-SHAPED synthetic grid the Python-side real-kit test uses (module
-	# docstring: the placement seam StreetGridScaffold.build() would hand this once merged).
-	var street_rect := Rect2(Vector2(0.0, 0.0), Vector2(8.0, 3.0))
-	var lot_rect := Rect2(Vector2(9.0, 0.5), Vector2(1.5, 1.5))
-	var lot_cells := KitGridPlacer.cells_from_footprints([{"rect": lot_rect, "id": 0}])
-	var street_cells := KitGridPlacer.cells_from_street_polygon([street_rect], 1)
+	# DQ-cff253c7 real-grid swap-in: one real StreetGridScaffold chunk (DQ-1bcb379f, merged #202)
+	# instead of the old 2-cell synthetic placeholder. Zero conversion -- building_footprints/
+	# street_polygon feed straight into the SAME cells_from_footprints/cells_from_street_polygon
+	# seam the placeholder already exercised.
+	var scaffold := StreetGridScaffold.build(WORLD_SEED, CHUNK_COORD, CHUNK_SIZE,
+		LOT_SIZE_MIN, LOT_SIZE_MAX, STREET_WIDTH, PACKING_SEED)
+	var building_footprints: Array = scaffold["building_footprints"]
+	var street_polygon: Array = scaffold["street_polygon"]
+	var lot_cells := KitGridPlacer.cells_from_footprints(building_footprints)
+	var street_cells := KitGridPlacer.cells_from_street_polygon(street_polygon, building_footprints.size())
 
 	var road_tiles := KitGridPlacer.place(street_cells, pieces, {
 		"seed": 42, "fill_mode": "tile_fill", "margin": 0.0, "spacing": 0.0, "required_tags": ["road"],
@@ -118,7 +142,7 @@ func _build_scene() -> int:
 	var lampposts := KitGridPlacer.place(street_cells, pieces, {
 		"seed": 42, "fill_mode": "edge_scatter", "margin": 0.3, "spacing": 2.0, "required_tags": ["post"],
 	})
-	var sign := KitGridPlacer.place(lot_cells, pieces, {
+	var signs := KitGridPlacer.place(lot_cells, pieces, {
 		"seed": 42, "fill_mode": "single_centered", "required_tags": ["sign"],
 	})
 
@@ -129,11 +153,12 @@ func _build_scene() -> int:
 	for placement in lampposts:
 		add_child(KitGridPlacer.instantiate(placement))
 		placed += 1
-	for placement in sign:
+	for placement in signs:
 		add_child(KitGridPlacer.instantiate(placement))
 		placed += 1
 
-	print("[brick_street_real_kit_proof] road_tiles=%d lampposts=%d sign=%d" % [road_tiles.size(), lampposts.size(), sign.size()])
+	print("[brick_street_real_kit_proof] road_tiles=%d lampposts=%d signs=%d (real StreetGridScaffold: %d lots, %d street strips)" %
+		[road_tiles.size(), lampposts.size(), signs.size(), building_footprints.size(), street_polygon.size()])
 	return placed
 
 func _process(_delta: float) -> void:
