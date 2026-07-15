@@ -23,6 +23,12 @@ output/
 .cache/
 *.npy
 
+# Interactive 3D mockup pages (web/interactive_mockups/*/) -- runtime-regenerated
+# live params/status/glb, never committed (server.py writes these fresh on every
+# start + on every param change). The committed static reference .glb under
+# each mockup's assets/ dir is NOT covered by this rule.
+web/interactive_mockups/*/generated/
+
 # Godot asset-import descriptors — DERIVED from source assets + .godot/ on editor open, so they are
 # cache noise, not substrate. They MUST be gitignored: Godot rewrites them every open, and a dirty
 # *.import worktree can silently block the desktop shortcut's `git pull --ff-only` (breaking the
