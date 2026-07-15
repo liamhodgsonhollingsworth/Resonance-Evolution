@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://underground_wave3_proof.gd" id="1_underground_wave3_proof"]
+
+[node name="UndergroundWave3Proof" type="Node3D"]
+script = ExtResource("1_underground_wave3_proof")
