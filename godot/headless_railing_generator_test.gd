@@ -24,6 +24,14 @@ func _initialize() -> void:
 	ok = _test_generate_for_bridge_returns_two_edges() and ok
 	ok = _test_generate_for_bridge_missing_frame_returns_empty() and ok
 	ok = _test_generate_for_cavity_rim_builds_chord() and ok
+	ok = _test_generate_for_cavity_rim_curved_defaults_off_matches_chord() and ok
+	ok = _test_generate_for_cavity_rim_curved_produces_more_posts() and ok
+	ok = _test_generate_for_cavity_rim_curved_arc_segments_tunable() and ok
+	ok = _test_generate_for_cavity_rim_curved_bulges_relative_to_chord() and ok
+	ok = _test_generate_for_cavity_rim_curved_large_radius_approaches_chord() and ok
+	ok = _test_generate_for_cavity_rim_curved_degenerate_falls_back_to_chord() and ok
+	ok = _test_generate_for_cavity_rim_curved_explicit_ring_radius_override() and ok
+	ok = _test_generate_for_cavity_rim_curved_arc_segments_one_matches_chord_post_count() and ok
 
 	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
 	quit(0 if ok else 1)
@@ -138,3 +146,76 @@ func _test_generate_for_cavity_rim_builds_chord() -> bool:
 	}
 	var out := RailingGenerator.generate_for_cavity_rim(cavity, {})
 	return _check("generate_for_cavity_rim: produces a non-null chord railing mesh", out["mesh"] != null)
+
+
+# ── curved rim arc (arc-following balcony rims) ─────────────────────────────────────────────────
+
+## A physically-sensible synthetic ring cavity: sitting on a circle of `radius` centered at world
+## origin, tangent (basis.x) perpendicular to the radial direction (basis.z), matching how a real
+## cavity_carver.gd transform relates to `RingScaffoldGenerator`'s world-origin-centered rings.
+func _ring_cavity(radius: float, size: float = 0.8) -> Dictionary:
+	var xform := Transform3D(Basis.IDENTITY.rotated(Vector3.UP, PI / 2.0), Vector3(radius, 0, 0))
+	return {"transform": xform, "size": size}
+
+func _test_generate_for_cavity_rim_curved_defaults_off_matches_chord() -> bool:
+	var cavity := _ring_cavity(10.0)
+	var baseline := RailingGenerator.generate_for_cavity_rim(cavity, {})
+	# curved=false explicitly, PLUS the new curved-only tunables set -- they must be inert.
+	var explicit_off := RailingGenerator.generate_for_cavity_rim(cavity, {"curved": false, "ring_radius": 3.0, "arc_segments": 20})
+	return _check("generate_for_cavity_rim: curved omitted == curved=false, and curved-only tunables are inert when curved=false",
+		baseline["post_count"] == explicit_off["post_count"] and is_equal_approx(float(baseline["length"]), float(explicit_off["length"])))
+
+func _test_generate_for_cavity_rim_curved_produces_more_posts() -> bool:
+	var cavity := _ring_cavity(10.0)
+	var chord := RailingGenerator.generate_for_cavity_rim(cavity, {"curved": false})
+	var arc := RailingGenerator.generate_for_cavity_rim(cavity, {"curved": true, "arc_segments": 8})
+	return _check("generate_for_cavity_rim: curved=true with arc_segments=8 posts along the curve -> more posts than the straight chord",
+		int(arc["post_count"]) > int(chord["post_count"]))
+
+func _test_generate_for_cavity_rim_curved_arc_segments_tunable() -> bool:
+	var cavity := _ring_cavity(10.0)
+	var coarse := RailingGenerator.generate_for_cavity_rim(cavity, {"curved": true, "arc_segments": 2})
+	var fine := RailingGenerator.generate_for_cavity_rim(cavity, {"curved": true, "arc_segments": 12})
+	return _check("generate_for_cavity_rim: arc_segments is a live tunable resolution knob (more segments -> more posts)",
+		int(fine["post_count"]) > int(coarse["post_count"]))
+
+func _test_generate_for_cavity_rim_curved_bulges_relative_to_chord() -> bool:
+	# A large cavity relative to the ring radius (half_span/ring_radius ~ 0.78) makes the arc's own
+	# traversed length measurably longer than the straight chord between the same two ring points.
+	var cavity := _ring_cavity(10.0, 6.0)
+	var chord := RailingGenerator.generate_for_cavity_rim(cavity, {"curved": false})
+	var arc := RailingGenerator.generate_for_cavity_rim(cavity, {"curved": true, "arc_segments": 10})
+	return _check("generate_for_cavity_rim: curved=true traverses a longer path than the flat chord (genuine curvature, not a relabeled straight line)",
+		float(arc["length"]) > float(chord["length"]) * 1.01)
+
+func _test_generate_for_cavity_rim_curved_large_radius_approaches_chord() -> bool:
+	var cavity := _ring_cavity(10.0)
+	var chord := RailingGenerator.generate_for_cavity_rim(cavity, {"curved": false})
+	var nearly_flat := RailingGenerator.generate_for_cavity_rim(cavity, {"curved": true, "ring_radius": 100000.0, "arc_segments": 8})
+	var ratio: float = float(nearly_flat["length"]) / maxf(0.0001, float(chord["length"]))
+	return _check("generate_for_cavity_rim: a very large ring_radius makes the arc approach the flat chord (smooth limit, no blow-up)",
+		ratio > 0.99 and ratio < 1.01)
+
+func _test_generate_for_cavity_rim_curved_degenerate_falls_back_to_chord() -> bool:
+	# tangent (basis.x) parallel to the radial direction (origin - world-origin) -- degenerate
+	# curvature; must fall back to the exact straight chord, never crash or emit garbage.
+	var cavity := {"transform": Transform3D(Basis.IDENTITY, Vector3(5, 0, 0)), "size": 0.8}
+	var chord := RailingGenerator.generate_for_cavity_rim(cavity, {"curved": false})
+	var degenerate := RailingGenerator.generate_for_cavity_rim(cavity, {"curved": true, "arc_segments": 8})
+	return _check("generate_for_cavity_rim: degenerate curvature (parallel tangent/radial) falls back to the straight chord",
+		degenerate["mesh"] != null and degenerate["post_count"] == chord["post_count"]
+		and is_equal_approx(float(degenerate["length"]), float(chord["length"])))
+
+func _test_generate_for_cavity_rim_curved_explicit_ring_radius_override() -> bool:
+	var cavity := _ring_cavity(10.0, 0.8)
+	var tight := RailingGenerator.generate_for_cavity_rim(cavity, {"curved": true, "ring_radius": 1.5, "arc_segments": 10})
+	var loose := RailingGenerator.generate_for_cavity_rim(cavity, {"curved": true, "ring_radius": 1000.0, "arc_segments": 10})
+	return _check("generate_for_cavity_rim: explicit ring_radius override changes curvature (tighter radius -> more curved/longer path)",
+		float(tight["length"]) > float(loose["length"]))
+
+func _test_generate_for_cavity_rim_curved_arc_segments_one_matches_chord_post_count() -> bool:
+	var cavity := _ring_cavity(10.0)
+	var chord := RailingGenerator.generate_for_cavity_rim(cavity, {"curved": false})
+	var arc_one_segment := RailingGenerator.generate_for_cavity_rim(cavity, {"curved": true, "arc_segments": 1})
+	return _check("generate_for_cavity_rim: curved=true with arc_segments=1 is a 2-point path -> same post_count as the chord",
+		int(arc_one_segment["post_count"]) == int(chord["post_count"]))

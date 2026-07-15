@@ -25,6 +25,14 @@ func _initialize() -> void:
 	ok = _test_scene_node_has_segments_for_default_species() and ok
 	ok = _test_scatter_aggregates_across_multiple_cavities() and ok
 	ok = _test_scatter_call_target_matches_handle() and ok
+	ok = _test_scatter_kit_handle_resolves_real_glb_scene_node() and ok
+	ok = _test_scatter_kit_handle_glb_file_exists_on_disk() and ok
+	ok = _test_scatter_kit_handle_species_filter_restricts_selection() and ok
+	ok = _test_scatter_kit_handle_scale_reflects_tunable_range() and ok
+	ok = _test_scatter_kit_handle_unknown_kit_falls_back_to_lsystem() and ok
+	ok = _test_scatter_kit_handle_empty_species_filter_falls_back_to_lsystem() and ok
+	ok = _test_scatter_kit_handle_call_target_still_matches_handle() and ok
+	ok = _test_scatter_kit_handle_deterministic_same_seed() and ok
 
 	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
 	quit(0 if ok else 1)
@@ -204,3 +212,89 @@ func _test_scene_node_has_segments_for_default_species() -> bool:
 		var node: Dictionary = p["scene_node"]
 		ok = ok and (node.get("children", []) as Array).size() > 0
 	return _check("scatter: each built scene_node carries at least one L-system segment child", ok)
+
+
+# ── real ingested-kit tree assets (DQ-9183cfe2, 2026-07-15) ────────────────────────────────────────
+# Exercises the REAL `quaternius_nature` kit vendored + ingested into this repo
+# (godot/assets/ingested/manifest.json, godot/assets/vendor/quaternius_nature/*.glb) -- proves the
+# real asset-ingestion pipeline is actually wired into the cavity population path, not a mock.
+
+func _test_scatter_kit_handle_resolves_real_glb_scene_node() -> bool:
+	var out := PlantScatterInCavities.scatter(_synthetic_cavity_instances(4), [],
+		{"seed": 3, "density": 1.0, "tree_asset_handle": "kit:quaternius_nature"})
+	var ok := out.size() > 0
+	for p in out:
+		var node = p["scene_node"]
+		ok = ok and node != null and typeof(node) == TYPE_DICTIONARY
+		if ok:
+			var mesh: Dictionary = (node as Dictionary).get("mesh", {})
+			ok = ok and String(mesh.get("source", "")) == "glb" and String(mesh.get("path", "")) != ""
+	return _check("scatter: 'kit:quaternius_nature' handle resolves a real mesh.source=glb scene_node (not L-system)", ok)
+
+func _test_scatter_kit_handle_glb_file_exists_on_disk() -> bool:
+	var out := PlantScatterInCavities.scatter(_synthetic_cavity_instances(6), [],
+		{"seed": 7, "density": 1.0, "tree_asset_handle": "kit:quaternius_nature"})
+	var ok := out.size() > 0
+	for p in out:
+		var node: Dictionary = p["scene_node"]
+		var path := String((node.get("mesh", {}) as Dictionary).get("path", ""))
+		ok = ok and path != "" and FileAccess.file_exists(path)
+	return _check("scatter: every resolved kit GLB path exists on disk (real vendored asset, not a dangling reference)", ok)
+
+func _test_scatter_kit_handle_species_filter_restricts_selection() -> bool:
+	var out := PlantScatterInCavities.scatter(_synthetic_cavity_instances(10), [],
+		{"seed": 11, "density": 1.0, "tree_asset_handle": "kit:quaternius_nature", "tree_species": ["pine"]})
+	var ok := out.size() > 0
+	for p in out:
+		var node: Dictionary = p["scene_node"]
+		var path := String((node.get("mesh", {}) as Dictionary).get("path", "")).to_lower()
+		ok = ok and path.find("pine") >= 0 and path.find("twisted_tree") < 0
+	return _check("scatter: tree_species=['pine'] restricts every placement to the pine model only (species-mix tunable)", ok)
+
+func _test_scatter_kit_handle_scale_reflects_tunable_range() -> bool:
+	var out := PlantScatterInCavities.scatter(_synthetic_cavity_instances(6), [],
+		{"seed": 12, "density": 1.0, "tree_asset_handle": "kit:quaternius_nature", "size_min": 0.4, "size_max": 0.6})
+	var ok := out.size() > 0
+	for p in out:
+		var node: Dictionary = p["scene_node"]
+		var s: Array = node.get("scale", [1.0, 1.0, 1.0])
+		var sx: float = float(s[0])
+		ok = ok and sx >= 0.4 and sx <= 0.6 and is_equal_approx(sx, float(p["scale"]))
+	return _check("scatter: a kit tree's scene_node scale reflects size_min/size_max (scale-jitter tunable applies to real assets too)", ok)
+
+func _test_scatter_kit_handle_unknown_kit_falls_back_to_lsystem() -> bool:
+	var out := PlantScatterInCavities.scatter(_synthetic_cavity_instances(4), [],
+		{"seed": 3, "density": 1.0, "tree_asset_handle": "kit:nonexistent_kit_xyz"})
+	var ok := out.size() > 0
+	for p in out:
+		var node: Dictionary = p["scene_node"]
+		ok = ok and node != null and (node.get("children", []) as Array).size() > 0 and not node.has("mesh")
+	return _check("scatter: unknown kit id gracefully falls back to the built-in lsystem species (never emits nothing, never crashes)", ok)
+
+func _test_scatter_kit_handle_empty_species_filter_falls_back_to_lsystem() -> bool:
+	var out := PlantScatterInCavities.scatter(_synthetic_cavity_instances(4), [],
+		{"seed": 3, "density": 1.0, "tree_asset_handle": "kit:quaternius_nature", "tree_species": ["nonexistent_species_xyz"]})
+	var ok := out.size() > 0
+	for p in out:
+		var node: Dictionary = p["scene_node"]
+		ok = ok and node != null and not node.has("mesh")
+	return _check("scatter: a species filter matching zero kit members falls back to lsystem rather than emitting nothing", ok)
+
+func _test_scatter_kit_handle_call_target_still_matches_handle() -> bool:
+	var out := PlantScatterInCavities.scatter(_synthetic_cavity_instances(4), [],
+		{"seed": 3, "density": 1.0, "tree_asset_handle": "kit:quaternius_nature"})
+	var ok := out.size() > 0
+	for p in out:
+		ok = ok and String(p["call_target"]) == "kit:quaternius_nature"
+	return _check("scatter: call_target on every placement still equals the tree_asset_handle tunable for kit: handles too", ok)
+
+func _test_scatter_kit_handle_deterministic_same_seed() -> bool:
+	var instances := _synthetic_cavity_instances(6)
+	var a := PlantScatterInCavities.scatter(instances, [], {"seed": 42, "density": 0.9, "tree_asset_handle": "kit:quaternius_nature"})
+	var b := PlantScatterInCavities.scatter(instances, [], {"seed": 42, "density": 0.9, "tree_asset_handle": "kit:quaternius_nature"})
+	var ok := a.size() == b.size() and a.size() > 0
+	for i in a.size():
+		var pa := String((a[i]["scene_node"] as Dictionary).get("mesh", {}).get("path", ""))
+		var pb := String((b[i]["scene_node"] as Dictionary).get("mesh", {}).get("path", ""))
+		ok = ok and pa == pb
+	return _check("scatter: identical seed -> identical real-asset picks too (deterministic species roll)", ok)
