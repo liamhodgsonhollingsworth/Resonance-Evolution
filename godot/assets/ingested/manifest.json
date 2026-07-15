@@ -1,5 +1,1661 @@
 {
   "assets": {
+    "kenney_city_roads__bridge-pillar": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__bridge-pillar.arrangement.json",
+      "asset_id": "kenney_city_roads__bridge-pillar",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__bridge-pillar.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__bridge-pillar.scene_node.json",
+      "sha256": "c673e6e3a7b6a409e9fa11d2b0ec3415980b7d598d2998f93d783021dc9e3a24",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/bridge-pillar.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "bridge-pillar",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__bridge-pillar.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__bridge-pillar.md"
+    },
+    "kenney_city_roads__bridge-pillar-wide": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__bridge-pillar-wide.arrangement.json",
+      "asset_id": "kenney_city_roads__bridge-pillar-wide",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__bridge-pillar-wide.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__bridge-pillar-wide.scene_node.json",
+      "sha256": "93b0b96006cdca5287679311cfd4102195468affc0f5b247608b5bba2384e733",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/bridge-pillar-wide.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "bridge-pillar-wide",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__bridge-pillar-wide.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__bridge-pillar-wide.md"
+    },
+    "kenney_city_roads__construction-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__construction-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__construction-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__construction-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__construction-barrier.scene_node.json",
+      "sha256": "c2dc9e69b306093a66f9380d793d9f9d81c9331febf18d3188a6312f145bbe75",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/construction-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "construction-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__construction-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__construction-barrier.md"
+    },
+    "kenney_city_roads__construction-cone": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__construction-cone.arrangement.json",
+      "asset_id": "kenney_city_roads__construction-cone",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__construction-cone.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__construction-cone.scene_node.json",
+      "sha256": "287f086b9f89e00470716168b3c5bffd99c16797c9b449715287e65fb39dd37c",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/construction-cone.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "construction-cone",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__construction-cone.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__construction-cone.md"
+    },
+    "kenney_city_roads__construction-light": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__construction-light.arrangement.json",
+      "asset_id": "kenney_city_roads__construction-light",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__construction-light.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__construction-light.scene_node.json",
+      "sha256": "29e427c06c235475af3ff0c3f7045e89bbb8a6d1d6df93261e3922ca4d1b1bcc",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/construction-light.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "construction-light",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__construction-light.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__construction-light.md"
+    },
+    "kenney_city_roads__light-curved": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__light-curved.arrangement.json",
+      "asset_id": "kenney_city_roads__light-curved",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__light-curved.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__light-curved.scene_node.json",
+      "sha256": "e9ff06ead9d9b14eddd7bf40fa20e31b898fde2d59ade940eebe60685d335f6d",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/light-curved.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "light-curved",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__light-curved.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__light-curved.md"
+    },
+    "kenney_city_roads__light-curved-cross": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__light-curved-cross.arrangement.json",
+      "asset_id": "kenney_city_roads__light-curved-cross",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__light-curved-cross.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__light-curved-cross.scene_node.json",
+      "sha256": "811f6e8ed725ec9fb77ca8ba6cf2125b7268fececa750ef0a5948c233ba47da9",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/light-curved-cross.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "light-curved-cross",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__light-curved-cross.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__light-curved-cross.md"
+    },
+    "kenney_city_roads__light-curved-double": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__light-curved-double.arrangement.json",
+      "asset_id": "kenney_city_roads__light-curved-double",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__light-curved-double.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__light-curved-double.scene_node.json",
+      "sha256": "ff76555bf6eff977dddaa9028db4f44e88e7f158f2c47d596051a20fa03ddb07",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/light-curved-double.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "light-curved-double",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__light-curved-double.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__light-curved-double.md"
+    },
+    "kenney_city_roads__light-square": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__light-square.arrangement.json",
+      "asset_id": "kenney_city_roads__light-square",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__light-square.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__light-square.scene_node.json",
+      "sha256": "10f4ebbe67cde629e4ee5c64f2cf4c9e25d9a3346ab07d5e204ce5f79293a87a",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/light-square.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "light-square",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__light-square.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__light-square.md"
+    },
+    "kenney_city_roads__light-square-cross": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__light-square-cross.arrangement.json",
+      "asset_id": "kenney_city_roads__light-square-cross",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__light-square-cross.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__light-square-cross.scene_node.json",
+      "sha256": "a8c72ab33c9bceaf612d4027d535813deb1951b61313a2c30985eced33dd010d",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/light-square-cross.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "light-square-cross",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__light-square-cross.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__light-square-cross.md"
+    },
+    "kenney_city_roads__light-square-double": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__light-square-double.arrangement.json",
+      "asset_id": "kenney_city_roads__light-square-double",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__light-square-double.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__light-square-double.scene_node.json",
+      "sha256": "ad55001503635f40d996a65a3d8bc1926c40f5f17c3eeb300088d05a7ae11174",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/light-square-double.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "light-square-double",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__light-square-double.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__light-square-double.md"
+    },
+    "kenney_city_roads__road-bend": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-bend.arrangement.json",
+      "asset_id": "kenney_city_roads__road-bend",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-bend.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-bend.scene_node.json",
+      "sha256": "5ec9dab26d77510e77969fa3e1fad060190c63b1529a961cb2b7076cdde2b0cf",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-bend.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-bend",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-bend.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-bend.md"
+    },
+    "kenney_city_roads__road-bend-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-bend-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-bend-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-bend-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-bend-barrier.scene_node.json",
+      "sha256": "7545f1fd11c11619d761b1eeeafd68743e236bbdbd09be835db1492fe8d9917d",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-bend-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-bend-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-bend-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-bend-barrier.md"
+    },
+    "kenney_city_roads__road-bend-sidewalk": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-bend-sidewalk.arrangement.json",
+      "asset_id": "kenney_city_roads__road-bend-sidewalk",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-bend-sidewalk.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-bend-sidewalk.scene_node.json",
+      "sha256": "19846d1a2f6946d4ef1e8bda2074162140e0d08c3b681e152039fac043940d80",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-bend-sidewalk.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-bend-sidewalk",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-bend-sidewalk.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-bend-sidewalk.md"
+    },
+    "kenney_city_roads__road-bend-square": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-bend-square.arrangement.json",
+      "asset_id": "kenney_city_roads__road-bend-square",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-bend-square.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-bend-square.scene_node.json",
+      "sha256": "53994443059959b5d9c02689dee8e9b670143b967402562f0537f2bfd40eab7c",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-bend-square.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-bend-square",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-bend-square.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-bend-square.md"
+    },
+    "kenney_city_roads__road-bend-square-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-bend-square-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-bend-square-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-bend-square-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-bend-square-barrier.scene_node.json",
+      "sha256": "48d785e81fe4aec2d4586e229c7f2e94b682216ce6398367e0cf4fc21f6bc97c",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-bend-square-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-bend-square-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-bend-square-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-bend-square-barrier.md"
+    },
+    "kenney_city_roads__road-bridge": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-bridge.arrangement.json",
+      "asset_id": "kenney_city_roads__road-bridge",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-bridge.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-bridge.scene_node.json",
+      "sha256": "def3492f02f1fbae2149d94aabb46ac4df792e03a625ebac02010a16169cff72",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-bridge.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-bridge",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-bridge.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-bridge.md"
+    },
+    "kenney_city_roads__road-crossing": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-crossing.arrangement.json",
+      "asset_id": "kenney_city_roads__road-crossing",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-crossing.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-crossing.scene_node.json",
+      "sha256": "ffe5c924f9a14f53616988f157db825fafdaddeb76662379044cbe26ddedd932",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-crossing.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-crossing",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-crossing.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-crossing.md"
+    },
+    "kenney_city_roads__road-crossroad": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-crossroad.arrangement.json",
+      "asset_id": "kenney_city_roads__road-crossroad",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-crossroad.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-crossroad.scene_node.json",
+      "sha256": "26de3ec9c54f909331ff071060310f6b9e454c4ed3213394b7b52352ce2a45f9",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-crossroad.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-crossroad",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-crossroad.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-crossroad.md"
+    },
+    "kenney_city_roads__road-crossroad-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-crossroad-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-crossroad-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-crossroad-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-crossroad-barrier.scene_node.json",
+      "sha256": "774679bc1c7851dbd945c3f8e76f911db6f8a2eb6322514b6ff8d5582e5ae209",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-crossroad-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-crossroad-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-crossroad-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-crossroad-barrier.md"
+    },
+    "kenney_city_roads__road-crossroad-line": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-crossroad-line.arrangement.json",
+      "asset_id": "kenney_city_roads__road-crossroad-line",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-crossroad-line.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-crossroad-line.scene_node.json",
+      "sha256": "7287d4973da33ea7ef1a7b154fdf3960f36f51aded65ee93ce4509978b9ab81e",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-crossroad-line.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-crossroad-line",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-crossroad-line.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-crossroad-line.md"
+    },
+    "kenney_city_roads__road-crossroad-path": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-crossroad-path.arrangement.json",
+      "asset_id": "kenney_city_roads__road-crossroad-path",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-crossroad-path.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-crossroad-path.scene_node.json",
+      "sha256": "126f6ff1c80c593b09fe94d2e09486f7aba5b22de832a3e54769465efff72126",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-crossroad-path.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-crossroad-path",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-crossroad-path.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-crossroad-path.md"
+    },
+    "kenney_city_roads__road-curve": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-curve.arrangement.json",
+      "asset_id": "kenney_city_roads__road-curve",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-curve.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-curve.scene_node.json",
+      "sha256": "094637a970f86ee2f836763752134e20512e99626a76ae0d1651515fdde005c7",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-curve.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-curve",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-curve.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-curve.md"
+    },
+    "kenney_city_roads__road-curve-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-curve-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-curve-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-curve-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-curve-barrier.scene_node.json",
+      "sha256": "56abcc66a83aa4f15097a6567215a1d0fe83f9d874d11fae2eba5e6bfb3bfdfe",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-curve-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-curve-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-curve-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-curve-barrier.md"
+    },
+    "kenney_city_roads__road-curve-intersection": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-curve-intersection.arrangement.json",
+      "asset_id": "kenney_city_roads__road-curve-intersection",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-curve-intersection.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-curve-intersection.scene_node.json",
+      "sha256": "828c5f767a1e9bf0ced70ade41f8e4a46343afd2e6a04579b543dc39ba31ddb0",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-curve-intersection.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-curve-intersection",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-curve-intersection.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-curve-intersection.md"
+    },
+    "kenney_city_roads__road-curve-intersection-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-curve-intersection-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-curve-intersection-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-curve-intersection-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-curve-intersection-barrier.scene_node.json",
+      "sha256": "95f72ce8ff4f298fe9df26748ec9ae3683600070562ec88da90e7f71cfa85e20",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-curve-intersection-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-curve-intersection-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-curve-intersection-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-curve-intersection-barrier.md"
+    },
+    "kenney_city_roads__road-curve-pavement": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-curve-pavement.arrangement.json",
+      "asset_id": "kenney_city_roads__road-curve-pavement",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-curve-pavement.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-curve-pavement.scene_node.json",
+      "sha256": "4df1c6baa431601c684ff1d52a4c953ac879c174d6dce7e07e1d7d8c76f2c74b",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-curve-pavement.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-curve-pavement",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-curve-pavement.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-curve-pavement.md"
+    },
+    "kenney_city_roads__road-driveway-double": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-driveway-double.arrangement.json",
+      "asset_id": "kenney_city_roads__road-driveway-double",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-driveway-double.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-driveway-double.scene_node.json",
+      "sha256": "7257906836ca6941e674dc1e912be06a7ef92da838fe30b7f74f4ef528431281",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-driveway-double.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-driveway-double",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-driveway-double.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-driveway-double.md"
+    },
+    "kenney_city_roads__road-driveway-double-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-driveway-double-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-driveway-double-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-driveway-double-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-driveway-double-barrier.scene_node.json",
+      "sha256": "58abb097aa4a044b0beab42f33b92f21fc132e59736b5cabb62e32c7997a710c",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-driveway-double-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-driveway-double-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-driveway-double-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-driveway-double-barrier.md"
+    },
+    "kenney_city_roads__road-driveway-single": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-driveway-single.arrangement.json",
+      "asset_id": "kenney_city_roads__road-driveway-single",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-driveway-single.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-driveway-single.scene_node.json",
+      "sha256": "448f1f18f0c13ed77fc3b688e6fae0c12436a7aa02bf73caf3cd81d84d50a822",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-driveway-single.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-driveway-single",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-driveway-single.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-driveway-single.md"
+    },
+    "kenney_city_roads__road-driveway-single-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-driveway-single-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-driveway-single-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-driveway-single-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-driveway-single-barrier.scene_node.json",
+      "sha256": "c36b7d30e256ff73b9883560b81fffd717e3e74ff832a1fb75560870ca1284e6",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-driveway-single-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-driveway-single-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-driveway-single-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-driveway-single-barrier.md"
+    },
+    "kenney_city_roads__road-end": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-end.arrangement.json",
+      "asset_id": "kenney_city_roads__road-end",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-end.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-end.scene_node.json",
+      "sha256": "0205b5ff8efa84418c625fc99c6b31b71df7d905a06825230c68c6921b391362",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-end.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-end",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-end.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-end.md"
+    },
+    "kenney_city_roads__road-end-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-end-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-end-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-end-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-end-barrier.scene_node.json",
+      "sha256": "0a871206c395aa5ef8946b72d3286cf276dba0c4bb258abcc8ca9c45490610dd",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-end-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-end-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-end-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-end-barrier.md"
+    },
+    "kenney_city_roads__road-end-round": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-end-round.arrangement.json",
+      "asset_id": "kenney_city_roads__road-end-round",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-end-round.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-end-round.scene_node.json",
+      "sha256": "b468fd626204faf464fa2af4824fd851a5807366180e1cca5539a040059f186e",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-end-round.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-end-round",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-end-round.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-end-round.md"
+    },
+    "kenney_city_roads__road-end-round-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-end-round-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-end-round-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-end-round-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-end-round-barrier.scene_node.json",
+      "sha256": "e571301561ff0e5be10ec7427bbaf09efa55545b68ebbf07d3fe99fe9ba7e814",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-end-round-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-end-round-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-end-round-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-end-round-barrier.md"
+    },
+    "kenney_city_roads__road-intersection": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-intersection.arrangement.json",
+      "asset_id": "kenney_city_roads__road-intersection",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-intersection.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-intersection.scene_node.json",
+      "sha256": "3ebc88956fc771c505f30d616a86f5509b83aa07a0d893ddc82a91553c173eca",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-intersection.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-intersection",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-intersection.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-intersection.md"
+    },
+    "kenney_city_roads__road-intersection-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-intersection-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-intersection-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-intersection-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-intersection-barrier.scene_node.json",
+      "sha256": "b7e711062a6cf5fa827416fa9dbeeb093bcd0ce972a47a1b94da24f5753db93c",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-intersection-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-intersection-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-intersection-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-intersection-barrier.md"
+    },
+    "kenney_city_roads__road-intersection-line": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-intersection-line.arrangement.json",
+      "asset_id": "kenney_city_roads__road-intersection-line",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-intersection-line.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-intersection-line.scene_node.json",
+      "sha256": "bc5634454b7c4f85caf1e3ac115ba6c7f1aac287b574c60917b64a7d669018bd",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-intersection-line.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-intersection-line",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-intersection-line.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-intersection-line.md"
+    },
+    "kenney_city_roads__road-intersection-path": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-intersection-path.arrangement.json",
+      "asset_id": "kenney_city_roads__road-intersection-path",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-intersection-path.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-intersection-path.scene_node.json",
+      "sha256": "b32af1ef6c58d7f1c6a3076cc04022940c0d609f898d606bb286d4e966a74e93",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-intersection-path.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-intersection-path",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-intersection-path.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-intersection-path.md"
+    },
+    "kenney_city_roads__road-roundabout": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-roundabout.arrangement.json",
+      "asset_id": "kenney_city_roads__road-roundabout",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-roundabout.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-roundabout.scene_node.json",
+      "sha256": "ce27c2eb2e4ff6a37cfe705bdf442fc41d9207adac54b32faf3e59ce3dc980ca",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-roundabout.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-roundabout",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-roundabout.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-roundabout.md"
+    },
+    "kenney_city_roads__road-roundabout-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-roundabout-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-roundabout-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-roundabout-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-roundabout-barrier.scene_node.json",
+      "sha256": "f10e562a1870b434b5c956e262501c244a98eb9a18a295537bc58af6dcddbbc3",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-roundabout-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-roundabout-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-roundabout-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-roundabout-barrier.md"
+    },
+    "kenney_city_roads__road-side": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-side.arrangement.json",
+      "asset_id": "kenney_city_roads__road-side",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-side.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-side.scene_node.json",
+      "sha256": "dd1c8cee11d9ac44c02455c1ac1f1f622ec2b4f9f06d97523ead32d1672b39d9",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-side.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-side",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-side.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-side.md"
+    },
+    "kenney_city_roads__road-side-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-side-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-side-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-side-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-side-barrier.scene_node.json",
+      "sha256": "3dc92bbd239f5431e2f143d48d75348c553546ebb99e6c8050407532d767c285",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-side-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-side-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-side-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-side-barrier.md"
+    },
+    "kenney_city_roads__road-side-entry": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-side-entry.arrangement.json",
+      "asset_id": "kenney_city_roads__road-side-entry",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-side-entry.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-side-entry.scene_node.json",
+      "sha256": "adb1bc838e9485e8928036723e50799ad7b50cb48868f8265e21319da0968348",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-side-entry.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-side-entry",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-side-entry.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-side-entry.md"
+    },
+    "kenney_city_roads__road-side-entry-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-side-entry-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-side-entry-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-side-entry-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-side-entry-barrier.scene_node.json",
+      "sha256": "fc822362cb8abda4dd507a41e74b5a4e94dd247af8ba4447fbdbab79d4a0d3a6",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-side-entry-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-side-entry-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-side-entry-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-side-entry-barrier.md"
+    },
+    "kenney_city_roads__road-side-exit": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-side-exit.arrangement.json",
+      "asset_id": "kenney_city_roads__road-side-exit",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-side-exit.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-side-exit.scene_node.json",
+      "sha256": "3f5e84b669135a7e56665a3ab81486c491ce06b96f240c9ca9a3170232e866d5",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-side-exit.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-side-exit",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-side-exit.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-side-exit.md"
+    },
+    "kenney_city_roads__road-side-exit-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-side-exit-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-side-exit-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-side-exit-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-side-exit-barrier.scene_node.json",
+      "sha256": "f04b4fda78f78e08358ab81107711574ea8f95056bbf892ee01673708af99571",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-side-exit-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-side-exit-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-side-exit-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-side-exit-barrier.md"
+    },
+    "kenney_city_roads__road-slant": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-slant.arrangement.json",
+      "asset_id": "kenney_city_roads__road-slant",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-slant.scene_node.json",
+      "sha256": "cef6f65d1e5c942c02461f3dd48692679d73a8c00c6c4a73fd7e7ec1ebe45d74",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-slant.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-slant",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-slant.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-slant.md"
+    },
+    "kenney_city_roads__road-slant-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-slant-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-slant-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-slant-barrier.scene_node.json",
+      "sha256": "01558c966db0a041e878d5e97f63e2e8d744befd158db4879f0705a0681202bb",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-slant-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-slant-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-slant-barrier.md"
+    },
+    "kenney_city_roads__road-slant-curve": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-slant-curve.arrangement.json",
+      "asset_id": "kenney_city_roads__road-slant-curve",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-curve.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-slant-curve.scene_node.json",
+      "sha256": "00d5172c2e3946b3c316e59c84a531096bfd04394acc5c6150339222f8ae3707",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-slant-curve.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-slant-curve",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-curve.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-slant-curve.md"
+    },
+    "kenney_city_roads__road-slant-curve-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-slant-curve-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-slant-curve-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-curve-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-slant-curve-barrier.scene_node.json",
+      "sha256": "23741219feb03596875b976704a972844119454e5636ea003435b14462d3141d",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-slant-curve-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-slant-curve-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-curve-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-slant-curve-barrier.md"
+    },
+    "kenney_city_roads__road-slant-flat": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-slant-flat.arrangement.json",
+      "asset_id": "kenney_city_roads__road-slant-flat",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-flat.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-slant-flat.scene_node.json",
+      "sha256": "c131c269893f44d7476528ba96fa9dc7b739903a9f018a2cbcc86a1734ec1151",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-slant-flat.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-slant-flat",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-flat.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-slant-flat.md"
+    },
+    "kenney_city_roads__road-slant-flat-curve": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-slant-flat-curve.arrangement.json",
+      "asset_id": "kenney_city_roads__road-slant-flat-curve",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-flat-curve.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-slant-flat-curve.scene_node.json",
+      "sha256": "5670048ee5c22b617121bb8885a6d4dbee86618d4a9c3d20dbbf5d906a98f892",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-slant-flat-curve.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-slant-flat-curve",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-flat-curve.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-slant-flat-curve.md"
+    },
+    "kenney_city_roads__road-slant-flat-high": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-slant-flat-high.arrangement.json",
+      "asset_id": "kenney_city_roads__road-slant-flat-high",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-flat-high.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-slant-flat-high.scene_node.json",
+      "sha256": "1b10985dbdc9ad0a467d71b34bffb2adbe82b651c90a4a92366a80a519c93de2",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-slant-flat-high.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-slant-flat-high",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-flat-high.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-slant-flat-high.md"
+    },
+    "kenney_city_roads__road-slant-high": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-slant-high.arrangement.json",
+      "asset_id": "kenney_city_roads__road-slant-high",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-high.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-slant-high.scene_node.json",
+      "sha256": "804f537b05c2f4104c1932259a59a21d5a9242da02efe3145cfbc3e42a87ea90",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-slant-high.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-slant-high",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-high.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-slant-high.md"
+    },
+    "kenney_city_roads__road-slant-high-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-slant-high-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-slant-high-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-high-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-slant-high-barrier.scene_node.json",
+      "sha256": "ba0fb3534a265bb0bf2edac33f65c92337530ed58adf016c0671effe45e1cb25",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-slant-high-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-slant-high-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-high-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-slant-high-barrier.md"
+    },
+    "kenney_city_roads__road-split": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-split.arrangement.json",
+      "asset_id": "kenney_city_roads__road-split",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-split.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-split.scene_node.json",
+      "sha256": "2c7df8579f1c8b7183b5d92b1d9fac3776695a71f88e906e9c3e82125a93b836",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-split.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-split",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-split.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-split.md"
+    },
+    "kenney_city_roads__road-split-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-split-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-split-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-split-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-split-barrier.scene_node.json",
+      "sha256": "7bfb52a4015b40e3f4366110f47e5d48f7c2b47fac45a383dbd5c5c97c6e9058",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-split-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-split-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-split-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-split-barrier.md"
+    },
+    "kenney_city_roads__road-square": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-square.arrangement.json",
+      "asset_id": "kenney_city_roads__road-square",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-square.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-square.scene_node.json",
+      "sha256": "20392848e1d3fe8201c895431e772ae31d8bacd330d94cf1fcaed70db8bc08bb",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-square.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-square",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-square.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-square.md"
+    },
+    "kenney_city_roads__road-square-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-square-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-square-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-square-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-square-barrier.scene_node.json",
+      "sha256": "2b015379e717067887f94f09bcd55cffa7a0f6f547fbf0962a4d42f1da249913",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-square-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-square-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-square-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-square-barrier.md"
+    },
+    "kenney_city_roads__road-straight": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-straight.arrangement.json",
+      "asset_id": "kenney_city_roads__road-straight",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-straight.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-straight.scene_node.json",
+      "sha256": "c3d524d39ff60ae4ca418aa99e83af25ee87ddbdc3c1a021774f30314bf73ca4",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-straight.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-straight",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-straight.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-straight.md"
+    },
+    "kenney_city_roads__road-straight-barrier": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-straight-barrier.arrangement.json",
+      "asset_id": "kenney_city_roads__road-straight-barrier",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-straight-barrier.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-straight-barrier.scene_node.json",
+      "sha256": "d706b09bfdd25abc801785cce5404ef3298709fba941168d30022ebff50539c9",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-straight-barrier.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-straight-barrier",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-straight-barrier.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-straight-barrier.md"
+    },
+    "kenney_city_roads__road-straight-barrier-end": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-straight-barrier-end.arrangement.json",
+      "asset_id": "kenney_city_roads__road-straight-barrier-end",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-straight-barrier-end.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-straight-barrier-end.scene_node.json",
+      "sha256": "848a5772321401a1a022680a192f691e1bc327133d368f5cae9b1e8d3e8e7fac",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-straight-barrier-end.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-straight-barrier-end",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-straight-barrier-end.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-straight-barrier-end.md"
+    },
+    "kenney_city_roads__road-straight-barrier-half": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-straight-barrier-half.arrangement.json",
+      "asset_id": "kenney_city_roads__road-straight-barrier-half",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-straight-barrier-half.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-straight-barrier-half.scene_node.json",
+      "sha256": "46423e186b50e0d5356ed3c1259c46f6aede6fdb499509ef8b0a3dd2025a7eb9",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-straight-barrier-half.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-straight-barrier-half",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-straight-barrier-half.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-straight-barrier-half.md"
+    },
+    "kenney_city_roads__road-straight-half": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__road-straight-half.arrangement.json",
+      "asset_id": "kenney_city_roads__road-straight-half",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-straight-half.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__road-straight-half.scene_node.json",
+      "sha256": "8d7818821e4b200c2c81c52023a84ce1196fdfc27787e44cd1a63ca9e6522bb4",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/road-straight-half.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "road-straight-half",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__road-straight-half.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__road-straight-half.md"
+    },
+    "kenney_city_roads__sign-highway": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__sign-highway.arrangement.json",
+      "asset_id": "kenney_city_roads__sign-highway",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__sign-highway.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__sign-highway.scene_node.json",
+      "sha256": "1fdae5481b07084926dd6bced13577aed0f568044cacf524e29f312de3d3d56a",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/sign-highway.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "sign-highway",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__sign-highway.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__sign-highway.md"
+    },
+    "kenney_city_roads__sign-highway-detailed": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__sign-highway-detailed.arrangement.json",
+      "asset_id": "kenney_city_roads__sign-highway-detailed",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__sign-highway-detailed.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__sign-highway-detailed.scene_node.json",
+      "sha256": "7b56dbca534da55786d6978b12dd8fd3e9c3746b4a89c5f99d4274e3e12ec498",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/sign-highway-detailed.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "sign-highway-detailed",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__sign-highway-detailed.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__sign-highway-detailed.md"
+    },
+    "kenney_city_roads__sign-highway-wide": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__sign-highway-wide.arrangement.json",
+      "asset_id": "kenney_city_roads__sign-highway-wide",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__sign-highway-wide.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__sign-highway-wide.scene_node.json",
+      "sha256": "7f67dd91a639e821fcc0df0229833c4d8f3c3ee774dc56f9e31272e9d8d597b4",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/sign-highway-wide.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "sign-highway-wide",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__sign-highway-wide.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__sign-highway-wide.md"
+    },
+    "kenney_city_roads__tile-high": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__tile-high.arrangement.json",
+      "asset_id": "kenney_city_roads__tile-high",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__tile-high.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__tile-high.scene_node.json",
+      "sha256": "a66236b7f218a72c6037361c0f6cc1eb9a88f0197bddfc3cf311e7b43d55231a",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/tile-high.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "tile-high",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__tile-high.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__tile-high.md"
+    },
+    "kenney_city_roads__tile-low": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__tile-low.arrangement.json",
+      "asset_id": "kenney_city_roads__tile-low",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__tile-low.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__tile-low.scene_node.json",
+      "sha256": "7021b52104c8d421a9cfcadd9577a6a8d9824e69a46f633d1ddc531ca456ef78",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/tile-low.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "tile-low",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__tile-low.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__tile-low.md"
+    },
+    "kenney_city_roads__tile-slant": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__tile-slant.arrangement.json",
+      "asset_id": "kenney_city_roads__tile-slant",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__tile-slant.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__tile-slant.scene_node.json",
+      "sha256": "047f4bf04c1b80735e6d437b157011de7adc46fe11430c26a9ef87fb2b5da8dd",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/tile-slant.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "tile-slant",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__tile-slant.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__tile-slant.md"
+    },
+    "kenney_city_roads__tile-slanthigh": {
+      "arrangement_file": "assets/ingested/kenney_city_roads__tile-slanthigh.arrangement.json",
+      "asset_id": "kenney_city_roads__tile-slanthigh",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kind": "glb",
+      "kit": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__tile-slanthigh.glb",
+      "scene_node_file": "assets/ingested/kenney_city_roads__tile-slanthigh.scene_node.json",
+      "sha256": "05aa71650fd09b2c46acfcd7344dd5c487241a3f7a0bbb2d2816819cb0f27c7d",
+      "source_site": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip#Models/GLB format/tile-slantHigh.glb",
+      "summary": {
+        "gltf_version": "2.0",
+        "has_animations": false,
+        "materials": 1,
+        "meshes": 1,
+        "nodes": 1
+      },
+      "title": "tile-slanthigh",
+      "vendor_file": "assets/vendor/kenney_city_roads/kenney_city_roads__tile-slanthigh.glb",
+      "wavelet_node": "Alethea-cc/nodes/asset_kenney_city_roads__tile-slanthigh.md"
+    },
     "kenney_nature__bed": {
       "arrangement_file": "assets/ingested/kenney_nature__bed.arrangement.json",
       "asset_id": "kenney_nature__bed",
@@ -785,6 +2441,450 @@
   },
   "format": "resonance.asset_manifest/v1",
   "kits": {
+    "kenney_city_roads": {
+      "combined_arrangement": "assets/ingested/kit_kenney_city_roads.arrangement.json",
+      "ingested_at": "2026-07-15T11:30:44Z",
+      "kit_id": "kenney_city_roads",
+      "license": "CC0 1.0 Universal",
+      "members": [
+        {
+          "asset_id": "kenney_city_roads__bridge-pillar-wide",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__bridge-pillar-wide.glb",
+          "sha256": "93b0b96006cdca5287679311cfd4102195468affc0f5b247608b5bba2384e733",
+          "title": "bridge-pillar-wide"
+        },
+        {
+          "asset_id": "kenney_city_roads__bridge-pillar",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__bridge-pillar.glb",
+          "sha256": "c673e6e3a7b6a409e9fa11d2b0ec3415980b7d598d2998f93d783021dc9e3a24",
+          "title": "bridge-pillar"
+        },
+        {
+          "asset_id": "kenney_city_roads__construction-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__construction-barrier.glb",
+          "sha256": "c2dc9e69b306093a66f9380d793d9f9d81c9331febf18d3188a6312f145bbe75",
+          "title": "construction-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__construction-cone",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__construction-cone.glb",
+          "sha256": "287f086b9f89e00470716168b3c5bffd99c16797c9b449715287e65fb39dd37c",
+          "title": "construction-cone"
+        },
+        {
+          "asset_id": "kenney_city_roads__construction-light",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__construction-light.glb",
+          "sha256": "29e427c06c235475af3ff0c3f7045e89bbb8a6d1d6df93261e3922ca4d1b1bcc",
+          "title": "construction-light"
+        },
+        {
+          "asset_id": "kenney_city_roads__light-curved-cross",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__light-curved-cross.glb",
+          "sha256": "811f6e8ed725ec9fb77ca8ba6cf2125b7268fececa750ef0a5948c233ba47da9",
+          "title": "light-curved-cross"
+        },
+        {
+          "asset_id": "kenney_city_roads__light-curved-double",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__light-curved-double.glb",
+          "sha256": "ff76555bf6eff977dddaa9028db4f44e88e7f158f2c47d596051a20fa03ddb07",
+          "title": "light-curved-double"
+        },
+        {
+          "asset_id": "kenney_city_roads__light-curved",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__light-curved.glb",
+          "sha256": "e9ff06ead9d9b14eddd7bf40fa20e31b898fde2d59ade940eebe60685d335f6d",
+          "title": "light-curved"
+        },
+        {
+          "asset_id": "kenney_city_roads__light-square-cross",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__light-square-cross.glb",
+          "sha256": "a8c72ab33c9bceaf612d4027d535813deb1951b61313a2c30985eced33dd010d",
+          "title": "light-square-cross"
+        },
+        {
+          "asset_id": "kenney_city_roads__light-square-double",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__light-square-double.glb",
+          "sha256": "ad55001503635f40d996a65a3d8bc1926c40f5f17c3eeb300088d05a7ae11174",
+          "title": "light-square-double"
+        },
+        {
+          "asset_id": "kenney_city_roads__light-square",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__light-square.glb",
+          "sha256": "10f4ebbe67cde629e4ee5c64f2cf4c9e25d9a3346ab07d5e204ce5f79293a87a",
+          "title": "light-square"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-bend-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-bend-barrier.glb",
+          "sha256": "7545f1fd11c11619d761b1eeeafd68743e236bbdbd09be835db1492fe8d9917d",
+          "title": "road-bend-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-bend-sidewalk",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-bend-sidewalk.glb",
+          "sha256": "19846d1a2f6946d4ef1e8bda2074162140e0d08c3b681e152039fac043940d80",
+          "title": "road-bend-sidewalk"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-bend-square-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-bend-square-barrier.glb",
+          "sha256": "48d785e81fe4aec2d4586e229c7f2e94b682216ce6398367e0cf4fc21f6bc97c",
+          "title": "road-bend-square-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-bend-square",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-bend-square.glb",
+          "sha256": "53994443059959b5d9c02689dee8e9b670143b967402562f0537f2bfd40eab7c",
+          "title": "road-bend-square"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-bend",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-bend.glb",
+          "sha256": "5ec9dab26d77510e77969fa3e1fad060190c63b1529a961cb2b7076cdde2b0cf",
+          "title": "road-bend"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-bridge",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-bridge.glb",
+          "sha256": "def3492f02f1fbae2149d94aabb46ac4df792e03a625ebac02010a16169cff72",
+          "title": "road-bridge"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-crossing",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-crossing.glb",
+          "sha256": "ffe5c924f9a14f53616988f157db825fafdaddeb76662379044cbe26ddedd932",
+          "title": "road-crossing"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-crossroad-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-crossroad-barrier.glb",
+          "sha256": "774679bc1c7851dbd945c3f8e76f911db6f8a2eb6322514b6ff8d5582e5ae209",
+          "title": "road-crossroad-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-crossroad-line",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-crossroad-line.glb",
+          "sha256": "7287d4973da33ea7ef1a7b154fdf3960f36f51aded65ee93ce4509978b9ab81e",
+          "title": "road-crossroad-line"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-crossroad-path",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-crossroad-path.glb",
+          "sha256": "126f6ff1c80c593b09fe94d2e09486f7aba5b22de832a3e54769465efff72126",
+          "title": "road-crossroad-path"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-crossroad",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-crossroad.glb",
+          "sha256": "26de3ec9c54f909331ff071060310f6b9e454c4ed3213394b7b52352ce2a45f9",
+          "title": "road-crossroad"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-curve-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-curve-barrier.glb",
+          "sha256": "56abcc66a83aa4f15097a6567215a1d0fe83f9d874d11fae2eba5e6bfb3bfdfe",
+          "title": "road-curve-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-curve-intersection-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-curve-intersection-barrier.glb",
+          "sha256": "95f72ce8ff4f298fe9df26748ec9ae3683600070562ec88da90e7f71cfa85e20",
+          "title": "road-curve-intersection-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-curve-intersection",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-curve-intersection.glb",
+          "sha256": "828c5f767a1e9bf0ced70ade41f8e4a46343afd2e6a04579b543dc39ba31ddb0",
+          "title": "road-curve-intersection"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-curve-pavement",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-curve-pavement.glb",
+          "sha256": "4df1c6baa431601c684ff1d52a4c953ac879c174d6dce7e07e1d7d8c76f2c74b",
+          "title": "road-curve-pavement"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-curve",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-curve.glb",
+          "sha256": "094637a970f86ee2f836763752134e20512e99626a76ae0d1651515fdde005c7",
+          "title": "road-curve"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-driveway-double-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-driveway-double-barrier.glb",
+          "sha256": "58abb097aa4a044b0beab42f33b92f21fc132e59736b5cabb62e32c7997a710c",
+          "title": "road-driveway-double-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-driveway-double",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-driveway-double.glb",
+          "sha256": "7257906836ca6941e674dc1e912be06a7ef92da838fe30b7f74f4ef528431281",
+          "title": "road-driveway-double"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-driveway-single-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-driveway-single-barrier.glb",
+          "sha256": "c36b7d30e256ff73b9883560b81fffd717e3e74ff832a1fb75560870ca1284e6",
+          "title": "road-driveway-single-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-driveway-single",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-driveway-single.glb",
+          "sha256": "448f1f18f0c13ed77fc3b688e6fae0c12436a7aa02bf73caf3cd81d84d50a822",
+          "title": "road-driveway-single"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-end-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-end-barrier.glb",
+          "sha256": "0a871206c395aa5ef8946b72d3286cf276dba0c4bb258abcc8ca9c45490610dd",
+          "title": "road-end-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-end-round-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-end-round-barrier.glb",
+          "sha256": "e571301561ff0e5be10ec7427bbaf09efa55545b68ebbf07d3fe99fe9ba7e814",
+          "title": "road-end-round-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-end-round",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-end-round.glb",
+          "sha256": "b468fd626204faf464fa2af4824fd851a5807366180e1cca5539a040059f186e",
+          "title": "road-end-round"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-end",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-end.glb",
+          "sha256": "0205b5ff8efa84418c625fc99c6b31b71df7d905a06825230c68c6921b391362",
+          "title": "road-end"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-intersection-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-intersection-barrier.glb",
+          "sha256": "b7e711062a6cf5fa827416fa9dbeeb093bcd0ce972a47a1b94da24f5753db93c",
+          "title": "road-intersection-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-intersection-line",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-intersection-line.glb",
+          "sha256": "bc5634454b7c4f85caf1e3ac115ba6c7f1aac287b574c60917b64a7d669018bd",
+          "title": "road-intersection-line"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-intersection-path",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-intersection-path.glb",
+          "sha256": "b32af1ef6c58d7f1c6a3076cc04022940c0d609f898d606bb286d4e966a74e93",
+          "title": "road-intersection-path"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-intersection",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-intersection.glb",
+          "sha256": "3ebc88956fc771c505f30d616a86f5509b83aa07a0d893ddc82a91553c173eca",
+          "title": "road-intersection"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-roundabout-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-roundabout-barrier.glb",
+          "sha256": "f10e562a1870b434b5c956e262501c244a98eb9a18a295537bc58af6dcddbbc3",
+          "title": "road-roundabout-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-roundabout",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-roundabout.glb",
+          "sha256": "ce27c2eb2e4ff6a37cfe705bdf442fc41d9207adac54b32faf3e59ce3dc980ca",
+          "title": "road-roundabout"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-side-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-side-barrier.glb",
+          "sha256": "3dc92bbd239f5431e2f143d48d75348c553546ebb99e6c8050407532d767c285",
+          "title": "road-side-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-side-entry-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-side-entry-barrier.glb",
+          "sha256": "fc822362cb8abda4dd507a41e74b5a4e94dd247af8ba4447fbdbab79d4a0d3a6",
+          "title": "road-side-entry-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-side-entry",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-side-entry.glb",
+          "sha256": "adb1bc838e9485e8928036723e50799ad7b50cb48868f8265e21319da0968348",
+          "title": "road-side-entry"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-side-exit-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-side-exit-barrier.glb",
+          "sha256": "f04b4fda78f78e08358ab81107711574ea8f95056bbf892ee01673708af99571",
+          "title": "road-side-exit-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-side-exit",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-side-exit.glb",
+          "sha256": "3f5e84b669135a7e56665a3ab81486c491ce06b96f240c9ca9a3170232e866d5",
+          "title": "road-side-exit"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-side",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-side.glb",
+          "sha256": "dd1c8cee11d9ac44c02455c1ac1f1f622ec2b4f9f06d97523ead32d1672b39d9",
+          "title": "road-side"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-slant-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-barrier.glb",
+          "sha256": "01558c966db0a041e878d5e97f63e2e8d744befd158db4879f0705a0681202bb",
+          "title": "road-slant-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-slant-curve-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-curve-barrier.glb",
+          "sha256": "23741219feb03596875b976704a972844119454e5636ea003435b14462d3141d",
+          "title": "road-slant-curve-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-slant-curve",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-curve.glb",
+          "sha256": "00d5172c2e3946b3c316e59c84a531096bfd04394acc5c6150339222f8ae3707",
+          "title": "road-slant-curve"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-slant-flat-curve",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-flat-curve.glb",
+          "sha256": "5670048ee5c22b617121bb8885a6d4dbee86618d4a9c3d20dbbf5d906a98f892",
+          "title": "road-slant-flat-curve"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-slant-flat-high",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-flat-high.glb",
+          "sha256": "1b10985dbdc9ad0a467d71b34bffb2adbe82b651c90a4a92366a80a519c93de2",
+          "title": "road-slant-flat-high"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-slant-flat",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-flat.glb",
+          "sha256": "c131c269893f44d7476528ba96fa9dc7b739903a9f018a2cbcc86a1734ec1151",
+          "title": "road-slant-flat"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-slant-high-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-high-barrier.glb",
+          "sha256": "ba0fb3534a265bb0bf2edac33f65c92337530ed58adf016c0671effe45e1cb25",
+          "title": "road-slant-high-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-slant-high",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-high.glb",
+          "sha256": "804f537b05c2f4104c1932259a59a21d5a9242da02efe3145cfbc3e42a87ea90",
+          "title": "road-slant-high"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-slant",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant.glb",
+          "sha256": "cef6f65d1e5c942c02461f3dd48692679d73a8c00c6c4a73fd7e7ec1ebe45d74",
+          "title": "road-slant"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-split-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-split-barrier.glb",
+          "sha256": "7bfb52a4015b40e3f4366110f47e5d48f7c2b47fac45a383dbd5c5c97c6e9058",
+          "title": "road-split-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-split",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-split.glb",
+          "sha256": "2c7df8579f1c8b7183b5d92b1d9fac3776695a71f88e906e9c3e82125a93b836",
+          "title": "road-split"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-square-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-square-barrier.glb",
+          "sha256": "2b015379e717067887f94f09bcd55cffa7a0f6f547fbf0962a4d42f1da249913",
+          "title": "road-square-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-square",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-square.glb",
+          "sha256": "20392848e1d3fe8201c895431e772ae31d8bacd330d94cf1fcaed70db8bc08bb",
+          "title": "road-square"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-straight-barrier-end",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-straight-barrier-end.glb",
+          "sha256": "848a5772321401a1a022680a192f691e1bc327133d368f5cae9b1e8d3e8e7fac",
+          "title": "road-straight-barrier-end"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-straight-barrier-half",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-straight-barrier-half.glb",
+          "sha256": "46423e186b50e0d5356ed3c1259c46f6aede6fdb499509ef8b0a3dd2025a7eb9",
+          "title": "road-straight-barrier-half"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-straight-barrier",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-straight-barrier.glb",
+          "sha256": "d706b09bfdd25abc801785cce5404ef3298709fba941168d30022ebff50539c9",
+          "title": "road-straight-barrier"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-straight-half",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-straight-half.glb",
+          "sha256": "8d7818821e4b200c2c81c52023a84ce1196fdfc27787e44cd1a63ca9e6522bb4",
+          "title": "road-straight-half"
+        },
+        {
+          "asset_id": "kenney_city_roads__road-straight",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-straight.glb",
+          "sha256": "c3d524d39ff60ae4ca418aa99e83af25ee87ddbdc3c1a021774f30314bf73ca4",
+          "title": "road-straight"
+        },
+        {
+          "asset_id": "kenney_city_roads__sign-highway-detailed",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__sign-highway-detailed.glb",
+          "sha256": "7b56dbca534da55786d6978b12dd8fd3e9c3746b4a89c5f99d4274e3e12ec498",
+          "title": "sign-highway-detailed"
+        },
+        {
+          "asset_id": "kenney_city_roads__sign-highway-wide",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__sign-highway-wide.glb",
+          "sha256": "7f67dd91a639e821fcc0df0229833c4d8f3c3ee774dc56f9e31272e9d8d597b4",
+          "title": "sign-highway-wide"
+        },
+        {
+          "asset_id": "kenney_city_roads__sign-highway",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__sign-highway.glb",
+          "sha256": "1fdae5481b07084926dd6bced13577aed0f568044cacf524e29f312de3d3d56a",
+          "title": "sign-highway"
+        },
+        {
+          "asset_id": "kenney_city_roads__tile-high",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__tile-high.glb",
+          "sha256": "a66236b7f218a72c6037361c0f6cc1eb9a88f0197bddfc3cf311e7b43d55231a",
+          "title": "tile-high"
+        },
+        {
+          "asset_id": "kenney_city_roads__tile-low",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__tile-low.glb",
+          "sha256": "7021b52104c8d421a9cfcadd9577a6a8d9824e69a46f633d1ddc531ca456ef78",
+          "title": "tile-low"
+        },
+        {
+          "asset_id": "kenney_city_roads__tile-slant",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__tile-slant.glb",
+          "sha256": "047f4bf04c1b80735e6d437b157011de7adc46fe11430c26a9ef87fb2b5da8dd",
+          "title": "tile-slant"
+        },
+        {
+          "asset_id": "kenney_city_roads__tile-slanthigh",
+          "res_path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__tile-slanthigh.glb",
+          "sha256": "05aa71650fd09b2c46acfcd7344dd5c487241a3f7a0bbb2d2816819cb0f27c7d",
+          "title": "tile-slanthigh"
+        }
+      ],
+      "source_name": "Kenney",
+      "source_url": "https://kenney.nl/media/pages/assets/city-kit-roads/74288c9459-1741864740/kenney_city-kit-roads.zip",
+      "title": "City Kit (Roads)",
+      "wavelet_node": "Alethea-cc/nodes/asset_kit_kenney_city_roads.md"
+    },
     "kenney_nature": {
       "combined_arrangement": "assets/ingested/kit_kenney_nature.arrangement.json",
       "ingested_at": "2026-06-25T18:05:19+00:00",

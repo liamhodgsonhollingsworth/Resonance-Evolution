@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-kenney_city_roads__road-slant-high",
+  "nodes": [
+    {
+      "id": "kenney_city_roads__road-slant-high",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-slant-high.glb",
+        "name": "road-slant-high"
+      }
+    }
+  ],
+  "wires": []
+}

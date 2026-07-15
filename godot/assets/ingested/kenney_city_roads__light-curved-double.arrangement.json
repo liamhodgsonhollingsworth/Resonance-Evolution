@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-kenney_city_roads__light-curved-double",
+  "nodes": [
+    {
+      "id": "kenney_city_roads__light-curved-double",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__light-curved-double.glb",
+        "name": "light-curved-double"
+      }
+    }
+  ],
+  "wires": []
+}

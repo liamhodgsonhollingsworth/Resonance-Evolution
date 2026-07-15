@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-kenney_city_roads__bridge-pillar",
+  "nodes": [
+    {
+      "id": "kenney_city_roads__bridge-pillar",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__bridge-pillar.glb",
+        "name": "bridge-pillar"
+      }
+    }
+  ],
+  "wires": []
+}

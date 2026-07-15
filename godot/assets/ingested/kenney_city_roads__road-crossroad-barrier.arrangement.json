@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-kenney_city_roads__road-crossroad-barrier",
+  "nodes": [
+    {
+      "id": "kenney_city_roads__road-crossroad-barrier",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-crossroad-barrier.glb",
+        "name": "road-crossroad-barrier"
+      }
+    }
+  ],
+  "wires": []
+}
