@@ -31,18 +31,50 @@ extends Node3D
 ##     `godot/live/underground_wave6_proof.png`, and quits -- proves the whole pipeline (ground
 ##     plane, upper-half rings, cavities, bridges+railings, trees, flush lights, and the
 ##     ViewpointPicker/TunablePanel nodes themselves) boots and renders without crashing.
+##   <godot> --path godot res://underground_wave6_proof.tscn -- --param-listen --channel-uri ws://127.0.0.1:8790/underground [--listen-seconds 20] [--min-updates 3]
+##     DQ-0343912a: connects `TunablePanel`'s live edits + `ViewpointPicker`'s pose out over the
+##     EXISTING `param_channel`/`ws://` transport (Wavelet PR #910 -- `param_channel_node.py` /
+##     `ws_endpoint.py` / `ws_relay_server.py`), via the native GDScript client
+##     `tools/param_channel_client.gd` (same wire shape, no new protocol). Any OTHER endpoint that
+##     joins the SAME room (a browser tuner panel, a Python test client, another Godot window) can
+##     drive this scene's tunables + camera pose live, cross-window/cross-device -- "you can plug
+##     those nodes into UI knobs and controls for me to change them" (Liam, 2026-07-15). Skips the
+##     interactive TunablePanel/ViewpointPicker-overlay UI (a headless/batch run, like --shot) but
+##     keeps applying every received param to the SAME `_rebuild_geometry()` path a local slider
+##     drag would use, and writes `godot/live/underground_param_state.json` after every applied
+##     change (state read-back verification evidence -- headless texture readback is unreliable on
+##     this engine build, see `tools/scene_smoketest.py`'s own docstring, so a caller that cannot
+##     trust a screenshot can trust this file instead). Also captures
+##     `godot/live/underground_param_wiring_proof.png` once the deadline/min-updates is reached, from
+##     whatever `ViewpointPicker` pose was last applied (local default, or a `viewpoint_pose` message
+##     received over the channel) -- demonstrating pose-as-a-param in the same shot.
 
 const SHOT_OUT := "res://live/underground_wave6_proof.png"
+const PARAM_LISTEN_SHOT_OUT := "res://live/underground_param_wiring_proof.png"
+const PARAM_STATE_OUT := "res://live/underground_param_state.json"
 
 var _geometry_root: Node3D
 var _tunable_panel: TunablePanel
 var _viewpoint: ViewpointPicker
+var _main_camera: Camera3D
 var _shot_frames := 0
+var _param_channel: ParamChannelClient = null
+var _param_listen_mode := false
+var _param_listen_elapsed_ms := 0
+var _param_listen_deadline_ms := 20000
+var _param_listen_min_updates := 0
+var _current_tunables: Dictionary = {}
+var _rebuild_count := 0
+var _applying_external_param := false
 var _shot_mode := false
 
 
 func _ready() -> void:
 	_shot_mode = "--shot" in OS.get_cmdline_user_args() or "--shot" in OS.get_cmdline_args()
+	_param_listen_mode = _cmdline_flag("--param-listen")
+	var channel_uri := _cmdline_value("--channel-uri", "")
+	_param_listen_deadline_ms = int(_cmdline_value("--listen-seconds", "20")) * 1000
+	_param_listen_min_updates = int(_cmdline_value("--min-updates", "0"))
 
 	_geometry_root = Node3D.new()
 	add_child(_geometry_root)
@@ -50,18 +82,30 @@ func _ready() -> void:
 	_build_env()
 	_build_default_camera()
 
+	# DQ-0343912a: opt-in only (empty uri = disabled, so --shot and every prior launch mode are
+	# byte-for-byte unaffected). Same ParamChannelClient instance serves both the interactive
+	# TunablePanel/ViewpointPicker path (below) and the --param-listen headless path.
+	if channel_uri != "":
+		_param_channel = ParamChannelClient.new(channel_uri)
+
 	# The ViewpointPicker's own SubViewport (a SECOND live-rendering camera) is for INTERACTIVE
 	# sessions only -- --shot is a fixed-camera automated smoke-test capture and does not need it
 	# (and a second real-time-updating viewport is a needless cost, and empirically stalls headless
 	# capture on this engine build -- observed hang, root-caused during this DISPATCH claim's own
 	# verification pass; skipping it here is a real fix, not a workaround for an unrelated bug).
+	# --param-listen ALSO skips the PiP/overlay (same stall risk, ViewpointPicker.build_preview =
+	# false, DQ-0343912a) but still builds the picker itself for real get_pose()/set_pose()/
+	# pose_changed -- the whole point of this mode is exercising that API over the channel.
 	if not _shot_mode:
 		_viewpoint = ViewpointPicker.new()
 		_viewpoint.reference_name = "underground_halls"
 		_viewpoint.transform = Transform3D(Basis.looking_at(Vector3(0, 1.5, -8) - Vector3(8.9, -2.0, 1.3), Vector3.UP), Vector3(8.9, -2.0, 1.3))
+		if _param_listen_mode:
+			_viewpoint.build_preview = false
+		_viewpoint.pose_changed.connect(_on_viewpoint_pose_changed)
 		add_child(_viewpoint)
 
-	if not _shot_mode:
+	if not _shot_mode and not _param_listen_mode:
 		_tunable_panel = TunablePanel.new()
 		var layer := CanvasLayer.new()
 		layer.layer = 40
@@ -71,9 +115,14 @@ func _ready() -> void:
 		layer.add_child(_tunable_panel)
 		_tunable_panel.configure(_param_specs(), _on_tunable_changed)
 
-	_rebuild_geometry(_default_tunables())
+	_current_tunables = _default_tunables()
+	_rebuild_geometry(_current_tunables)
+	# --param-listen's initial camera framing follows whatever pose ViewpointPicker starts at (its
+	# fixed placement-tool transform above) until a real pose arrives over the channel.
+	if _param_listen_mode and _viewpoint != null and _main_camera != null:
+		_sync_camera_to_pose(_main_camera, _viewpoint.get_pose())
 
-	if _shot_mode:
+	if _shot_mode or _param_channel != null:
 		set_process(true)
 
 
@@ -82,6 +131,21 @@ func _default_tunables() -> Dictionary:
 	for spec in _param_specs():
 		out[spec["key"]] = spec["default"]
 	return out
+
+
+## ---- cmdline helpers (DQ-0343912a; same `OS.get_cmdline_user_args()` convention --shot already
+##      uses, extended to also read a flag's VALUE, not just its presence) ----
+
+func _cmdline_flag(flag: String) -> bool:
+	return flag in OS.get_cmdline_user_args() or flag in OS.get_cmdline_args()
+
+
+func _cmdline_value(flag: String, default_v: String) -> String:
+	var args := OS.get_cmdline_user_args()
+	for i in args.size():
+		if args[i] == flag and i + 1 < args.size():
+			return args[i + 1]
+	return default_v
 
 
 func _param_specs() -> Array:
@@ -100,11 +164,23 @@ func _param_specs() -> Array:
 		{"key": "light_density", "label": "light density", "type": "float", "min": 0.0, "max": 1.0, "step": 0.05, "default": 0.35},
 		{"key": "light_flush", "label": "lights flush (no protrusion)", "type": "bool", "default": true},
 		{"key": "tree_density", "label": "tree density", "type": "float", "min": 0.0, "max": 1.0, "step": 0.05, "default": 0.7},
+		{"key": "ground_extent_multiplier", "label": "ground plane extent", "type": "float", "min": 1.0, "max": 2.5, "step": 0.05, "default": 1.1},
 	]
 
 
-func _on_tunable_changed(_key: String, _value: Variant) -> void:
-	_rebuild_geometry(_tunable_panel.get_values())
+func _on_tunable_changed(key: String, value: Variant) -> void:
+	# DQ-0343912a: a re-entrant apply from _apply_external_param() (a message that arrived OVER the
+	# channel) already updated _current_tunables + rebuilt geometry itself -- skip so an external
+	# update never re-publishes back out (would ping-pong between two channel peers forever).
+	if _applying_external_param:
+		return
+	_current_tunables[key] = value
+	if _param_channel != null:
+		_param_channel.publish(key, value)
+	_rebuild_geometry(_current_tunables)
+	_rebuild_count += 1
+	if _param_channel != null:
+		_write_state_json()
 
 
 func _build_env() -> void:
@@ -147,6 +223,83 @@ func _build_default_camera() -> void:
 	cam.fov = 65.0
 	cam.current = true
 	add_child(cam)
+	_main_camera = cam
+
+
+## DQ-0343912a: move the MAIN camera to match a ViewpointPicker pose. Used by --param-listen (whose
+## whole point is a channel-driven pose demo) whenever ViewpointPicker's pose changes -- locally
+## (fly controls) or from an external `viewpoint_pose` channel message via _apply_external_param().
+## The fixed --shot camera above is untouched by this (this function is only ever called when
+## _viewpoint/_main_camera are both non-null, which --shot never sets up).
+func _sync_camera_to_pose(cam: Camera3D, pose: Dictionary) -> void:
+	if cam == null or not pose.has("position"):
+		return
+	var p: Array = pose["position"]
+	var pos := Vector3(float(p[0]), float(p[1]), float(p[2]))
+	cam.global_position = pos
+	if pose.has("look_at"):
+		var la: Array = pose["look_at"]
+		var target := Vector3(float(la[0]), float(la[1]), float(la[2]))
+		if target.distance_to(pos) > 0.0001:
+			cam.look_at(target, Vector3.UP)
+	cam.fov = float(pose.get("fov_deg", cam.fov))
+
+
+func _on_viewpoint_pose_changed(pose: Dictionary) -> void:
+	if _main_camera != null and _param_listen_mode:
+		_sync_camera_to_pose(_main_camera, pose)
+	if _applying_external_param:
+		return  # re-entrant from a received "viewpoint_pose" message -- do not re-publish (ping-pong guard)
+	if _param_channel != null:
+		_param_channel.publish("viewpoint_pose", pose)
+
+
+## DQ-0343912a: apply ONE param received over the channel -- the remote-origin twin of
+## _on_tunable_changed() (local slider drag). Routes through the EXACT SAME _rebuild_geometry() /
+## ViewpointPicker.set_pose() calls a local edit would use, so "a message arrived" and "Liam dragged
+## a slider" are indistinguishable to the geometry/camera -- the whole point of a transport-neutral
+## channel. "viewpoint_pose" is handled specially (a composite Dictionary, not a _param_specs() key).
+func _apply_external_param(key: String, value: Variant) -> void:
+	_applying_external_param = true
+	if key == "viewpoint_pose" and value is Dictionary:
+		if _viewpoint != null:
+			_viewpoint.set_pose(value)
+		# A pose-only change touches no _param_specs() tunable (no geometry rebuild needed) but IS a
+		# live-applied update -- count it + persist it so a caller polling ONLY the pose (e.g. this
+		# module's own --param-listen --min-updates gate, or an external state read-back) observes
+		# it without also having to change a scalar tunable in the same batch.
+		_rebuild_count += 1
+		_write_state_json()
+	else:
+		_current_tunables[key] = value
+		if _tunable_panel != null:
+			_tunable_panel.set_value(key, value)
+		_rebuild_geometry(_current_tunables)
+		_rebuild_count += 1
+		_write_state_json()
+	_applying_external_param = false
+
+
+## DQ-0343912a state read-back (verification evidence): headless texture readback is unreliable on
+## this engine build (see tools/scene_smoketest.py's own docstring), so a caller driving this scene
+## over the channel can confirm "did my param change actually apply" by reading this file back
+## instead of trusting a screenshot -- written after every applied change (local or remote-origin).
+func _write_state_json() -> void:
+	var pose := {}
+	if _viewpoint != null:
+		pose = _viewpoint.get_pose()
+	var out := {
+		"schema_version": 1,
+		"updated_at_unix": Time.get_unix_time_from_system(),
+		"rebuild_count": _rebuild_count,
+		"tunables": _current_tunables,
+		"viewpoint_pose": pose,
+	}
+	DirAccess.make_dir_recursive_absolute("res://live")
+	var f := FileAccess.open(PARAM_STATE_OUT, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(out, "  "))
+		f.close()
 
 
 func _rebuild_geometry(t: Dictionary) -> void:
@@ -158,10 +311,11 @@ func _rebuild_geometry(t: Dictionary) -> void:
 	var radius_start: float = float(t.get("radius_start", 9.0))
 	var ellipse_ratio: float = float(t.get("ellipse_ratio", 1.3))
 	var segment_arc_deg: float = float(t.get("segment_arc_deg", 16.0))
+	var ground_extent_multiplier: float = float(t.get("ground_extent_multiplier", 1.1))
 
 	# ── Step 1+2: ground plane + upper-half-only concentric rings, shared center of symmetry ──────
 	var outer_radius: float = radius_start + gap * float(ring_count - 1) + gap * 0.6
-	var ground := GroundPlane.build_mesh({"size": outer_radius * 1.1, "elevation": 0.0})
+	var ground := GroundPlane.build_mesh({"size": outer_radius * ground_extent_multiplier, "elevation": 0.0})
 	var ground_mi := MeshInstance3D.new()
 	ground_mi.mesh = ground["mesh"]
 	ground_mi.position = ground["position"]
@@ -304,7 +458,39 @@ func _find_mesh_instances(node: Node) -> Array:
 	return out
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	# DQ-0343912a: drain the param channel every frame regardless of mode (--shot never opens a
+	# channel, see _ready(), so this is a no-op there). A plain INTERACTIVE session launched with
+	# --channel-uri (no --param-listen) also gets this: its TunablePanel sliders + geometry follow a
+	# remote edit live too -- only the MAIN camera's pose-follow is param-listen-specific (below),
+	# matching this file's existing design that interactive sessions steer via ViewpointPicker's own
+	# PiP/pop-out, not the main viewport.
+	if _param_channel != null:
+		_param_channel.poll()
+		var incoming := _param_channel.drain_latest()
+		for key in incoming.keys():
+			_apply_external_param(key, incoming[key])
+
+	if _param_listen_mode:
+		var prev_elapsed_ms := _param_listen_elapsed_ms
+		_param_listen_elapsed_ms += int(delta * 1000.0)
+		# One status line every ~5s (not every frame -- a caller redirecting this process's stdout
+		# to a log file, per verify_underground_param_wiring.py's own docstring on why NOT a pipe,
+		# still wants periodic visibility without flooding it).
+		if _param_channel != null and _param_listen_elapsed_ms / 5000 != prev_elapsed_ms / 5000:
+			print("[underground_wave6_proof] param-listen t=%ds channel=%s rebuild_count=%d" %
+				[_param_listen_elapsed_ms / 1000, _param_channel.state_string(), _rebuild_count])
+		var deadline_hit := _param_listen_elapsed_ms >= _param_listen_deadline_ms
+		var min_updates_hit := _param_listen_min_updates > 0 and _rebuild_count >= _param_listen_min_updates
+		if deadline_hit or min_updates_hit:
+			set_process(false)
+			await _capture(PARAM_LISTEN_SHOT_OUT)
+			_write_state_json()
+			print("[underground_wave6_proof] param-listen captured -> ", PARAM_LISTEN_SHOT_OUT,
+				"  (rebuild_count=", _rebuild_count, ")")
+			get_tree().quit(0)
+		return
+
 	if not _shot_mode:
 		return
 	_shot_frames += 1

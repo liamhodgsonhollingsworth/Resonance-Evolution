@@ -70,6 +70,14 @@ signal pose_changed(pose: Dictionary)
 @export var poses_path: String = "user://viewpoint_poses.json"
 @export var reference_name: String = "underground_halls"  # tags saved poses -- matches
                                                             # CameraPoseRegistry's own "reference" key
+@export var build_preview: bool = true  # DQ-0343912a, additive: set false BEFORE add_child() to skip
+                                         # the PiP SubViewport + on-screen overlay -- for a headless/
+                                         # batch caller that only wants get_pose()/set_pose()/
+                                         # pose_changed (e.g. a param_channel-driven capture run,
+                                         # where a second live-rendering viewport has been observed to
+                                         # stall headless capture, see underground_wave6_proof.gd's
+                                         # own --shot comment). Default true keeps every EXISTING
+                                         # caller's behaviour byte-for-byte unchanged.
 
 var _preview_viewport: SubViewport
 var _preview_camera: Camera3D
@@ -94,8 +102,9 @@ func _ready() -> void:
 	_yaw = basis_euler.y
 	_pitch = basis_euler.x
 
-	_build_preview_viewport()
-	_build_overlay()
+	if build_preview:
+		_build_preview_viewport()
+		_build_overlay()
 	_load_all_poses()
 	set_process(true)
 	set_process_unhandled_input(true)
@@ -213,8 +222,9 @@ func _process(delta: float) -> void:
 			global_position += dir.normalized() * speed * delta
 			emit_signal("pose_changed", get_pose())
 
-	_preview_camera.global_transform = global_transform
-	_preview_camera.fov = _fov
+	if _preview_camera != null:
+		_preview_camera.global_transform = global_transform
+		_preview_camera.fov = _fov
 
 
 ## Current pose in `CameraPoseRegistry` shape (world-space, Y-up, meters/degrees).
@@ -274,7 +284,11 @@ func list_poses() -> Array:
 	return out
 
 
+## Requires `build_preview == true` (the default); returns null when the preview viewport was
+## skipped (DQ-0343912a additive change) rather than crashing a caller that forgot to check.
 func preview_texture() -> ViewportTexture:
+	if _preview_viewport == null:
+		return null
 	return _preview_viewport.get_texture()
 
 
