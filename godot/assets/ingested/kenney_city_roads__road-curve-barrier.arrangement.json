@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-kenney_city_roads__road-curve-barrier",
+  "nodes": [
+    {
+      "id": "kenney_city_roads__road-curve-barrier",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-curve-barrier.glb",
+        "name": "road-curve-barrier"
+      }
+    }
+  ],
+  "wires": []
+}

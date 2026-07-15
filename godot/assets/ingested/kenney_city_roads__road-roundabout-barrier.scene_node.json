@@ -1,0 +1,24 @@
+{
+  "name": "road-roundabout-barrier",
+  "translation": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "rotation": [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+  ],
+  "scale": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "mesh": {
+    "source": "glb",
+    "path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-roundabout-barrier.glb"
+  },
+  "children": []
+}

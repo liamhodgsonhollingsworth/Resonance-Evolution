@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-kenney_city_roads__road-square-barrier",
+  "nodes": [
+    {
+      "id": "kenney_city_roads__road-square-barrier",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__road-square-barrier.glb",
+        "name": "road-square-barrier"
+      }
+    }
+  ],
+  "wires": []
+}

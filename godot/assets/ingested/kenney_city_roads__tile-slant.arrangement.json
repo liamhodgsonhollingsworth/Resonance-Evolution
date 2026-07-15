@@ -1,0 +1,15 @@
+{
+  "format": "resonance.arrangement/v1",
+  "name": "asset-kenney_city_roads__tile-slant",
+  "nodes": [
+    {
+      "id": "kenney_city_roads__tile-slant",
+      "type": "Model",
+      "params": {
+        "path": "res://assets/vendor/kenney_city_roads/kenney_city_roads__tile-slant.glb",
+        "name": "tile-slant"
+      }
+    }
+  ],
+  "wires": []
+}
