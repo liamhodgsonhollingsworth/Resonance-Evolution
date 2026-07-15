@@ -38,7 +38,18 @@ extends RefCounted
 ##
 ## Every returned entry: {"ring_a": int, "ring_b": int, "mesh": Mesh (world-space vertices, same
 ## "return ready components" convention cavity_carver.gd's own meshes use -- place with an IDENTITY
-## transform), "length": float, "elevation_delta": float, "angle_delta": float}.
+## transform), "length": float, "elevation_delta": float, "angle_delta": float, "pa": Vector3,
+## "pb": Vector3, "right": Vector3, "up": Vector3, "deck_width": float, "deck_thickness": float}.
+## The last 6 fields are an ADDITIVE increment (2026-07-15, DISPATCH claim
+## underground-railing-iteration-2026-07-15) -- same "increment, existing fields/behavior
+## unchanged" convention `ring_scaffold.gd`'s own "INCREMENT 2" section documents. They expose the
+## deck's own endpoint/frame data (previously computed only inside the private `_deck_mesh` box
+## builder) so the new `RailingGenerator` (`renderers/railing_generator.gd`) can derive the deck's
+## two top-edge poly-lines and build a real railing along them, instead of re-deriving this
+## geometry itself. `pa`/`pb` are the SAME inset endpoints `_deck_mesh` builds its box between;
+## `right`/`up` are that box's own cross-section axes; `deck_width`/`deck_thickness` are the
+## resolved tunables used to build it -- a caller offsets `right * deck_width * 0.5` from the
+## `pa`-`pb` centerline (at `up * deck_thickness * 0.5`, the deck's TOP surface) to get either edge.
 ##
 ## Tunables (the EXACT four named by the plan -- no more, per no-auto-generalization):
 ##   max_angle_delta       (float, radians) -- max world-angle difference between two rings' cavities.
@@ -100,13 +111,16 @@ static func generate(cavity_instances: Array, tunables: Dictionary = {}) -> Arra
 			pair_index += 1
 			if rng.randf() >= connect_probability:
 				continue
-			var mesh := _deck_mesh(a["transform"], b["transform"], deck_width, deck_thickness, inset)
-			if mesh == null:
+			var frame := _deck_frame(a["transform"], b["transform"], inset)
+			if frame.is_empty():
 				continue
+			var mesh := _deck_mesh_from_frame(frame, deck_width, deck_thickness)
 			out.append({
 				"ring_a": int(a["ring"]), "ring_b": int(b["ring"]), "mesh": mesh,
 				"length": (a["origin"] as Vector3).distance_to(b["origin"]),
 				"elevation_delta": elevation_delta, "angle_delta": angle_delta,
+				"pa": frame["pa"], "pb": frame["pb"], "right": frame["right"], "up": frame["up"],
+				"deck_width": deck_width, "deck_thickness": deck_thickness,
 			})
 	return out
 
@@ -138,19 +152,23 @@ static func _angle_delta(a: float, b: float) -> float:
 	return mini(d, TAU - d)
 
 
-## A solid rectangular-cross-section prism spanning from `xform_a`'s origin to `xform_b`'s origin,
+## Endpoint + cross-section FRAME for a deck spanning from `xform_a`'s origin to `xform_b`'s origin,
 ## each end inset `inset` world units along that cavity's own +Z (into the corridor interior, per
 ## wall_surface_uv's convention -- matches cavity_carver's own "sit proud, visible from the hallway"
-## endpoint treatment). The prism's cross-section is oriented by the span direction itself and a
-## world-up-derived "deck up" axis (falls back to the span direction's own perpendicular when the span
-## is near-vertical) -- a FLAT deck (walkable top surface), not a round pipe.
-static func _deck_mesh(xform_a: Transform3D, xform_b: Transform3D, width: float, thickness: float, inset: float) -> Mesh:
+## endpoint treatment). The frame is oriented by the span direction itself and a world-up-derived
+## "deck up" axis (falls back to the span direction's own perpendicular when the span is
+## near-vertical). Returns `{}` (empty) when the span is degenerate (near-zero length); otherwise
+## `{"pa": Vector3, "pb": Vector3, "dir": Vector3, "right": Vector3, "up": Vector3, "length": float}`.
+## Factored out (2026-07-15, additive) so `RailingGenerator` can derive the deck's own top-edge
+## poly-lines from the SAME frame `_deck_mesh_from_frame` below builds its box from -- see the
+## `generate()` return-shape docstring above.
+static func _deck_frame(xform_a: Transform3D, xform_b: Transform3D, inset: float) -> Dictionary:
 	var pa: Vector3 = xform_a.origin + xform_a.basis.z * inset
 	var pb: Vector3 = xform_b.origin + xform_b.basis.z * inset
 	var dir := pb - pa
 	var length := dir.length()
 	if length < 0.001:
-		return null
+		return {}
 	dir /= length
 	var up_hint := Vector3.UP
 	if absf(dir.dot(up_hint)) > 0.98:
@@ -159,6 +177,17 @@ static func _deck_mesh(xform_a: Transform3D, xform_b: Transform3D, width: float,
 	if right.length() < 0.001:
 		right = Vector3.RIGHT
 	var up := right.cross(dir).normalized()
+	return {"pa": pa, "pb": pb, "dir": dir, "right": right, "up": up, "length": length}
+
+
+## A solid rectangular-cross-section prism built from a `_deck_frame()` result -- a FLAT deck
+## (walkable top surface), not a round pipe. Pure geometry, no re-derivation of the frame (kept in
+## exact agreement with whatever frame `generate()` attached to its output entry).
+static func _deck_mesh_from_frame(frame: Dictionary, width: float, thickness: float) -> Mesh:
+	var pa: Vector3 = frame["pa"]
+	var pb: Vector3 = frame["pb"]
+	var right: Vector3 = frame["right"]
+	var up: Vector3 = frame["up"]
 
 	var hw := width * 0.5
 	var ht := thickness * 0.5

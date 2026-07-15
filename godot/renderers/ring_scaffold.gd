@@ -56,6 +56,28 @@ extends RefCounted
 ##       SIDE wiring a scene driver calls once per visible wedge per frame — `RingScaffoldGenerator`
 ##       still never owns tracker state itself.
 ##
+## INCREMENT 3 (2026-07-15, additive — every increment-1/2 default/signature/return-shape stays
+## unchanged; nothing above this comment was rewritten): `ground_plane_mode`, per Liam's verbatim
+## 2026-07-15 process-refinement spec (DISPATCH claim underground-railing-iteration-2026-07-15):
+## "Make the entire world based on a flat plane of the ground, this will be the equatorial plane of
+## any spheres or elliptical objects that exist in this scene, but the bottom half of those that is
+## below the ground is not needed." Sentinel-gated (`ground_plane_mode == false`, the default) so
+## every increment-1/2 call site is byte-for-byte unchanged. When `true`:
+##   - `build_wedge_mesh()` builds ONLY the ceiling half of the elliptical shell (`theta` in
+##     `[0, PI]` — `sin(theta) >= 0`, the SAME half `dome_apex_height`'s own convergence blend
+##     already restricts itself to) instead of the full `[0, TAU)` closed tube. At `theta == 0` and
+##     `theta == PI` (the shell's own springlines) the cross-section's vertical offset is already
+##     exactly `sin(theta) * hh == 0` by construction — i.e. the open half-shell's two free edges
+##     ALREADY sit exactly at the ring's own `elevation` (world ground level) with no extra seam
+##     geometry needed; a companion flat `GroundPlane` node (`renderers/ground_plane.gd`, new) fills
+##     the rest of the ground visually. `cross_segments` is rounded up to even when this mode is on,
+##     so the half-loop lands exactly on `theta == PI`.
+##   - `wall_surface_uv()`'s placement domain is likewise restricted to `v` in `[0, 0.5]` (the SAME
+##     v-range convention identifies as the ceiling half — see that function's own docstring: "v=0.5
+##     = crown/ceiling-top... 0/1 = springline") so a caller's cavity/light placement (Wave 3/4's
+##     `NonOverlappingCavityCarver`/`AmberLightCubeScatterer`, both consumers of this domain) never
+##     samples the now-nonexistent floor half.
+##
 ## `gap` is "the headline tunable Liam named explicitly" (plan §4: hallway width). Here it plays
 ## TWO roles by design, both natural for concentric hallway rings packed edge-to-edge: (1) the
 ## radial spacing between consecutive ring centerlines, and (2) each ring's own walkable corridor
@@ -84,6 +106,9 @@ const DEFAULT_ELEVATION := 0.0           # single elevation throughout (Q2) — 
 const DEFAULT_DOME_APEX_HEIGHT := -1.0   # sentinel: < 0 disables roof convergence (plain ellipse,
                                           # byte-for-byte increment-1 behavior); >= 0 = absolute apex
                                           # Y offset above the ring's elevation, plan §4's tunable
+const DEFAULT_GROUND_PLANE_MODE := false # increment 3 sentinel: false = byte-for-byte increment-1/2
+                                          # behavior (full closed elliptical shell); true = upper-
+                                          # half-only (see INCREMENT 3 note below)
 
 
 ## Build the per-ring topology DATA. Ring indices run 1..ring_count (ring 0 is the center, never
@@ -174,9 +199,14 @@ static func _shell_extents(hallway_width: float, wall_thickness: float, ellipse_
 ## and the cavity-carver's future placement domain agree on what "position on the wall" means.
 static func build_wedge_mesh(chunk: Dictionary, wall_thickness: float = DEFAULT_WALL_THICKNESS,
 		ellipse_ratio: float = DEFAULT_ELLIPSE_RATIO, cross_segments: int = 8, arc_steps: int = 2,
-		dome_apex_height: float = DEFAULT_DOME_APEX_HEIGHT) -> Mesh:
+		dome_apex_height: float = DEFAULT_DOME_APEX_HEIGHT,
+		ground_plane_mode: bool = DEFAULT_GROUND_PLANE_MODE) -> Mesh:
 	cross_segments = maxi(3, cross_segments)
 	arc_steps = maxi(1, arc_steps)
+	if ground_plane_mode and cross_segments % 2 != 0:
+		cross_segments += 1  # land exactly on theta == PI (increment 3)
+	# increment 3: only the ceiling half (j in [0, half]) is built when ground_plane_mode is on.
+	var cross_j_max: int = (cross_segments / 2) if ground_plane_mode else cross_segments
 
 	var radius: float = float(chunk.get("radius", DEFAULT_RADIUS_START))
 	var elevation: float = float(chunk.get("elevation", DEFAULT_ELEVATION))
@@ -209,7 +239,7 @@ static func build_wedge_mesh(chunk: Dictionary, wall_thickness: float = DEFAULT_
 		var irow: Array = []
 		var ouv_row: Array = []
 		var iuv_row: Array = []
-		for j in (cross_segments + 1):
+		for j in (cross_j_max + 1):
 			var theta := TAU * float(j) / float(cross_segments)
 			var ocx := cos(theta) * hw_outer
 			var ocy := sin(theta) * hh_outer
@@ -235,7 +265,7 @@ static func build_wedge_mesh(chunk: Dictionary, wall_thickness: float = DEFAULT_
 		inner_uv.append(iuv_row)
 
 	for i in arc_steps:
-		for j in cross_segments:
+		for j in cross_j_max:
 			# Outer shell wall: faces OUTWARD (away from the corridor interior).
 			_quad(st, outer[i][j], outer[i + 1][j], outer[i + 1][j + 1], outer[i][j + 1],
 				outer_uv[i][j], outer_uv[i + 1][j], outer_uv[i + 1][j + 1], outer_uv[i][j + 1])
@@ -245,8 +275,9 @@ static func build_wedge_mesh(chunk: Dictionary, wall_thickness: float = DEFAULT_
 				inner_uv[i][j + 1], inner_uv[i + 1][j + 1], inner_uv[i + 1][j], inner_uv[i][j])
 
 	# End caps at the wedge's two open angular ends (i=0 and i=arc_steps): an annular-ellipse ring
-	# connecting outer to inner, closing the shell into a solid wedge segment.
-	for j in cross_segments:
+	# (or, in ground_plane_mode, a half-annulus — the loop already only spans cross_j_max) connecting
+	# outer to inner, closing the shell into a solid wedge segment.
+	for j in cross_j_max:
 		_quad(st, inner[0][j], inner[0][j + 1], outer[0][j + 1], outer[0][j],
 			inner_uv[0][j], inner_uv[0][j + 1], outer_uv[0][j + 1], outer_uv[0][j])
 		_quad(st, outer[arc_steps][j], outer[arc_steps][j + 1], inner[arc_steps][j + 1], inner[arc_steps][j],
@@ -277,7 +308,8 @@ static func build_wedge_mesh(chunk: Dictionary, wall_thickness: float = DEFAULT_
 ## at the near-vertical crown/nadir, where world-up is degenerate) so eye/almond-shaped carves orient
 ## upright by default.
 static func wall_surface_uv(ring_data: Dictionary, wall_thickness: float = DEFAULT_WALL_THICKNESS,
-		ellipse_ratio: float = DEFAULT_ELLIPSE_RATIO, hallway_width: float = DEFAULT_GAP) -> Dictionary:
+		ellipse_ratio: float = DEFAULT_ELLIPSE_RATIO, hallway_width: float = DEFAULT_GAP,
+		ground_plane_mode: bool = DEFAULT_GROUND_PLANE_MODE) -> Dictionary:
 	var radius: float = maxf(0.0001, float(ring_data.get("radius", DEFAULT_RADIUS_START)))
 	var elevation: float = float(ring_data.get("elevation", DEFAULT_ELEVATION))
 	var extents := _shell_extents(hallway_width, wall_thickness, ellipse_ratio)
@@ -304,10 +336,14 @@ static func wall_surface_uv(ring_data: Dictionary, wall_thickness: float = DEFAU
 		var basis := Basis.looking_at(normal, up_hint)
 		return Transform3D(basis, point)
 
+	# increment 3: restrict the placement domain to the ceiling half (v in [0, 0.5]) when
+	# ground_plane_mode is on, so cavity/light placement never samples the now-nonexistent floor
+	# half (see this file's own INCREMENT 3 note above).
+	var v_max: float = 0.5 if ground_plane_mode else 1.0
 	return {
 		"ring": int(ring_data.get("ring", 0)),
 		"domain_min": Vector2(0.0, 0.0),
-		"domain_max": Vector2(TAU * radius, 1.0),
+		"domain_max": Vector2(TAU * radius, v_max),
 		"to_transform": to_transform,
 	}
 
@@ -367,7 +403,9 @@ static func export_wedge_chunks_glb(meshes: Dictionary, out_dir: String) -> Dict
 ## `export_wedge_chunks_glb(result["meshes"], out_dir)` to actually write the per-chunk GLBs).
 ## `wall_surface_uv` (increment 2) is keyed by ring index (int) -> that ring's `wall_surface_uv()`
 ## domain descriptor. `tunables` accepts `dome_apex_height` (increment 2; omit/negative = the plain-
-## ellipse increment-1 roof, unchanged default).
+## ellipse increment-1 roof, unchanged default) and `ground_plane_mode` (increment 3; default false
+## = unchanged full-shell behavior; true = upper-half-only shells meeting a flat ground plane, see
+## this file's own INCREMENT 3 note above).
 static func build(tunables: Dictionary = {}) -> Dictionary:
 	var ring_count: int = int(tunables.get("ring_count", DEFAULT_RING_COUNT))
 	var radius_start: float = float(tunables.get("radius_start", DEFAULT_RADIUS_START))
@@ -377,16 +415,17 @@ static func build(tunables: Dictionary = {}) -> Dictionary:
 	var wall_thickness: float = float(tunables.get("wall_thickness", DEFAULT_WALL_THICKNESS))
 	var ellipse_ratio: float = float(tunables.get("ellipse_ratio", DEFAULT_ELLIPSE_RATIO))
 	var dome_apex_height: float = float(tunables.get("dome_apex_height", DEFAULT_DOME_APEX_HEIGHT))
+	var ground_plane_mode: bool = bool(tunables.get("ground_plane_mode", DEFAULT_GROUND_PLANE_MODE))
 
 	var topo := build_topology(ring_count, radius_start, gap, elevation)
 	var chunks := wedge_chunks(topo, segment_arc_deg, gap)
 	var meshes: Dictionary = {}
 	for chunk in chunks:
 		var key := "%d_%d" % [int(chunk["ring"]), int(chunk["arc"])]
-		meshes[key] = build_wedge_mesh(chunk, wall_thickness, ellipse_ratio, 8, 2, dome_apex_height)
+		meshes[key] = build_wedge_mesh(chunk, wall_thickness, ellipse_ratio, 8, 2, dome_apex_height, ground_plane_mode)
 	var wall_uv: Dictionary = {}
 	for ring_data in topo:
-		wall_uv[int(ring_data["ring"])] = wall_surface_uv(ring_data, wall_thickness, ellipse_ratio, gap)
+		wall_uv[int(ring_data["ring"])] = wall_surface_uv(ring_data, wall_thickness, ellipse_ratio, gap, ground_plane_mode)
 	return {"ring_topology": topo, "chunks": chunks, "meshes": meshes, "wall_surface_uv": wall_uv}
 
 

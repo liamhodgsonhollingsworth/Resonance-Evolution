@@ -48,6 +48,16 @@ extends RefCounted
 ##   protrusion                 (float)     -- how far a cube sits proud of the wall surface along its
 ##                                            normal (world units) -- reads as an INLAID object, not a
 ##                                            flush decal.
+##   flush                      (bool)      -- ADDITIVE, 2026-07-15 (DISPATCH claim
+##                                            underground-railing-iteration-2026-07-15). Liam,
+##                                            verbatim: "The lights should be embedded in the walls
+##                                            such that they are coplanar with the wall surfaces and
+##                                            do not stick out at all." Default `false` (unchanged
+##                                            `protrusion`-driven placement); `true` OVERRIDES the
+##                                            offset to `-size * 0.5` -- the cube's OUTER face sits
+##                                            exactly ON the wall surface (z=0 in the placement
+##                                            frame) instead of proud of it, i.e. truly coplanar,
+##                                            regardless of whatever `protrusion` is also set to.
 ##   seed                       (int)
 
 const DEFAULT_DENSITY := 0.35
@@ -62,7 +72,17 @@ const DEFAULT_EMISSION_ENERGY := 2.6
 const DEFAULT_GLASS_ALPHA := 0.55
 const DEFAULT_CAVITY_FILL_PROBABILITY := 0.55
 const DEFAULT_PROTRUSION := 0.04
+const DEFAULT_FLUSH := false
 const DEFAULT_SEED := 0
+
+
+## Shared offset-along-normal resolver for both placement tiers (2026-07-15, additive) -- `flush`
+## (when true) overrides `protrusion` entirely so the two tiers can never disagree on what "flush"
+## means.
+static func _normal_offset(protrusion: float, flush: bool, size: float) -> float:
+	if flush:
+		return -size * 0.5
+	return protrusion + size * 0.5
 
 
 ## Build the ONE shared material every placed cube uses by default ("emissive translucent
@@ -127,6 +147,7 @@ static func scatter_wall(wall_uv: Dictionary, tunables: Dictionary = {}) -> Arra
 	var min_spacing: float = maxf(0.05, float(tunables.get("min_spacing", DEFAULT_MIN_SPACING)))
 	var seed_value: int = int(tunables.get("seed", DEFAULT_SEED))
 	var protrusion: float = float(tunables.get("protrusion", DEFAULT_PROTRUSION))
+	var flush: bool = bool(tunables.get("flush", DEFAULT_FLUSH))
 
 	var domain_min: Vector2 = wall_uv["domain_min"]
 	var domain_max: Vector2 = wall_uv["domain_max"]
@@ -144,7 +165,7 @@ static func scatter_wall(wall_uv: Dictionary, tunables: Dictionary = {}) -> Arra
 		# wall_surface_uv's own docstring) -- an inlaid-but-visible read, never flush/hidden in the
 		# wall material.
 		var xform: Transform3D = p.transform
-		xform.origin += xform.basis.z * (protrusion + size * 0.5)
+		xform.origin += xform.basis.z * _normal_offset(protrusion, flush, size)
 		out.append({"transform": xform, "size": size, "mesh": _cube_mesh(size), "in_cavity": false})
 	return out
 
@@ -159,6 +180,7 @@ static func scatter_cavities(cavity_instances: Array, tunables: Dictionary = {})
 		float(tunables.get("cavity_fill_probability", DEFAULT_CAVITY_FILL_PROBABILITY)), 0.0, 1.0)
 	var seed_value: int = int(tunables.get("seed", DEFAULT_SEED))
 	var protrusion: float = float(tunables.get("protrusion", DEFAULT_PROTRUSION))
+	var flush: bool = bool(tunables.get("flush", DEFAULT_FLUSH))
 
 	var out: Array[Dictionary] = []
 	var idx := 0
@@ -171,7 +193,7 @@ static func scatter_cavities(cavity_instances: Array, tunables: Dictionary = {})
 			continue
 		var size := _random_size(rng, tunables)
 		var xform: Transform3D = d.get("transform", Transform3D())
-		xform.origin += xform.basis.z * (protrusion + size * 0.5)
+		xform.origin += xform.basis.z * _normal_offset(protrusion, flush, size)
 		out.append({"transform": xform, "size": size, "mesh": _cube_mesh(size), "in_cavity": true})
 	return out
 
