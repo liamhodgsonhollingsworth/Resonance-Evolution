@@ -107,3 +107,86 @@ static func to_debug_image(field: PackedFloat32Array, width: int, height: int) -
 			img.set_pixel(x, y, Color(d, d, d, 1.0))
 			i += 1
 	return img
+
+
+## ---------------------------------------------------------------------------------------------
+## TRUNCATE/LOD UNIFICATION (GZ-RENDER.5, Wave 1 item 1.2 of
+## notes/planning/scene_projects_comparison_2026_07_14.md §5). ADDITIVE to the field above — the
+## `build()`/`_falloff_at()` seam is unchanged; this is the "Truncate node + LOD" consumer the file's
+## own header comment names as sharing the field.
+##
+## A camera-distance-driven near/far swap: NEAR = real instanced geometry (the caller's
+## MultiMeshInstance3D tier), FAR = a baked static texture/impostor. The swap is wired through the
+## SAME [0..1] detail budget `build()` produces: a high-detail region (fovea center, or any region a
+## scene's falloff curve prioritizes) keeps its real geometry out to a LONGER camera distance than a
+## low-detail/periphery region, which swaps to the cheap impostor sooner — one knob, one curve,
+## budgets BOTH the painterly detail (existing) and the geometry LOD tier (new).
+##
+## Threshold + hysteresis are both tunables, per the spec text. Hysteresis matters because a
+## distance-only cutoff pops (an item oscillating around the boundary swaps every frame); it is
+## applied as a dead-zone fraction on the "swap away from the current tier" side only, so
+## `lod_tier_for` is a proper state machine (it takes the item's CURRENT tier as an input), not a
+## stateless distance→tier map. Pure DATA in, pure DATA out — no Image, no shader, no scene-tree
+## dependency — same portability invariant as the rest of this file (this is a DECISION the caller
+## acts on by instancing/freeing its own MultiMeshInstance3D / impostor node; it never touches one).
+
+const LOD_NEAR := 0  # real instanced geometry tier
+const LOD_FAR := 1   # baked static texture/impostor tier
+
+## Decide the LOD tier for ONE item this frame.
+##   distance      — camera-to-item distance (world units, clamped >= 0).
+##   detail        — the [0..1] detail budget for this item's region (read from a `build()` field at
+##                    the item's screen/world position, or pass 1.0 for plain distance-only LOD with
+##                    no field wired in).
+##   current_tier  — the tier this item rendered as last frame (LOD_NEAR or LOD_FAR); pass LOD_FAR
+##                    for a never-seen item (first appearance starts far — the cheap default).
+##   near_distance — the near/far threshold AT full detail budget (detail == 1.0): closer than this
+##                    swaps to NEAR. Clamped to a small positive minimum.
+##   hysteresis    — a fraction (0..1, clamped) of the effective boundary added as a one-sided dead
+##                    zone: swapping NEAR→FAR requires being that much FARTHER out than swapping
+##                    FAR→NEAR requires being close in, so an item sitting near the boundary does not
+##                    thrash every frame.
+## Returns LOD_NEAR or LOD_FAR.
+static func lod_tier_for(distance: float, detail: float, current_tier: int,
+		near_distance: float, hysteresis: float = 0.15) -> int:
+	distance = maxf(0.0, distance)
+	var d := clampf(detail, 0.0, 1.0)
+	near_distance = maxf(0.0001, near_distance)
+	hysteresis = clampf(hysteresis, 0.0, 1.0)
+	# Higher detail budget -> the effective boundary sits FARTHER out (a high-priority/fovea-center
+	# item keeps real geometry longer); detail == 0 collapses the boundary toward 0 (near-immediate
+	# swap to the impostor); detail == 1 uses the full near_distance.
+	var boundary := near_distance * maxf(0.0001, d)
+	var margin := boundary * hysteresis
+	if current_tier == LOD_NEAR:
+		return LOD_FAR if distance > boundary + margin else LOD_NEAR
+	return LOD_NEAR if distance < boundary - margin else LOD_FAR
+
+
+## Per-item LOD tracker: wraps `lod_tier_for()` with PERSISTENT per-item tier state across frames, so
+## a renderer calls `update(item_id, ...)` once per item per frame and gets back its current tier plus
+## whether THIS call is a swap — the caller's cue to actually instantiate the near-tier geometry / free
+## it in favor of the far-tier impostor, rather than doing that work every frame. Keyed the same way
+## ChunkLifecycleManager (this engine's sibling Wave-1 shared primitive) keys chunks — a plain
+## Dictionary, any hashable Variant as the item id, no scene-tree dependency.
+class DetailLODTracker:
+	var _tier: Dictionary = {}  # item_id -> LOD_NEAR/LOD_FAR, current tier
+
+	## Decide (and commit) `item_id`'s tier for the current frame. Returns a Dictionary:
+	##   {"tier": int, "swapped": bool, "previous_tier": int}
+	## `swapped` is true exactly on the frame the tier changes.
+	func update(item_id, distance: float, detail: float, near_distance: float,
+			hysteresis: float = 0.15) -> Dictionary:
+		var prev: int = _tier.get(item_id, DetailField.LOD_FAR)  # unseen -> FAR (cheap default)
+		var tier: int = DetailField.lod_tier_for(distance, detail, prev, near_distance, hysteresis)
+		_tier[item_id] = tier
+		return {"tier": tier, "swapped": tier != prev, "previous_tier": prev}
+
+	## The tier currently recorded for `item_id` (LOD_FAR if never seen — the safe/cheap default).
+	func tier_of(item_id) -> int:
+		return _tier.get(item_id, DetailField.LOD_FAR)
+
+	## Forget an item (e.g. it despawned via ChunkLifecycleManager) so it starts FAR again if it
+	## reappears, rather than resuming stale hysteresis state from its previous lifetime.
+	func forget(item_id) -> void:
+		_tier.erase(item_id)

@@ -19,6 +19,15 @@ func _init() -> void:
 	_test_paint_varies_by_field()
 	_test_paint_knob_zero_is_all_coarse()
 	_test_coarsen_stack_pushes_knobs_coarser()
+	_test_lod_near_within_threshold()
+	_test_lod_far_beyond_threshold()
+	_test_lod_detail_extends_near_boundary()
+	_test_lod_hysteresis_prevents_thrash_at_boundary()
+	_test_lod_hysteresis_still_swaps_past_the_dead_zone()
+	_test_lod_distance_and_near_distance_clamp_non_negative()
+	_test_lod_tracker_reports_swap_only_on_change()
+	_test_lod_tracker_unseen_item_defaults_far()
+	_test_lod_tracker_forget_resets_state()
 	print("\n[detail_falloff_test] RESULT: %s  (%d passed, %d failed)" % [
 		"ALL PASS" if _fail == 0 else "FAIL", _pass, _fail])
 	quit(0 if _fail == 0 else 1)
@@ -114,6 +123,88 @@ func _test_coarsen_stack_pushes_knobs_coarser() -> void:
 	var post: Dictionary = layers[1]
 	_check(int(kuw["params"]["radius"]) > 2, "coarsen: kuwahara radius grows (broader strokes)")
 	_check(int(post["params"]["levels"]) <= 6, "coarsen: posterize levels drop (flatter paint)")
+
+# ── Truncate/LOD unification (GZ-RENDER.5, Wave 1 item 1.2) ────────────────────────────────────────
+
+func _test_lod_near_within_threshold() -> void:
+	# distance well inside near_distance, full detail budget, first-seen (starts FAR) -> swaps NEAR.
+	var tier := DetailField.lod_tier_for(5.0, 1.0, DetailField.LOD_FAR, 10.0, 0.15)
+	_check(tier == DetailField.LOD_NEAR, "lod_tier_for: close distance within threshold -> NEAR")
+
+func _test_lod_far_beyond_threshold() -> void:
+	var tier := DetailField.lod_tier_for(50.0, 1.0, DetailField.LOD_FAR, 10.0, 0.15)
+	_check(tier == DetailField.LOD_FAR, "lod_tier_for: distance far beyond threshold -> FAR")
+
+func _test_lod_detail_extends_near_boundary() -> void:
+	# Same raw distance, two different detail budgets: a high-detail (fovea-center) item keeps NEAR
+	# geometry at a distance a low-detail (periphery) item has already swapped away from — the field
+	# is load-bearing on the LOD decision, not just the paint.
+	var dist := 8.0
+	var near_distance := 10.0
+	var high_detail := DetailField.lod_tier_for(dist, 1.0, DetailField.LOD_FAR, near_distance, 0.0)
+	var low_detail := DetailField.lod_tier_for(dist, 0.2, DetailField.LOD_FAR, near_distance, 0.0)
+	_check(high_detail == DetailField.LOD_NEAR, "lod_tier_for: detail=1.0 at dist=8/near=10 -> NEAR")
+	_check(low_detail == DetailField.LOD_FAR,
+		"lod_tier_for: detail=0.2 at the SAME distance swaps to FAR sooner (boundary scales w/ detail)")
+
+func _test_lod_hysteresis_prevents_thrash_at_boundary() -> void:
+	# boundary = 10.0 at detail=1.0. An item already NEAR, wobbling just past the raw boundary but
+	# still inside the hysteresis dead zone, must STAY near (no pop every frame).
+	var near_distance := 10.0
+	var hysteresis := 0.2  # dead zone = 2.0 world units on the "away from current tier" side
+	var still_near := DetailField.lod_tier_for(11.0, 1.0, DetailField.LOD_NEAR, near_distance, hysteresis)
+	_check(still_near == DetailField.LOD_NEAR,
+		"lod_tier_for: NEAR item just past raw boundary (11 > 10) stays NEAR inside the hysteresis dead zone")
+	# Symmetric check the other direction: an item already FAR, wobbling just inside the raw boundary
+	# but still outside the dead zone on the FAR side, must STAY far.
+	var still_far := DetailField.lod_tier_for(9.0, 1.0, DetailField.LOD_FAR, near_distance, hysteresis)
+	_check(still_far == DetailField.LOD_FAR,
+		"lod_tier_for: FAR item just inside raw boundary (9 < 10) stays FAR inside the hysteresis dead zone")
+
+func _test_lod_hysteresis_still_swaps_past_the_dead_zone() -> void:
+	var near_distance := 10.0
+	var hysteresis := 0.2
+	# NEAR -> FAR requires distance > boundary + margin = 10 + 2 = 12.
+	var swapped_to_far := DetailField.lod_tier_for(13.0, 1.0, DetailField.LOD_NEAR, near_distance, hysteresis)
+	_check(swapped_to_far == DetailField.LOD_FAR,
+		"lod_tier_for: NEAR item well past the dead zone (13 > 12) swaps to FAR")
+	# FAR -> NEAR requires distance < boundary - margin = 10 - 2 = 8.
+	var swapped_to_near := DetailField.lod_tier_for(7.0, 1.0, DetailField.LOD_FAR, near_distance, hysteresis)
+	_check(swapped_to_near == DetailField.LOD_NEAR,
+		"lod_tier_for: FAR item well inside the dead zone (7 < 8) swaps to NEAR")
+
+func _test_lod_distance_and_near_distance_clamp_non_negative() -> void:
+	var tier_neg_distance := DetailField.lod_tier_for(-5.0, 1.0, DetailField.LOD_FAR, 10.0, 0.0)
+	_check(tier_neg_distance == DetailField.LOD_NEAR,
+		"lod_tier_for: negative distance clamps to 0 (always within any positive threshold) -> NEAR")
+	var tier_zero_near := DetailField.lod_tier_for(1.0, 1.0, DetailField.LOD_FAR, 0.0, 0.0)
+	_check(tier_zero_near == DetailField.LOD_FAR,
+		"lod_tier_for: near_distance clamps to a tiny positive minimum, never divides by/produces zero")
+
+func _test_lod_tracker_reports_swap_only_on_change() -> void:
+	var tracker := DetailField.DetailLODTracker.new()
+	var r1 := tracker.update("item_a", 5.0, 1.0, 10.0, 0.15)
+	_check(r1["tier"] == DetailField.LOD_NEAR and r1["swapped"] == true and r1["previous_tier"] == DetailField.LOD_FAR,
+		"DetailLODTracker: first update to NEAR reports swapped=true, previous=FAR")
+	var r2 := tracker.update("item_a", 5.5, 1.0, 10.0, 0.15)
+	_check(r2["tier"] == DetailField.LOD_NEAR and r2["swapped"] == false,
+		"DetailLODTracker: staying NEAR next frame reports swapped=false")
+	_check(tracker.tier_of("item_a") == DetailField.LOD_NEAR, "DetailLODTracker: tier_of reflects committed state")
+
+func _test_lod_tracker_unseen_item_defaults_far() -> void:
+	var tracker := DetailField.DetailLODTracker.new()
+	_check(tracker.tier_of("never_seen") == DetailField.LOD_FAR,
+		"DetailLODTracker: tier_of an unseen item defaults to FAR (cheap default)")
+
+func _test_lod_tracker_forget_resets_state() -> void:
+	var tracker := DetailField.DetailLODTracker.new()
+	tracker.update("item_b", 5.0, 1.0, 10.0, 0.15)  # -> NEAR
+	tracker.forget("item_b")
+	_check(tracker.tier_of("item_b") == DetailField.LOD_FAR,
+		"DetailLODTracker: forget() resets an item to the unseen/FAR default")
+	var r := tracker.update("item_b", 5.0, 1.0, 10.0, 0.15)
+	_check(r["swapped"] == true and r["previous_tier"] == DetailField.LOD_FAR,
+		"DetailLODTracker: a forgotten item that reappears starts fresh (swap from FAR again), not stale hysteresis")
 
 # ── helpers ──────────────────────────────────────────────────────────────────────────────────────
 
