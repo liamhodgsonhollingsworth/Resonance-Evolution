@@ -48,10 +48,11 @@ extends RefCounted
 ##     carries "pa"/"pb"/"right"/"up"/"deck_width"/"deck_thickness", 2026-07-15), returns an
 ##     Array of exactly 2 `generate()` results -- one railing run per top edge of that deck.
 ##   generate_for_cavity_rim(cavity_instance: Dictionary, tunables: Dictionary = {}) -> Dictionary
-##     Convenience: a short straight rail chord across a "through" cavity's own opening mouth (the
-##     "closest balcony" case from the original spec) -- a deliberate simplification (a chord, not a
-##     curved rim-following boundary; documented, not a silent omission -- see the function's own
-##     docstring) since `NonOverlappingCavityCarver` does not expose its footprint boundary publicly.
+##     Convenience: a rail across a "through" cavity's own opening mouth (the "closest balcony" case
+##     from the original spec). Two modes via the `curved` tunable (default false = the original
+##     straight-chord simplification, fully backward compatible): `curved=true` bends the SAME chord
+##     into an arc that follows the ring's own curvature (posts along the curve, tunable
+##     `arc_segments` resolution) -- see the function's own docstring for the full contract.
 ##
 ## `path` is an arbitrary poly-line of Vector3 points in WHATEVER frame the caller uses (the SAME
 ## "absolute path in world/scene space" convention `BridgeGenerator`/`RingScaffoldGenerator` already
@@ -111,6 +112,9 @@ const MIN_DETAIL_SPACING_SCALE := 4.0      # at detail=0, effective baluster spa
 
 const DEFAULT_DECK_RAIL_INSET := 0.06      # m, how far each edge rail sits in from the deck's true
                                             # physical edge (keeps posts from overhanging the deck)
+
+const DEFAULT_ARC_SEGMENTS := 6            # generate_for_cavity_rim(curved=true) only: number of
+                                            # straight sub-segments approximating the rim arc
 
 
 ## Build ONE railing run along `path`. See file header for the full contract + mitigations.
@@ -258,14 +262,45 @@ static func generate_for_bridge(bridge_entry: Dictionary, tunables: Dictionary =
 	return out
 
 
-## Convenience: a short straight rail chord across a "through"/balcony-style `cavity_instance`'s own
-## opening mouth (`NonOverlappingCavityCarver.carve()`'s own output shape -- {"transform",
-## "size", ...}). DELIBERATE SIMPLIFICATION: this is a straight chord across the opening's mouth,
-## not a curved rim following the opening's own footprint boundary -- `NonOverlappingCavityCarver`
-## does not expose its footprint-boundary helper publicly, and a chord already reads correctly for a
-## roughly-circular/elliptical/eye-shaped opening viewed from the corridor (the reference image's
-## own balcony rails read as straight members too). A full curved-rim generalization is a documented
-## future increment, not silently skipped.
+## Convenience: a rail across a "through"/balcony-style `cavity_instance`'s own opening mouth
+## (`NonOverlappingCavityCarver.carve()`'s own output shape -- {"transform", "size", ...}).
+##
+## Two modes, both governed by the `curved` tunable (default false -- EXACT prior behavior, fully
+## backward compatible, no breaking changes to any existing caller):
+##   curved=false (default) -- the original straight rail CHORD across the opening's mouth (the
+##     "closest balcony" simplification -- reads correctly for a roughly-circular/elliptical/
+##     eye-shaped opening viewed from the corridor, matching the reference image's own straight
+##     balcony-rail members).
+##   curved=true -- the rim ARC-FOLLOWS the ring's own curvature instead of cutting a straight chord:
+##     posts placed along a real circular arc (a tunable-resolution `arc_segments` poly-line, each
+##     control point FORCED to get a post by `generate()`'s own mitigation #1) and the handrail reads
+##     as curved because it is genuinely built from more than two points, not because any new mesh
+##     logic was added -- `generate()` itself is unmodified.
+##
+## Curvature source (`NonOverlappingCavityCarver` still does not expose a footprint-boundary helper,
+## so the arc is NOT literally traced from the carved opening's own boundary; it approximates the
+## RING's own curvature, which is what "follow the curvature" means for a rim carved into a ring
+## wall): `ring_center` (default `Vector3.ZERO` -- the underground-halls scene keeps EVERY concentric
+## ring/ellipse centered at world origin by construction, per `underground_wave6_proof.gd`'s own
+## docstring: "concentric rings ... ALL sharing world-origin as their center of symmetry") and
+## `ring_radius` (default 0.0 = auto-derive as `(xform.origin - ring_center).length()`, the cavity's
+## own 3D distance from the shared center -- an "osculating sphere" approximation of the true local
+## curvature, EXACT for a true sphere/circle and a documented, override-able approximation for the
+## ellipsoidal dome shell the real scene actually builds; a caller that knows the exact ring radius
+## should pass `ring_radius` explicitly rather than rely on the auto-derivation). The arc is built in
+## the plane spanned by the radial direction (`xform.origin - ring_center`) and the SAME tangent
+## direction the straight-chord path already uses (`xform.basis.x`) -- i.e. `curved=true` bends the
+## existing chord rather than inventing a new endpoint convention, so raising `arc_segments` sweeps
+## continuously from a flat chord (1 segment) toward a smooth arc, and `curved=true` with
+## `arc_segments=1` is byte-for-byte equivalent to `curved=false` (same 2 endpoints). Degenerate
+## curvature (tangent parallel to the radial direction, or an effective zero/negative ring_radius)
+## falls back to the exact straight chord rather than emitting garbage geometry.
+##
+## New tunables (all optional; omitting every one of them reproduces the pre-existing behavior):
+##   curved        bool     default false
+##   ring_center   Vector3  default Vector3.ZERO
+##   ring_radius   float    default 0.0 (0.0 = auto-derive from the cavity's own distance to ring_center)
+##   arc_segments  int      default 6, clamped >= 1 -- resolution of the arc poly-line (curved=true only)
 static func generate_for_cavity_rim(cavity_instance: Dictionary, tunables: Dictionary = {}) -> Dictionary:
 	if not cavity_instance.has("transform"):
 		return {"mesh": null, "post_count": 0, "baluster_count": 0, "length": 0.0}
@@ -274,10 +309,44 @@ static func generate_for_cavity_rim(cavity_instance: Dictionary, tunables: Dicti
 	var span_scale: float = float(tunables.get("rim_span_scale", 1.3))
 	var half_span := size * span_scale
 	var forward_offset := xform.basis.z * float(tunables.get("rim_forward_offset", 0.02))
+	var rim_tunables := dict_merge(tunables, {"post_spacing": maxf(0.15, half_span), "closed": false})
+
+	if not bool(tunables.get("curved", false)):
+		return generate(_rim_chord(xform, half_span, forward_offset), rim_tunables)
+
+	var ring_center: Vector3 = tunables.get("ring_center", Vector3.ZERO)
+	var to_center := xform.origin - ring_center
+	var ring_radius: float = float(tunables.get("ring_radius", 0.0))
+	if ring_radius <= 0.0:
+		ring_radius = to_center.length()
+
+	var tangent_dir: Vector3 = xform.basis.x.normalized()
+	var radial_dir: Vector3 = to_center.normalized() if to_center.length() > 1e-6 else xform.basis.z.normalized()
+	var rotation_axis: Vector3 = radial_dir.cross(tangent_dir)
+	if rotation_axis.length() < 1e-6 or ring_radius < 0.01:
+		# Degenerate curvature (tangent parallel to the radial direction, or effectively zero
+		# radius) -- fall back to the exact straight chord rather than producing garbage geometry.
+		return generate(_rim_chord(xform, half_span, forward_offset), rim_tunables)
+	rotation_axis = rotation_axis.normalized()
+
+	var half_angle: float = asin(clampf(half_span / ring_radius, -1.0, 1.0))
+	var segments: int = maxi(1, int(tunables.get("arc_segments", DEFAULT_ARC_SEGMENTS)))
+	var path: Array = []
+	for i in range(segments + 1):
+		var t: float = 1.0 - 2.0 * float(i) / float(segments)  # +1 -> -1: matches chord p0(+half_span) -> p1(-half_span)
+		var theta: float = t * half_angle
+		var dir: Vector3 = radial_dir.rotated(rotation_axis, theta)
+		path.append(ring_center + dir * ring_radius + forward_offset)
+	return generate(path, rim_tunables)
+
+
+## The original 2-point straight chord across a cavity's opening mouth -- factored out so both the
+## `curved=false` path and `curved=true`'s degenerate-curvature fallback share exactly one
+## implementation (never two copies that could drift).
+static func _rim_chord(xform: Transform3D, half_span: float, forward_offset: Vector3) -> Array:
 	var p0 := xform.origin + xform.basis.x * half_span + forward_offset
 	var p1 := xform.origin - xform.basis.x * half_span + forward_offset
-	var rim_tunables := dict_merge(tunables, {"post_spacing": maxf(0.15, half_span), "closed": false})
-	return generate([p0, p1], rim_tunables)
+	return [p0, p1]
 
 
 ## Small dict-merge helper (`overlay` wins over `base`) -- avoids caller boilerplate at the two

@@ -17,10 +17,15 @@ extends Node3D
 ##   3. `ViewpointPicker` (tools/viewpoint_picker.gd, new) -- the reusable camera-placement tool;
 ##      Liam flies around, tunes the view live via the PiP preview (or pop-out window), and can save
 ##      the pose for reuse by `reference_camera_score.py` / a future Aperture scenery view.
-##   4. Cavities (`NonOverlappingCavityCarver`), bridges (`BridgeGenerator`) + their new railings
-##      (`RailingGenerator`, this same DISPATCH claim), trees (`PlantScatterInCavities`), and lights
-##      (`AmberLightCubeScatterer`, now with `flush=true` -- coplanar, zero protrusion) -- every one
-##      exposed as a live slider/toggle in `TunablePanel` (tools/tunable_panel.gd, new).
+##   4. Cavities (`NonOverlappingCavityCarver`), bridges (`BridgeGenerator`) + their railings
+##      (`RailingGenerator` -- balcony/cavity-rim railings now optionally ARC-FOLLOW the ring's own
+##      curvature instead of a flat chord, `rim_curved`/`rim_arc_segments`, DQ-9401aaab 2026-07-15),
+##      trees (`PlantScatterInCavities` -- now wired to REAL pre-existing CC0 tree assets from the
+##      already-ingested `quaternius_nature` kit by default, `tree_source`/`tree_species_mix`/
+##      `tree_scale_min`/`tree_scale_max`, DQ-9183cfe2 2026-07-15; `tree_source=lsystem` still
+##      available as a fallback), and lights (`AmberLightCubeScatterer`, now with `flush=true` --
+##      coplanar, zero protrusion) -- every one exposed as a live slider/toggle in `TunablePanel`
+##      (tools/tunable_panel.gd, new).
 ##
 ## Launch modes:
 ##   <godot> --path godot res://underground_wave6_proof.tscn
@@ -48,10 +53,19 @@ extends Node3D
 ##     `godot/live/underground_param_wiring_proof.png` once the deadline/min-updates is reached, from
 ##     whatever `ViewpointPicker` pose was last applied (local default, or a `viewpoint_pose` message
 ##     received over the channel) -- demonstrating pose-as-a-param in the same shot.
+##   <godot_console, WITHOUT --headless (texture readback hangs on this Godot build in headless mode)>
+##       --path godot res://underground_wave6_proof.tscn -- --milestone-shot
+##     Milestone-quality capture (DQ-9183cfe2/DQ-9401aaab, 2026-07-15): builds the scene with default
+##     tunables, then frames the camera via a transient `ViewpointPicker.set_pose()` call aimed at a
+##     REAL populated cavity wall (a `cavity_cutaway_field` entry that actually carries a tree +
+##     curved balcony-rim railing -- NOT the wave4/5/6 default `--shot` camera, which sits below the
+##     ground plane and mostly frames ground+sky). Writes
+##     `godot/live/underground_wave6_milestone.png` and quits.
 
 const SHOT_OUT := "res://live/underground_wave6_proof.png"
 const PARAM_LISTEN_SHOT_OUT := "res://live/underground_param_wiring_proof.png"
 const PARAM_STATE_OUT := "res://live/underground_param_state.json"
+const MILESTONE_SHOT_OUT := "res://live/underground_wave6_milestone.png"
 
 var _geometry_root: Node3D
 var _tunable_panel: TunablePanel
@@ -67,10 +81,17 @@ var _current_tunables: Dictionary = {}
 var _rebuild_count := 0
 var _applying_external_param := false
 var _shot_mode := false
+var _milestone_shot_mode := false
+var _capture_out := SHOT_OUT
 
 
 func _ready() -> void:
-	_shot_mode = "--shot" in OS.get_cmdline_user_args() or "--shot" in OS.get_cmdline_args()
+	var user_args := OS.get_cmdline_user_args()
+	var raw_args := OS.get_cmdline_args()
+	_milestone_shot_mode = "--milestone-shot" in user_args or "--milestone-shot" in raw_args
+	_shot_mode = _milestone_shot_mode or "--shot" in user_args or "--shot" in raw_args
+	if _milestone_shot_mode:
+		_capture_out = MILESTONE_SHOT_OUT
 	_param_listen_mode = _cmdline_flag("--param-listen")
 	var channel_uri := _cmdline_value("--channel-uri", "")
 	_param_listen_deadline_ms = int(_cmdline_value("--listen-seconds", "20")) * 1000
@@ -80,7 +101,10 @@ func _ready() -> void:
 	add_child(_geometry_root)
 
 	_build_env()
-	_build_default_camera()
+	if _milestone_shot_mode:
+		_build_milestone_camera()
+	else:
+		_build_default_camera()
 
 	# DQ-0343912a: opt-in only (empty uri = disabled, so --shot and every prior launch mode are
 	# byte-for-byte unaffected). Same ParamChannelClient instance serves both the interactive
@@ -165,6 +189,13 @@ func _param_specs() -> Array:
 		{"key": "light_flush", "label": "lights flush (no protrusion)", "type": "bool", "default": true},
 		{"key": "tree_density", "label": "tree density", "type": "float", "min": 0.0, "max": 1.0, "step": 0.05, "default": 0.7},
 		{"key": "ground_extent_multiplier", "label": "ground plane extent", "type": "float", "min": 1.0, "max": 2.5, "step": 0.05, "default": 1.1},
+		{"key": "tree_source", "label": "tree source", "type": "enum", "options": ["kit", "lsystem"], "default": "kit"},
+		{"key": "tree_species_mix", "label": "tree species mix", "type": "enum",
+			"options": ["both", "pine_only", "twisted_tree_only"], "default": "both"},
+		{"key": "tree_scale_min", "label": "tree scale min", "type": "float", "min": 0.2, "max": 2.0, "step": 0.05, "default": 0.5},
+		{"key": "tree_scale_max", "label": "tree scale max", "type": "float", "min": 0.2, "max": 3.0, "step": 0.05, "default": 1.1},
+		{"key": "rim_curved", "label": "balcony rim follows curve", "type": "bool", "default": true},
+		{"key": "rim_arc_segments", "label": "balcony rim arc resolution", "type": "int", "min": 1, "max": 20, "step": 1, "default": 6},
 	]
 
 
@@ -302,6 +333,45 @@ func _write_state_json() -> void:
 		f.close()
 
 
+## Milestone capture camera (DQ-9183cfe2/DQ-9401aaab, 2026-07-15). The pose is placed via a
+## TRANSIENT `ViewpointPicker.set_pose()` call (never added to the tree -- `set_pose()` only touches
+## its own local transform, which resolves correctly even parent-less) rather than a hand-rolled
+## `Transform3D.looking_at`, so this capture uses the SAME node-based placement API Liam's own
+## interactive session uses -- the pose below is not a special case, it's what
+## `ViewpointPicker.set_pose({"position":..., "look_at":...})` computes, same as flying there by hand
+## and pressing Enter to save it. `pose_origin`/`pose_target` were measured from a real
+## `cavity_cutaway_field` entry (the SAME carve seed/tunables `_rebuild_geometry` uses) -- one of the
+## four floor-level, tree+curved-rim-railing-bearing cavity openings this default scene actually
+## carves -- specifically chosen because the wave4/5/6 DEFAULT `--shot` camera sits BELOW the ground
+## plane (`_build_default_camera`'s cpos.y = -1.98) and mostly frames ground+sky, not the populated
+## wall this milestone needs to show. Arrived at via an in-engine pose-scouting pass (several
+## candidate `ViewpointPicker.set_pose()` calls rendered and compared side by side, not guessed
+## once) -- this framing reads cleanly: the curved balcony-rim railing (DQ-9401aaab) arcing across
+## the opening, a real ingested-kit tree (DQ-9183cfe2 -- its authored autumn-red foliage instantly
+## distinguishes it from the flat-green L-system fallback) overhead, sandstone ring wall either side.
+func _build_milestone_camera() -> void:
+	var pose_target := Vector3(-11.1604, 1.809515, -3.274492)  # real cavity_cutaway_field origin (ring 1), raised 1.0m toward the tree/rail cluster
+	var pose_origin := Vector3(-9.8105, 2.409, -7.875)         # inside the hollow ring interior, a medium composed distance back
+	# `set_pose()` resolves global_position/look_at, which need the node inside the tree -- parent it
+	# briefly, read the resulting transform, then remove it immediately (before any frame renders)
+	# so its own interactive PiP/overlay UI never appears in the capture.
+	var vp := ViewpointPicker.new()
+	add_child(vp)
+	vp.set_pose({
+		"position": [pose_origin.x, pose_origin.y, pose_origin.z],
+		"look_at": [pose_target.x, pose_target.y, pose_target.z],
+		"fov_deg": 55.0,
+	})
+	var cam := Camera3D.new()
+	cam.transform = vp.global_transform
+	cam.fov = 55.0
+	cam.current = true
+	add_child(cam)
+	_main_camera = cam
+	remove_child(vp)
+	vp.queue_free()
+
+
 func _rebuild_geometry(t: Dictionary) -> void:
 	for c in _geometry_root.get_children():
 		c.queue_free()
@@ -395,9 +465,16 @@ func _rebuild_geometry(t: Dictionary) -> void:
 			_geometry_root.add_child(rmi)
 
 	# Balcony/cavity-opening rim railings ("closest balcony" per the original spec) -- through
-	# cavities only (the ones that actually open onto a walkable ledge/opening).
+	# cavities only (the ones that actually open onto a walkable ledge/opening). `curved`/
+	# `arc_segments` (DQ-9401aaab) make the rim follow the ring's own curvature instead of cutting a
+	# flat chord across the opening -- live-tunable via the panel's "balcony rim follows curve" /
+	# "balcony rim arc resolution" knobs.
+	var rim_tunables := RailingGenerator.dict_merge(railing_tunables, {
+		"curved": bool(t.get("rim_curved", true)),
+		"arc_segments": int(t.get("rim_arc_segments", 6)),
+	})
 	for inst in cutaway:
-		var rim := RailingGenerator.generate_for_cavity_rim(inst, railing_tunables)
+		var rim := RailingGenerator.generate_for_cavity_rim(inst, rim_tunables)
 		if rim.get("mesh") == null:
 			continue
 		var rmi := MeshInstance3D.new()
@@ -405,15 +482,23 @@ func _rebuild_geometry(t: Dictionary) -> void:
 		rmi.material_override = railing_mat
 		_geometry_root.add_child(rmi)
 
-	# ── Step 4c: trees (pre-existing-asset seam already designed in PlantScatterInCavities; a real
-	# asset resolver is a documented follow-up, see DISPATCH.md queued items -- lsystem default here
-	# so the tree DENSITY tunable is still live and meaningful today) ──────────────────────────────
+	# ── Step 4c: trees -- REAL pre-existing CC0 asset kit wired in (DQ-9183cfe2, 2026-07-15). "tree
+	# source" toggles between the real ingested `quaternius_nature` kit (default) and the built-in
+	# L-system fallback; "tree species mix" restricts which real models are eligible. A GLB tree
+	# keeps its OWN vendored material (never overridden -- overriding it would hide the real asset
+	# behind a flat placeholder color); only the material-free L-system geometry gets `plant_mat`. ──
 	var plant_mat := StandardMaterial3D.new()
 	plant_mat.albedo_color = Color(0.22, 0.42, 0.16)
 	plant_mat.roughness = 0.85
+	var tree_source := String(t.get("tree_source", "kit"))
+	var tree_handle := "kit:quaternius_nature" if tree_source == "kit" else "lsystem:default"
+	var species_mix := String(t.get("tree_species_mix", "both"))
+	var tree_species: Array = ["pine"] if species_mix == "pine_only" else (
+		["twisted_tree"] if species_mix == "twisted_tree_only" else ["pine", "twisted_tree"])
 	var plant_placements := PlantScatterInCavities.scatter(instances, cutaway, {
-		"tree_asset_handle": "lsystem:default", "density": float(t.get("tree_density", 0.7)),
-		"seed": 2026, "size_min": 0.5, "size_max": 1.1,
+		"tree_asset_handle": tree_handle, "density": float(t.get("tree_density", 0.7)),
+		"tree_species": tree_species, "seed": 2026,
+		"size_min": float(t.get("tree_scale_min", 0.5)), "size_max": float(t.get("tree_scale_max", 1.1)),
 	})
 	for p in plant_placements:
 		var scene_node = p.get("scene_node")
@@ -423,8 +508,10 @@ func _rebuild_geometry(t: Dictionary) -> void:
 		wrapper.transform = p["transform"]
 		_geometry_root.add_child(wrapper)
 		GodotSceneRenderer.build_static_tree([scene_node], wrapper)
-		for mi in _find_mesh_instances(wrapper):
-			mi.material_override = plant_mat
+		var is_real_asset := String((scene_node as Dictionary).get("mesh", {}).get("source", "")) == "glb"
+		if not is_real_asset:
+			for mi in _find_mesh_instances(wrapper):
+				mi.material_override = plant_mat
 
 	# ── Step 4d: lights, embedded coplanar in the walls -- zero protrusion ──────────────────────────
 	var amber_tunables := {
@@ -495,8 +582,8 @@ func _process(delta: float) -> void:
 		return
 	_shot_frames += 1
 	if _shot_frames == 15:
-		await _capture(SHOT_OUT)
-		print("[underground_wave6_proof] captured -> ", SHOT_OUT)
+		await _capture(_capture_out)
+		print("[underground_wave6_proof] captured -> ", _capture_out)
 		get_tree().quit(0)
 
 

@@ -18,15 +18,37 @@ extends RefCounted
 ##     produces each plant's procedural geometry as the SAME renderer-neutral scene_node descriptor
 ##     shape every other primitive already emits.
 ##
-## CC0 ASSET SEAM (swappable socket, not built here per this item's own instruction -- "the CC0 asset
-## seam stays a swappable socket, assets not yet fetched -- leave the seam, use L-system trees now"):
-## `tree_asset_handle` selects between the two paths. The default handle (`DEFAULT_TREE_ASSET_HANDLE`,
-## "lsystem:default") -- or any handle starting with the `"lsystem:"` prefix -- resolves to a built-in
-## L-system species (LSYSTEM_SPECIES below) and this module builds the plant's `scene_node` itself. Any
-## OTHER handle (e.g. a future `"asset:potted_fern"` CC0 pick-list handle, per the crosscutting plan's
-## AssetPickList convention) is passed through UNRESOLVED as `call_target` with `scene_node = null` --
-## a later asset-ingestion pass wires the actual mesh, exactly matching ScatterComposer.Placement's own
-## `call_target` contract ("this module does not resolve or invoke it").
+## CC0 ASSET SEAM -- REAL PRE-EXISTING ASSETS WIRED (this increment; DQ-9183cfe2, 2026-07-15): "trees
+## are taken from pre-existing assets" (Liam's process step 4, verbatim). `tree_asset_handle` selects
+## between THREE resolution paths, dispatched purely by string prefix (never a peer-file/renderer
+## edit -- see below):
+##   "lsystem:<species>" (default, UNCHANGED) -- a built-in procedural L-system species
+##     (LSYSTEM_SPECIES below); this module builds the plant's `scene_node` itself.
+##   "kit:<kit_id>" (NEW) -- a REAL ingested CC0 tree/plant kit (already vendored by
+##     `Alethea-cc/tools/asset_ingest_gltf.py ingest-kit`, registered in
+##     `res://assets/ingested/manifest.json`; loaded via `KitGridPlacer.load_kit_pieces_from_manifest`
+##     -- REUSE, no new manifest-reading code). Only the `kit_id`'s members whose `asset_id` matches
+##     one of the `tree_species` tunable's substrings (default `["pine", "twisted_tree"]` -- the two
+##     REAL species found in the ingested `quaternius_nature` kit, CC0 1.0, via poly.pizza) are
+##     eligible, so a kit that also vendors non-tree pieces (e.g. `quaternius_nature`'s
+##     `rock_path_square_wide`) never gets scattered as a "tree". One eligible piece is picked per
+##     plant by a seeded roll (this IS the "species mix" tunable: editing `tree_species` changes which
+##     real models can appear, with zero code change). The resolved `scene_node` uses the SAME
+##     `mesh.source="glb"` descriptor shape `PrimAssetImport`/`GodotSceneRenderer` already build
+##     (renderers/godot_scene_renderer.gd `build_node()`, dispatches on the plain `mesh.source`
+##     string) -- so real trees render through the EXISTING renderer with zero renderer-file edits,
+##     and export to glTF through the EXISTING `GltfExporter` path the same way every other
+##     `mesh.source="glb"` node already does. If the kit id is unknown or has no eligible members
+##     after the species filter (e.g. a typo, or a kit that turns out to have no trees), this module
+##     degrades gracefully to the built-in `"lsystem:default"` species -- NEVER emits nothing and
+##     NEVER crashes (same "unknown = safe fallback" C-ideal `PrimAssetImport`'s own docstring names).
+##   Any OTHER handle (e.g. a future `"asset:potted_fern"` CC0 pick-list handle, per the crosscutting
+##   plan's AssetPickList convention) is still passed through UNRESOLVED as `call_target` with
+##   `scene_node = null` -- the seam remains open for asset types not yet ingested, exactly matching
+##   ScatterComposer.Placement's own `call_target` contract ("this module does not resolve or invoke
+##   it"). `tree_asset_handle`'s own DEFAULT stays `"lsystem:default"` (this module's internal default
+##   is unchanged, so every existing caller/test that doesn't override the handle is unaffected) --
+##   the LIVE scene (`underground_wave6_proof.gd`) is the one that opts into `"kit:quaternius_nature"`.
 ##
 ## WHERE PLANTS GO -- floor-level cavities, growing world-up regardless of wall tilt: `cavity_
 ## cutaway_field` (the `through == true` subset NonOverlappingCavityCarver flags as street-level/
@@ -49,17 +71,30 @@ extends RefCounted
 ## "on_floor": bool, "scale": float} -- pure DATA, same "return ready components" pattern
 ## cavity_instances/amber-cube placements already use.
 ##
-## Tunables (the EXACT two named by the plan -- no more, per no-auto-generalization):
-##   tree_asset_handle  (String) -- "lsystem:<species>" for a built-in procedural plant (default
-##                                  "lsystem:default"), or any other handle -- passed through as an
-##                                  unresolved `call_target` for the future CC0 asset seam.
+## Tunables (the original two named by the plan, plus this increment's real-asset trio -- "selection,
+## density, scale-jitter, and species mix all tunable" per DQ-9183cfe2):
+##   tree_asset_handle  (String) -- "lsystem:<species>" (default "lsystem:default"), "kit:<kit_id>"
+##                                  (a real ingested CC0 kit, e.g. "kit:quaternius_nature"), or any
+##                                  other handle -- passed through as an unresolved `call_target` for
+##                                  the still-open CC0 asset seam. THE "selection" tunable.
 ##   density            (float 0..1) -- per-cavity Poisson-disk field acceptance probability.
+##   tree_species       (Array[String], default ["pine", "twisted_tree"]) -- "kit:" handles only:
+##                                  substring filter against each kit member's asset_id, restricting
+##                                  which real models are eligible. THE "species mix" tunable.
+##   kit_manifest_path  (String, default "res://assets/ingested/manifest.json") -- "kit:" handles
+##                                  only: which ingested-asset manifest to resolve against.
+## `size_min`/`size_max` (below, pre-existing) already double as the "scale-jitter" tunable -- applies
+## identically to an lsystem plant (baked into its procedural geometry) and a kit tree (applied as the
+## resolved scene_node's own `scale` field, read by `GodotSceneRenderer.apply_trs`).
 ## (Implementation-detail defaults below -- e.g. `min_spacing_fraction`, `size_min`/`size_max`,
 ## `max_per_cavity`, `protrusion` -- are documented decisions overridable via `tunables`, the same
 ## pattern cavity_carver.gd's DEFAULT_SIZE_FRACTION etc. and ring_scaffold.gd's own extra params use.)
 
 const DEFAULT_TREE_ASSET_HANDLE := "lsystem:default"
 const LSYSTEM_PREFIX := "lsystem:"
+const KIT_PREFIX := "kit:"
+const DEFAULT_TREE_SPECIES := ["pine", "twisted_tree"]  # substrings matched against quaternius_nature's real asset_ids
+const DEFAULT_KIT_MANIFEST_PATH := "res://assets/ingested/manifest.json"
 const DEFAULT_DENSITY := 0.55
 const DEFAULT_SEED := 0
 const DEFAULT_MIN_SPACING_FRACTION := 0.45   # per-cavity Poisson min-spacing, as a fraction of cavity size
@@ -158,7 +193,7 @@ static func _scatter_one_cavity(cavity_instance: Dictionary, cavity_index: int, 
 		var rng := RandomNumberGenerator.new()
 		rng.seed = int(p.seed) ^ int(hash(p.point))
 		var scale := _random_scale(rng, tunables)
-		var scene_node = _build_scene_node(handle, rng, scale)
+		var scene_node = _build_scene_node(handle, rng, scale, tunables)
 		out.append({
 			"transform": p.transform,
 			"cavity_ring": ring,
@@ -177,13 +212,23 @@ static func _random_scale(rng: RandomNumberGenerator, tunables: Dictionary) -> f
 	return rng.randf_range(lo, hi)
 
 
-## Build one plant's renderer-neutral `scene_node` via LSystem, or return null when `handle` is NOT
-## an `"lsystem:"` handle (the CC0 asset seam -- a later pass resolves `call_target` into real geometry;
-## this module never guesses at an asset it hasn't ingested).
-static func _build_scene_node(handle: String, rng: RandomNumberGenerator, scale: float) -> Variant:
-	if not handle.begins_with(LSYSTEM_PREFIX):
-		return null
-	var species_name := handle.substr(LSYSTEM_PREFIX.length())
+## Build one plant's renderer-neutral `scene_node`. Dispatches on `handle`'s prefix:
+##   "lsystem:<species>" -> a built-in procedural plant (unchanged from before this increment).
+##   "kit:<kit_id>"       -> a REAL ingested CC0 tree/plant GLB (this increment, DQ-9183cfe2).
+## Any other handle returns null (the CC0 asset seam stays open for asset types not yet ingested --
+## a later pass resolves `call_target` into real geometry; this module never guesses at an asset it
+## hasn't ingested).
+static func _build_scene_node(handle: String, rng: RandomNumberGenerator, scale: float, tunables: Dictionary = {}) -> Variant:
+	if handle.begins_with(KIT_PREFIX):
+		return _build_kit_scene_node(handle.substr(KIT_PREFIX.length()), rng, scale, tunables)
+	if handle.begins_with(LSYSTEM_PREFIX):
+		return _build_lsystem_scene_node(handle.substr(LSYSTEM_PREFIX.length()), rng, scale)
+	return null
+
+
+## The pre-existing L-system builder (factored out, byte-for-byte unchanged logic) -- also the
+## graceful-degradation target when a "kit:" handle's kit/species-filter comes up empty.
+static func _build_lsystem_scene_node(species_name: String, rng: RandomNumberGenerator, scale: float) -> Dictionary:
 	var species: Dictionary = LSYSTEM_SPECIES.get(species_name, {})
 	if species.is_empty():
 		# Unknown species name after the "lsystem:" prefix (including the empty string from a bare
@@ -199,3 +244,56 @@ static func _build_scene_node(handle: String, rng: RandomNumberGenerator, scale:
 	turtle["radius"] = float(turtle.get("radius", 0.05)) * scale
 	var segments := LSystem.interpret(symbols, turtle)
 	return LSystem.to_scene_node(segments, "plant_%s" % species_name)
+
+
+## Per-run cache: "<manifest_path>|<kit_id>" -> the kit's full piece list (asset_id, res_path, ...),
+## as `KitGridPlacer.load_kit_pieces_from_manifest` returns it -- avoids re-reading + re-parsing the
+## manifest JSON once per plant (a cavity population pass can place dozens of trees per scene).
+static var _kit_pieces_cache: Dictionary = {}
+
+## One real tree/plant GLB, picked from an already-ingested kit. Filters the kit's members down to
+## the `tree_species` substring allow-list (default DEFAULT_TREE_SPECIES) BEFORE picking, so a kit
+## that also vendors non-tree pieces never scatters one as a "tree" -- then picks one eligible piece
+## per plant via a seeded roll (the "species mix" tunable in action). Falls back to the built-in
+## "lsystem:default" species if the kit is unknown, the manifest is missing, or the species filter
+## leaves zero eligible pieces -- NEVER emits nothing, NEVER crashes (C-ideal, matches
+## `PrimAssetImport`'s own "unknown = safe placeholder" posture).
+static func _build_kit_scene_node(kit_id: String, rng: RandomNumberGenerator, scale: float, tunables: Dictionary) -> Dictionary:
+	var manifest_path := String(tunables.get("kit_manifest_path", DEFAULT_KIT_MANIFEST_PATH))
+	var species: Array = tunables.get("tree_species", DEFAULT_TREE_SPECIES)
+	var pieces := _kit_tree_pieces(kit_id, manifest_path, species)
+	if pieces.is_empty():
+		return _build_lsystem_scene_node("default", rng, scale)
+
+	var piece: Dictionary = pieces[rng.randi_range(0, pieces.size() - 1)]
+	return {
+		"name": String(piece.get("asset_id", "kit_tree")),
+		"translation": [0.0, 0.0, 0.0],
+		"rotation": [0.0, 0.0, 0.0, 1.0],
+		"scale": [scale, scale, scale],
+		"mesh": {"source": "glb", "path": String(piece.get("res_path", ""))},
+		"children": [],
+	}
+
+
+## `kit_id`'s ingested members, filtered to the ones whose `asset_id` contains one of `species`'s
+## substrings (case-insensitive). REUSES `KitGridPlacer.load_kit_pieces_from_manifest` (the SAME
+## ingested-manifest reader `kit_grid_placer.gd`'s own grid-placement path already uses) -- never
+## re-implements manifest parsing. An empty `species` Array means "no filter" (every kit member is
+## eligible), matching `KitGridPlacer`'s own required_tags/excluded_tags "empty = unrestricted"
+## convention.
+static func _kit_tree_pieces(kit_id: String, manifest_path: String, species: Array) -> Array:
+	var cache_key := manifest_path + "|" + kit_id
+	if not _kit_pieces_cache.has(cache_key):
+		_kit_pieces_cache[cache_key] = KitGridPlacer.load_kit_pieces_from_manifest(kit_id, manifest_path)
+	var pieces: Array = _kit_pieces_cache[cache_key]
+	if species.is_empty():
+		return pieces
+	var out: Array = []
+	for p in pieces:
+		var aid: String = String(p.get("asset_id", "")).to_lower()
+		for s in species:
+			if aid.find(String(s).to_lower()) >= 0:
+				out.append(p)
+				break
+	return out
