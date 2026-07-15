@@ -42,6 +42,32 @@ static func export_to_file(roots: Array, out_path: String, view: Dictionary = {}
 	scene.free()
 	return err
 
+## Export a single raw engine `Mesh` resource directly to a `.glb` file — the sibling entry point
+## for a procedural-Mesh producer that never goes through GraphRuntime's renderer-neutral
+## `scene_node` descriptors (`export_to_file` above, which expects that descriptor shape). Reuses the
+## SAME `GLTFDocument`/`GLTFState` primitives `export_to_file` uses — this is the other entry point
+## into the identical underlying mechanism, not a second implementation. Added for
+## `RingScaffoldGenerator.export_wedge_chunks_glb()` (DQ-e9516770, node 1's "chunked GLB, one per
+## arc-segment" output), usable by any future raw-Mesh producer with the same shape. Returns an
+## Error; `OK` (0) means `out_path` was written.
+static func export_mesh_to_file(mesh: Mesh, out_path: String, mesh_name: String = "Mesh") -> int:
+	if mesh == null:
+		return ERR_INVALID_PARAMETER
+	var scene := Node3D.new()
+	scene.name = "ResonanceMeshExport"
+	var mi := MeshInstance3D.new()
+	mi.name = mesh_name
+	mi.mesh = mesh
+	scene.add_child(mi)
+	_set_owner_recursive(scene, scene)
+	var doc := GLTFDocument.new()
+	var st := GLTFState.new()
+	var err := doc.append_from_scene(scene, st)
+	if err == OK:
+		err = doc.write_to_filesystem(st, out_path)
+	scene.free()
+	return err
+
 static func _build_export_scene(roots: Array, view: Dictionary = {}) -> Node3D:
 	if roots == null:
 		roots = []
