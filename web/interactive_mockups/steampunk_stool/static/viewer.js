@@ -29,6 +29,22 @@ function friendlyPartName(name) {
   return idx ? `${label} ${parseInt(idx, 10) + 1}` : label;
 }
 
+// ---- optional cross-origin live server base ---------------------------------
+// This bundle (index.html + static/* + assets/<default>.glb) is designed to be
+// COPYABLE -- e.g. into a Discord/Aperture artifact page's own served tree
+// (Alethea-cc/tools/discord_relay/artifact_pages.py's additive
+// ``interactive_3d`` hook copies exactly this bundle) -- where it will NOT be
+// co-located with a running server.py. ``?live=<base-url>`` lets a copied
+// instance still point at wherever server.py actually runs (server.py's own
+// static handler already sets Access-Control-Allow-Origin: * for this reason).
+// Default (no query param) behaves exactly as before: relative fetches,
+// assuming co-location with server.py -- zero behavior change for the
+// existing RE dev-server use.
+const LIVE_BASE = (new URLSearchParams(location.search).get("live") || "").replace(/\/+$/, "");
+function liveUrl(relPath) {
+  return LIVE_BASE ? `${LIVE_BASE}/${relPath}` : relPath;
+}
+
 // ---- scene setup -----------------------------------------------------------
 
 const viewport = document.getElementById("viewport");
@@ -183,16 +199,21 @@ const embeddedIframe = document.getElementById("embedded-iframe");
 const modeSelect = document.getElementById("tuner-mode");
 let popoutRef = null;
 
+// tuner.html independently fetches generated/config.json -- pass ?live=...
+// through so a popped-out/embedded tuner still finds the right server when
+// this page itself was opened with a live= override (see LIVE_BASE above).
+const TUNER_URL = LIVE_BASE ? `tuner.html?live=${encodeURIComponent(LIVE_BASE)}` : "tuner.html";
+
 function applyTunerMode(mode) {
   if (popoutRef && !popoutRef.closed) popoutRef.close();
   popoutRef = null;
   embeddedPanel.classList.remove("show");
 
   if (mode === "embedded") {
-    if (!embeddedIframe.getAttribute("src")) embeddedIframe.setAttribute("src", "tuner.html");
+    if (!embeddedIframe.getAttribute("src")) embeddedIframe.setAttribute("src", TUNER_URL);
     embeddedPanel.classList.add("show");
   } else if (mode === "popout") {
-    popoutRef = window.open("tuner.html", "stool-tuner", "width=380,height=780,resizable=yes");
+    popoutRef = window.open(TUNER_URL, "stool-tuner", "width=380,height=780,resizable=yes");
   }
 }
 
@@ -226,7 +247,7 @@ let liveMode = false;
 
 async function pollStatus() {
   try {
-    const resp = await fetch("generated/status.json", { cache: "no-store" });
+    const resp = await fetch(liveUrl("generated/status.json"), { cache: "no-store" });
     if (!resp.ok) throw new Error("status " + resp.status);
     const status = await resp.json();
     liveMode = true;
@@ -235,7 +256,7 @@ async function pollStatus() {
     glbBadge.className = "badge ok";
     if (status.version !== lastVersion) {
       lastVersion = status.version;
-      await loadModel("generated/live_stool.glb?v=" + status.version);
+      await loadModel(liveUrl("generated/live_stool.glb?v=" + status.version));
     }
   } catch (e) {
     if (liveMode) {
@@ -256,14 +277,14 @@ async function init() {
   // fast first paint: try the live server immediately; fall back to the
   // committed static reference GLB if it isn't running.
   try {
-    const resp = await fetch("generated/status.json", { cache: "no-store" });
+    const resp = await fetch(liveUrl("generated/status.json"), { cache: "no-store" });
     if (!resp.ok) throw new Error("no live server");
     const status = await resp.json();
     lastVersion = status.version;
     liveMode = true;
     glbBadge.textContent = "live · v" + status.version;
     glbBadge.className = "badge ok";
-    await loadModel("generated/live_stool.glb?v=" + status.version);
+    await loadModel(liveUrl("generated/live_stool.glb?v=" + status.version));
     modeSelect.disabled = false;
   } catch (e) {
     await loadModel("assets/stool_default.glb");

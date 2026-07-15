@@ -27,6 +27,15 @@ const PARAM_STEP = {
   leg_wall: 0.5,
 };
 
+// Same ?live=<base-url> override viewer.js supports (see its own comment) --
+// lets a copied-elsewhere tuner.html (e.g. inside a Discord/Aperture artifact
+// page, via artifact_pages.py's interactive_3d hook) still find wherever
+// server.py actually runs. Default (no param): relative fetch, unchanged.
+const LIVE_BASE = (new URLSearchParams(location.search).get("live") || "").replace(/\/+$/, "");
+function liveUrl(relPath) {
+  return LIVE_BASE ? `${LIVE_BASE}/${relPath}` : relPath;
+}
+
 let ws = null;
 let wsBackoffMs = 300;
 const WS_BACKOFF_MAX_MS = 4000;
@@ -135,7 +144,7 @@ function resetToDefaults() {
 async function init() {
   $("reset-btn").addEventListener("click", resetToDefaults);
   try {
-    const resp = await fetch("generated/config.json", { cache: "no-store" });
+    const resp = await fetch(liveUrl("generated/config.json"), { cache: "no-store" });
     if (!resp.ok) throw new Error("config fetch failed: " + resp.status);
     config = await resp.json();
   } catch (e) {
