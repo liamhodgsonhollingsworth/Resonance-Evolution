@@ -1,0 +1,31 @@
+{
+  "_comment": "Wave 4 item 4.1 (DQ-60f088f7) closed-loop aesthetic iteration -- KEPT BEST (iteration 3 of 4, score 0.4836 against the 'underground_halls' reference via reference_camera_score.py). See underground_wave4_proof.gd's header + Alethea-cc/state/discord_outbox_media/underground/iteration_3_NOTE.md for the full iteration history and score breakdown.",
+  "amber": {
+    "density": 0.95,
+    "min_spacing": 0.65,
+    "size_min": 0.14,
+    "size_max": 0.34,
+    "hue": 0.07,
+    "hue_jitter": 0.02,
+    "saturation": 0.85,
+    "value": 0.92,
+    "emission_energy": 1.8,
+    "glass_alpha": 0.65,
+    "cavity_fill_probability": 0.85,
+    "protrusion": 0.05,
+    "seed": 2026
+  },
+  "roof": {
+    "cutoff_elevation": 3.2,
+    "glow_color": [1.0, 0.92, 0.78],
+    "glow_energy": 0.8,
+    "blend_softness": 0.6
+  },
+  "fog": {
+    "density": 0.07,
+    "color": [0.48, 0.36, 0.24],
+    "height": -1.5,
+    "height_density": 0.0,
+    "sun_scatter": 0.25
+  }
+}
