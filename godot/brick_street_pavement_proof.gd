@@ -79,9 +79,12 @@ func _ready() -> void:
 	var user_args := OS.get_cmdline_user_args()
 	var raw_args := OS.get_cmdline_args()
 	_milestone_shot_mode = "--milestone-shot" in user_args or "--milestone-shot" in raw_args
-	_shot_mode = _milestone_shot_mode or "--shot" in user_args or "--shot" in raw_args
+	var closeup_mode: bool = "--closeup-shot" in user_args or "--closeup-shot" in raw_args
+	_shot_mode = _milestone_shot_mode or closeup_mode or "--shot" in user_args or "--shot" in raw_args
 	if _milestone_shot_mode:
 		_capture_out = MILESTONE_SHOT_OUT
+	elif closeup_mode:
+		_capture_out = "res://live/brick_street_closeup_debug.png"
 	_param_listen_mode = _cmdline_flag("--param-listen")
 	var channel_uri := _cmdline_value("--channel-uri", "")
 	_param_listen_deadline_ms = int(_cmdline_value("--listen-seconds", "20")) * 1000
@@ -164,7 +167,13 @@ func _param_specs() -> Array:
 		{"key": "wall_seed", "label": "wall brick seed (weathering jitter)", "type": "int", "min": 0, "max": 9999, "step": 1, "default": 1},
 		{"key": "wall_mortar_gap", "label": "wall joint width (m)", "type": "float", "min": 0.0, "max": 0.02, "step": 0.0005, "default": 0.0095},
 		# ── BrickWallGenerator: facade geometry ─────────────────────────────────────────────────────
-		{"key": "wall_height", "label": "wall height (m)", "type": "float", "min": 1.5, "max": 12.0, "step": 0.1, "default": 3.3},
+		# DQ-b415f577 fix: the prior default (3.3m / 3 floors = 1.1m/floor) left almost no vertical
+		# budget for a window once sill_height_above_floor(0.9) was reserved (v_top-v0 = 0.15m) --
+		# invisible with a flat lintel, but it squashes a real arch into an unrecognizable sliver
+		# (found by an actual render, not just review -- this lane's own "verify by render"
+		# discipline). 9.9m / 3 floors = 3.3m/floor, a realistic warehouse-scale floor height
+		# matching the Omaha reference's tall proportions, with real headroom for the arch.
+		{"key": "wall_height", "label": "wall height (m)", "type": "float", "min": 1.5, "max": 12.0, "step": 0.1, "default": 9.9},
 		{"key": "wall_row_count", "label": "window rows (floors)", "type": "int", "min": 1, "max": 6, "step": 1, "default": 3},
 		{"key": "wall_window_width", "label": "window width (m)", "type": "float", "min": 0.5, "max": 2.5, "step": 0.05, "default": 1.1},
 		{"key": "wall_window_height", "label": "window height (m)", "type": "float", "min": 0.6, "max": 2.8, "step": 0.05, "default": 1.6},
@@ -249,6 +258,19 @@ func _build_env() -> void:
 
 func _build_camera() -> void:
 	var cam := Camera3D.new()
+	if "--closeup-shot" in OS.get_cmdline_user_args():
+		# Diagnostic camera, framed close on one arched window/door -- added during this lane's
+		# adversarial-iteration pass (DQ-b415f577/DQ-84d20364) to inspect voussoir/glass placement in
+		# detail; kept as a reusable capture mode for future opening-level iteration, matching --shot/
+		# --milestone-shot's own precedent of small additive capture modes on this driver.
+		var target := Vector3(9.0, 2.6, 8.5)
+		var cpos := target + Vector3(0.9, 0.05, 0.9)
+		cam.transform = Transform3D(Basis.looking_at(target - cpos, Vector3.UP), cpos)
+		cam.fov = 40.0
+		cam.current = true
+		add_child(cam)
+		_main_camera = cam
+		return
 	if _milestone_shot_mode:
 		# Closer/lower, angled along the street's length so the herringbone coursing, the crown's
 		# subtle center-rise, and both curb+gutter lines are all legible in one frame -- not just a

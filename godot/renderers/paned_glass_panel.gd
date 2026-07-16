@@ -168,38 +168,50 @@ static func _append_arch_fan_pane(out: Dictionary, wall: Dictionary, arch: Dicti
 	var half_t: float = PANE_THICKNESS * 0.5
 	var front_depth: float = -inset_depth + half_t
 	var back_depth: float = -inset_depth - half_t
-	var normal_out: Vector3 = wall["normal"]
 
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 
+	# UVs: a simple planar mapping in the arch's own (u,v) plane -- not used for texturing (this is a
+	# flat-color material), but `generate_normals()`/`generate_tangents()` below need a valid UV
+	# channel to compute a correct tangent basis; real coordinates (not placeholder zeros) also make
+	# this mesh trivially texturable later without a rebuild, per this corpus's "detail added later
+	# losslessly" convention.
 	var apex_front := _wall_point_3d(wall, apex_u, apex_v, front_depth)
 	for i in (points.size() - 1):
 		var p0 := _wall_point_3d(wall, points[i].x, points[i].y, front_depth)
 		var p1 := _wall_point_3d(wall, points[i + 1].x, points[i + 1].y, front_depth)
-		# winding (apex, p0, p1) gives a face normal aligned with +wall.normal for this codebase's
-		# (tangent, UP, normal) handedness convention (tangent x UP = -normal) -- verified algebraically,
-		# not by trial and error: det(du_i*dv_{i+1} - du_{i+1}*dv_i) is negative for increasing theta,
-		# so cross(p0-apex, p1-apex) = -det * (tangent x UP) = +det * normal ... resolves to +normal.
-		st.set_normal(normal_out)
+		# Winding (apex, p0, p1) gives a face normal aligned with +wall.normal for this codebase's
+		# (tangent, UP, normal) handedness convention (tangent x UP = -normal) -- verified
+		# algebraically: det(du_i*dv_{i+1} - du_{i+1}*dv_i) is negative for increasing theta, so
+		# cross(p0-apex, p1-apex) = -det * (tangent x UP) = +det * normal, resolving to +normal.
+		# NORMALS ARE NOT SET MANUALLY here -- an earlier version called `set_normal()` explicitly and
+		# rendered PURE BLACK (invisible) under real lighting despite geometrically-correct, non-culled
+		# winding (found by an actual render + an unshaded-magenta isolation pass, not just review:
+		# the geometry WAS present and correctly shaped, only unlit). `generate_normals()` below
+		# derives the normal from this SAME winding via Godot's own tested implementation instead,
+		# which lights correctly -- a real, disclosed robustness fix, not a cosmetic tweak.
+		st.set_uv(Vector2(points[i].x - apex_u, points[i].y - apex_v) * 0.5 + Vector2(0.5, 0.5))
 		st.add_vertex(apex_front)
-		st.set_normal(normal_out)
+		st.set_uv(Vector2(points[i].x - apex_u, points[i].y - apex_v) * 0.5 + Vector2(0.5, 0.5))
 		st.add_vertex(p0)
-		st.set_normal(normal_out)
+		st.set_uv(Vector2(points[i + 1].x - apex_u, points[i + 1].y - apex_v) * 0.5 + Vector2(0.5, 0.5))
 		st.add_vertex(p1)
 
 	var apex_back := _wall_point_3d(wall, apex_u, apex_v, back_depth)
 	for i in (points.size() - 1):
 		var p0 := _wall_point_3d(wall, points[i].x, points[i].y, back_depth)
 		var p1 := _wall_point_3d(wall, points[i + 1].x, points[i + 1].y, back_depth)
-		# reversed winding + reversed normal -- the inward-facing cap.
-		st.set_normal(-normal_out)
+		# reversed winding -- the inward-facing cap (normal derived from winding, same as above).
+		st.set_uv(Vector2(points[i].x - apex_u, points[i].y - apex_v) * 0.5 + Vector2(0.5, 0.5))
 		st.add_vertex(apex_back)
-		st.set_normal(-normal_out)
+		st.set_uv(Vector2(points[i + 1].x - apex_u, points[i + 1].y - apex_v) * 0.5 + Vector2(0.5, 0.5))
 		st.add_vertex(p1)
-		st.set_normal(-normal_out)
+		st.set_uv(Vector2(points[i].x - apex_u, points[i].y - apex_v) * 0.5 + Vector2(0.5, 0.5))
 		st.add_vertex(p0)
 
+	st.generate_normals()
+	st.generate_tangents()
 	var mesh := st.commit()
 	# vertices are already baked in WORLD space (built directly from `wall.origin` etc.), so the
 	# instance transform is identity -- the caller applies this uniformly for both box panes (local
