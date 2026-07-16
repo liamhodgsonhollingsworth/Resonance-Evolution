@@ -1,0 +1,14 @@
+{
+  "_comment": "Physical-seed exemplar for BrickWallGenerator: Flemish bond -- headers and stretchers alternate WITHIN EVERY COURSE (denser than common bond's periodic header course), each course's headers centered over the stretchers in the course below, per notes/research/brick_street_construction_methods_2026_07_16.md sec8.1 (Brick Industry Association Technical Notes 30 / The Construction Civil). Repeat unit horizontally = brick_length + header_width = 0.2 + 0.1 = 0.3m (one stretcher + one header + their joints).",
+  "_verification": "4-member unit cell, 2 courses tall: course A (v=0) has a stretcher at u=0.1 and a header at u=0.25; course B (v=brick_width) has a header at u=0.1 (landing where course A's stretcher was -- 'headers centered over stretchers in the course below') and a stretcher at u=0.25. lattice_a=(0.3,0) repeats the stretcher+header pair horizontally; lattice_b=(0, 2*brick_width) repeats the 2-course alternation vertically with zero horizontal shear, so course C (=course A of the next repeat) lands back at the same phase, continuing the alternation seamlessly.",
+  "brick_length": 0.2,
+  "brick_width": 0.067,
+  "members": [
+    {"offset": [0.1,  0.0],   "rotation_deg": 0,  "brick_id": "cA_stretcher"},
+    {"offset": [0.25, 0.0],   "rotation_deg": 90, "brick_id": "cA_header"},
+    {"offset": [0.1,  0.067], "rotation_deg": 90, "brick_id": "cB_header"},
+    {"offset": [0.25, 0.067], "rotation_deg": 0,  "brick_id": "cB_stretcher"}
+  ],
+  "lattice_a": [0.3, 0.0],
+  "lattice_b": [0.0, 0.134]
+}

@@ -1,0 +1,17 @@
+{
+  "_comment": "Physical-seed exemplar for BrickWallGenerator: common/American bond -- a header course (bricks turned so their short end shows, rotation_deg=90 in BrickWallGenerator's domain-specific reinterpretation of the generic rotation_deg field, see the generator's own docstring) inserted every 6 courses among otherwise running-bond stretcher courses, per notes/research/brick_street_construction_methods_2026_07_16.md sec8.1 (Brick Industry Association Technical Notes 30: 'a course of headers inserted every five or six courses... a header is always centered on a stretcher'). 6 was chosen as within the documented 5-6 course range. Header exposed width is a DERIVED constant = brick_length/2 = 0.1m (real 8in/4in = 2:1 ratio, sec8.2) -- BrickWallGenerator computes this itself, not stored redundantly here.",
+  "_verification": "7-member unit cell, 6 courses tall: courses 0/2/4 are single stretchers at u=0 (unoffset), courses 1/3 are single stretchers at u=brick_length/2 (the standard half-brick running-bond stagger), course 5 is TWO headers at u=0 and u=brick_length/2 (header pitch = brick_length/2, so 2 headers span exactly 1 stretcher-length with no gap, matching the 2:1 length:header-width ratio exactly). lattice_a=(brick_length,0) repeats each course horizontally at the stretcher pitch; lattice_b=(0, 6*brick_width) repeats the whole 6-course pattern vertically with zero horizontal shear, so course 6 of the next repeat lands back at the course-0 (unoffset) phase, continuing the running-bond alternation seamlessly across repeat boundaries.",
+  "brick_length": 0.2,
+  "brick_width": 0.067,
+  "members": [
+    {"offset": [0.0, 0.0],   "rotation_deg": 0,  "brick_id": "c0_stretcher"},
+    {"offset": [0.1, 0.067], "rotation_deg": 0,  "brick_id": "c1_stretcher"},
+    {"offset": [0.0, 0.134], "rotation_deg": 0,  "brick_id": "c2_stretcher"},
+    {"offset": [0.1, 0.201], "rotation_deg": 0,  "brick_id": "c3_stretcher"},
+    {"offset": [0.0, 0.268], "rotation_deg": 0,  "brick_id": "c4_stretcher"},
+    {"offset": [0.0, 0.335], "rotation_deg": 90, "brick_id": "c5_header_a"},
+    {"offset": [0.1, 0.335], "rotation_deg": 90, "brick_id": "c5_header_b"}
+  ],
+  "lattice_a": [0.2, 0.0],
+  "lattice_b": [0.0, 0.402]
+}

@@ -1,0 +1,11 @@
+[gd_scene format=3]
+
+[node name="StackBondWallExemplar" type="Node3D"]
+
+[node name="course0_stretcher_a" type="Node3D" parent="."]
+position = Vector3(0.1, 0, 0.0335)
+rotation_degrees = Vector3(0, 0, 0)
+
+[node name="course1_stretcher_b" type="Node3D" parent="."]
+position = Vector3(0.3, 0, 0.1005)
+rotation_degrees = Vector3(0, 0, 0)
