@@ -1,0 +1,7 @@
+{
+  "_comment": "Physical-seed exemplar for BrickArchGenerator (DQ-b415f577): SEMICIRCULAR (round) arch -- a full half-circle, rise == half-span BY GEOMETRIC DEFINITION (BrickArchGenerator.arch_geometry() forces rise=half_span for this style regardless of rise_ratio; the field is kept for schema symmetry with segmental_arch.json and documented here as informational/ignored). DEFAULT arch style for this lane -- studied directly from the Omaha Old Market reference image (Alethea-cc/tools/image_evolver/target/scene_refs/brick_street_omaha_reference.jpg, Wavelet repo): every visible facade opening is a tall, round-topped arch with a visible lighter-brick voussoir ring, not a flatter segmental profile, matching Richardsonian-Romanesque-influenced US warehouse architecture of the era. Sources: notes/research/brick_street_construction_methods_2026_07_16.md sec9 (Wavelet repo).",
+  "style": "semicircular",
+  "rise_ratio": 0.5,
+  "voussoir_count": 11,
+  "keystone_enabled": true
+}

@@ -81,6 +81,9 @@ extends RefCounted
 ##   sill_projection        {type:float, min:0.0, max:0.1,  default:0.02}
 ##   brick_color            {type:color, default:"#8c3829"} (simple red clay brick, matches
 ##                            BrickPavementGenerator's BRICK_COLOR_BASE for cross-scene consistency)
+##   arch_seed_handle       {type:enum, options:[none, res://assets/arch_exemplars/segmental_arch.json,
+##                            res://assets/arch_exemplars/semicircular_arch.json],
+##                            default:semicircular} (DQ-b415f577 -- see BrickArchGenerator docstring)
 ## `wall_height` is a direct build() argument (like BrickPavementGenerator's `base_y`), not a
 ## free_param dict entry -- it is scene-scale geometry the caller derives per lot, not a per-brick
 ## tunable. `header_width` and `corner_inset` are DERIVED (brick_length/2), not separate free params
@@ -92,8 +95,22 @@ extends RefCounted
 ## belongs ENTIRELY in `seed_handle`, not a second parallel enum (goal > spec-letter when they
 ## diverge, per the standing quality/pushback instruction). This generator follows the same,
 ## newer-and-more-specific convention.
+##
+## ARCHED OPENINGS (DQ-b415f577, EXTENDS this file -- new module wired alongside, no primitive
+## rewrite): `arch_seed_handle` selects a REAL, researched arch type via
+## `godot/assets/arch_exemplars/*.json` (same physical-seed, no-redundant-enum principle as
+## `seed_handle` above -- `BrickArchGenerator`'s own docstring covers the geometry/research). `"none"`
+## preserves the prior flat-lintel-only behavior (the brick-wall-generator-2026-07-16 lane's shipped
+## default) with zero change. When an opening is arched, `BrickWallGenerator` calls
+## `BrickArchGenerator.build_voussoirs()` instead of `_append_lintel()`, merges the returned
+## voussoir/keystone transforms into this file's own `groups` dict (same MultiMesh-per-orientation-key
+## convention, just two new orientation codes), and excludes ordinary field coursing from the arch
+## ring's disk footprint (`_in_any_opening`, extended) rather than the opening's old flat rectangular
+## bounding box -- so the spandrel corners between the round arch and that old bounding box are left
+## for ordinary running-bond field coursing to fill naturally, exactly as real spandrel brickwork does.
 
 const DEFAULT_SEED_HANDLE := "res://assets/wall_exemplars/running_bond_wall.json"
+const DEFAULT_ARCH_SEED_HANDLE := "res://assets/arch_exemplars/semicircular_arch.json"
 const DEFAULT_SEED := 1
 const DEFAULT_MORTAR_GAP := 0.0095
 const DEFAULT_ROW_COUNT := 3
@@ -128,10 +145,16 @@ const DEDUPE_EPS := 1e-4
 ##     "brick_groups": Array of {"mesh": BoxMesh, "transforms": Array[Transform3D], "color": Color,
 ##                                 "orientation": int}   -- one entry per orientation actually used
 ##                                (MultiMesh-ready PER GROUP -- see wall_multimeshes()),
-##     "openings": Array of {"rect": Rect2 (wall-local u/v, per wall), "wall_index": int, "type": String},
+##     "openings": Array of {"rect": Rect2 (wall-local u/v, per wall), "wall_index": int, "type": String,
+##                            "arch": Dictionary_or_null (BrickArchGenerator.arch_geometry() result,
+##                             DQ-b415f577 -- non-null only when arch_seed_handle != "none")},
+##     "header_width": float (the derived wall-thickness constant this build actually used -- exposed
+##                              so a caller like PanedGlassPanel, DQ-84d20364, can fit a glass reveal
+##                              depth to the real wall thickness instead of re-deriving/guessing it),
 ##   }
 static func build(footprint: Rect2, wall_height: float, params: Dictionary = {}, base_y: float = 0.0) -> Dictionary:
 	var seed_handle: String = params.get("seed_handle", DEFAULT_SEED_HANDLE)
+	var arch_seed_handle: String = params.get("arch_seed_handle", DEFAULT_ARCH_SEED_HANDLE)
 	var jitter_seed: int = int(params.get("seed", DEFAULT_SEED))
 	var mortar_gap: float = maxf(0.0, float(params.get("mortar_gap", DEFAULT_MORTAR_GAP)))
 	var row_count: int = maxi(1, int(params.get("row_count", DEFAULT_ROW_COUNT)))
@@ -152,6 +175,15 @@ static func build(footprint: Rect2, wall_height: float, params: Dictionary = {},
 	var course_height: float = maxf(0.01, float(seed_data.get("brick_width", 0.067)))
 	var header_width: float = brick_length * 0.5  # derived, real 2:1 ratio (research sec8.2)
 
+	# DQ-b415f577: arch style + rise/voussoir-count/keystone are ENTIRELY seed-file data (no parallel
+	# free_param enum -- same "no redundant enum" precedent this file's own docstring already
+	# established for bond_pattern vs. seed_handle).
+	var arch_seed_data := BrickArchGenerator.read_arch_seed(arch_seed_handle)
+	var arch_style: String = String(arch_seed_data.get("style", "none"))
+	var arch_rise_ratio: float = float(arch_seed_data.get("rise_ratio", 0.25))
+	var voussoir_count: int = int(arch_seed_data.get("voussoir_count", 7))
+	var keystone_enabled: bool = bool(arch_seed_data.get("keystone_enabled", true))
+
 	var walls := _walls_from_footprint(footprint)
 	var openings_all: Array = []
 	# grouped placements, keyed by orientation int -> Array[Transform3D]
@@ -166,8 +198,27 @@ static func build(footprint: Rect2, wall_height: float, params: Dictionary = {},
 		var wall_openings := _layout_openings(wall_length, wall_height, row_count, window_width,
 			window_height, window_spacing, sill_height_above_floor,
 			ground_floor_door and wi == 0, door_width, door_height)
+
+		# DQ-b415f577: compute each opening's arch geometry (if any) AND place its voussoir/keystone
+		# bricks BEFORE the field-coursing stamp loop below -- the field-exclusion test
+		# (_in_any_opening) needs each opening's "arch" key populated to know the ring's disk footprint.
 		for o in wall_openings:
-			openings_all.append({"rect": o["rect"], "wall_index": wi, "type": o["type"]})
+			o["arch"] = null
+			if arch_style == "none":
+				continue
+			var arch := BrickArchGenerator.arch_geometry(o["rect"], arch_style, arch_rise_ratio)
+			if arch.get("style", "none") == "none":
+				continue
+			var vresult := BrickArchGenerator.build_voussoirs(w, arch, brick_length, header_width,
+				voussoir_count, keystone_enabled)
+			arch["extrados_radius"] = float(vresult.get("extrados_radius", arch["radius"]))
+			_merge_transforms(groups, BrickArchGenerator.ORIENT_VOUSSOIR, vresult["voussoirs"])
+			if vresult["keystone"] != null:
+				_merge_transforms(groups, BrickArchGenerator.ORIENT_KEYSTONE, [vresult["keystone"]])
+			o["arch"] = arch
+
+		for o in wall_openings:
+			openings_all.append({"rect": o["rect"], "wall_index": wi, "type": o["type"], "arch": o["arch"]})
 
 		# Field coursing runs FULL LENGTH, flush to both corners (no exclusion) -- an earlier design
 		# tried per-course corner INSET/exclusion (real toothing's textbook description) but that
@@ -189,7 +240,11 @@ static func build(footprint: Rect2, wall_height: float, params: Dictionary = {},
 
 		for o in wall_openings:
 			var orect: Rect2 = o["rect"]
-			_append_lintel(groups, w, orect, header_width, brick_length, course_height, lintel_overhang, mortar_gap)
+			# DQ-b415f577: an arched opening's OWN voussoir ring is the real spanning member (already
+			# placed above) -- a flat soldier-course lintel on top of a round arch is not real masonry,
+			# so skip it precisely when this opening got an arch (o["arch"] set above).
+			if o["arch"] == null:
+				_append_lintel(groups, w, orect, header_width, brick_length, course_height, lintel_overhang, mortar_gap)
 			if o["type"] == "window":
 				_append_sill(groups, w, orect, header_width, brick_length, course_height, sill_projection, mortar_gap)
 
@@ -207,7 +262,28 @@ static func build(footprint: Rect2, wall_height: float, params: Dictionary = {},
 		mesh.size = Vector3(maxf(0.005, extents.x - mortar_gap), maxf(0.005, extents.y - mortar_gap), z_size)
 		brick_groups.append({"mesh": mesh, "transforms": transforms, "color": brick_color, "orientation": int(orient_key)})
 
-	return {"brick_groups": brick_groups, "openings": openings_all}
+	return {"brick_groups": brick_groups, "openings": openings_all, "header_width": header_width}
+
+
+## Public wrapper over `_walls_from_footprint` -- a pure function of `footprint` alone (no seed/param
+## dependency), so an external caller (e.g. `brick_street_pavement_proof.gd` wiring `PanedGlassPanel`,
+## DQ-84d20364) can recover the SAME per-wall {"origin","tangent","normal","length"} dicts `build()`
+## used internally for a given `openings[i]["wall_index"]`, without reaching into a private helper.
+static func walls_from_footprint(footprint: Rect2) -> Array:
+	return _walls_from_footprint(footprint)
+
+
+## Merge `transforms` into `groups[orient]`, creating the bucket if needed -- the same
+## MultiMesh-per-orientation-key convention every other `_append_*` helper in this file already uses,
+## factored out because BrickArchGenerator (DQ-b415f577) returns its placements as pure data (module
+## docstring) rather than writing into this file's `groups` dict directly.
+static func _merge_transforms(groups: Dictionary, orient: int, transforms: Array) -> void:
+	if transforms.is_empty():
+		return
+	if not groups.has(orient):
+		groups[orient] = []
+	for t in transforms:
+		(groups[orient] as Array).append(t)
 
 
 ## Four wall segments tracing `footprint`'s perimeter (world-space XZ), in a consistent winding order
@@ -271,9 +347,29 @@ static func _layout_openings(wall_length: float, wall_height: float, row_count: 
 	return out
 
 
+## DQ-b415f577: arch-aware exclusion. For an opening with a non-null "arch" entry, field coursing is
+## excluded from the union of (the JAMB rect, below the springing line) and (a DISK of radius
+## `extrados_radius` centered on the arch, above the springing line) -- NOT the opening's old flat
+## rectangular bounding box. This deliberately leaves the SPANDREL corners (between the round arch's
+## outer curve and that old bounding box) unexcluded, so ordinary running-bond field coursing keeps
+## filling them, exactly as real spandrel brickwork does (BrickArchGenerator's own module docstring
+## covers the reasoning). A plain (non-arch) opening keeps the original flat-rect test, unchanged.
 static func _in_any_opening(u: float, v: float, openings: Array, margin: float) -> bool:
 	for o in openings:
 		var r: Rect2 = o["rect"]
+		var arch = o.get("arch")
+		if arch != null and typeof(arch) == TYPE_DICTIONARY and arch.get("style", "none") != "none":
+			var springing_v: float = arch["springing_v"]
+			if v < springing_v:
+				var jamb := Rect2(r.position, Vector2(r.size.x, springing_v - r.position.y))
+				if jamb.grow(margin).has_point(Vector2(u, v)):
+					return true
+			else:
+				var extrados: float = float(arch.get("extrados_radius", arch["radius"]))
+				var d := Vector2(u - float(arch["center_u"]), v - float(arch["center_v"])).length()
+				if d <= extrados + margin:
+					return true
+			continue
 		var expanded := r.grow(margin)
 		if expanded.has_point(Vector2(u, v)):
 			return true
@@ -420,6 +516,10 @@ static func _extents_for_orientation(orient: int, brick_length: float, header_wi
 			return Vector3(brick_length, course_height, header_width)   # additive corner post, long arm on X
 		ORIENT_QUOIN_LONG_Z:
 			return Vector3(header_width, course_height, brick_length)   # additive corner post, long arm on Z
+		BrickArchGenerator.ORIENT_VOUSSOIR:
+			return BrickArchGenerator.voussoir_extents(brick_length, header_width)
+		BrickArchGenerator.ORIENT_KEYSTONE:
+			return BrickArchGenerator.keystone_extents(brick_length, header_width)
 		_:
 			return Vector3(brick_length, course_height, header_width)   # ORIENT_STRETCHER
 

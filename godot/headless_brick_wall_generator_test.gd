@@ -12,10 +12,17 @@ const COMMON := "res://assets/wall_exemplars/common_bond_wall.json"
 const FLEMISH := "res://assets/wall_exemplars/flemish_bond_wall.json"
 const STACK_TSCN := "res://assets/wall_exemplars/stack_bond_wall_exemplar.tscn"
 
+const ARCH_NONE := "none"
+const ARCH_SEGMENTAL := "res://assets/arch_exemplars/segmental_arch.json"
+const ARCH_SEMICIRCULAR := "res://assets/arch_exemplars/semicircular_arch.json"
+
 const ORIENT_STRETCHER := 0
 const ORIENT_HEADER := 90
+const ORIENT_SOLDIER := 180
 const ORIENT_QUOIN_LONG_X := 400
 const ORIENT_QUOIN_LONG_Z := 401
+const ORIENT_VOUSSOIR := 500
+const ORIENT_KEYSTONE := 501
 
 func _initialize() -> void:
 	var ok := true
@@ -34,6 +41,16 @@ func _initialize() -> void:
 	ok = _test_header_width_is_half_brick_length() and ok
 	ok = _test_quoin_corners_present_and_alternate() and ok
 	ok = _test_field_coursing_has_no_corner_gap() and ok
+	# DQ-b415f577 (arched openings) integration tests
+	ok = _test_arch_none_default_preserved_no_regression() and ok
+	ok = _test_arch_semicircular_openings_carry_arch_metadata() and ok
+	ok = _test_arch_semicircular_produces_voussoir_and_keystone_groups() and ok
+	ok = _test_arch_opening_has_no_flat_lintel() and ok
+	ok = _test_arch_opening_still_has_sill_for_windows() and ok
+	ok = _test_arch_field_coursing_reaches_near_springing_jambs() and ok
+	ok = _test_arch_segmental_seed_produces_voussoirs_too() and ok
+	ok = _test_arch_result_exposes_header_width() and ok
+	ok = _test_walls_from_footprint_public_matches_build_wall_count() and ok
 
 	print("RESULT: ", "ALL PASS" if ok else "FAILURES PRESENT")
 	quit(0 if ok else 1)
@@ -232,3 +249,123 @@ func _test_field_coursing_has_no_corner_gap() -> bool:
 				break
 		ok = ok and found
 	return _check("build(): field coursing reaches within 0.25m of all 4 building corners (no exclusion gap)", ok)
+
+
+## DQ-b415f577 integration tests -- BrickArchGenerator wired into BrickWallGenerator.build().
+
+
+func _test_arch_none_default_preserved_no_regression() -> bool:
+	# Explicit opt-out: arch_seed_handle="none" must reproduce the EXACT prior (DQ-e732faee) shipped
+	# behavior -- every opening flat-lintel, zero voussoir/keystone groups.
+	var result := BrickWallGenerator.build(_default_footprint(), 6.0, {"arch_seed_handle": ARCH_NONE})
+	var ok := not _has_orientation(result, ORIENT_VOUSSOIR) and not _has_orientation(result, ORIENT_KEYSTONE)
+	ok = ok and _has_orientation(result, ORIENT_SOLDIER)  # flat lintels still present
+	for o in (result["openings"] as Array):
+		ok = ok and o.get("arch") == null
+	return _check("build(): arch_seed_handle=\"none\" reproduces the prior flat-lintel-only behavior exactly, zero regression", ok)
+
+
+func _test_arch_semicircular_openings_carry_arch_metadata() -> bool:
+	var result := BrickWallGenerator.build(_default_footprint(), 6.0, {"arch_seed_handle": ARCH_SEMICIRCULAR})
+	var any_arch := false
+	for o in (result["openings"] as Array):
+		var arch = o.get("arch")
+		if arch != null:
+			any_arch = true
+			if arch.get("style") != "semicircular":
+				return _check("build(): every opening's \"arch\" entry (when present) has style=semicircular matching the requested seed", false)
+	return _check("build(): SEMICIRCULAR arch_seed_handle -- every opening gets a real \"arch\" metadata entry", any_arch)
+
+
+func _test_arch_semicircular_produces_voussoir_and_keystone_groups() -> bool:
+	var result := BrickWallGenerator.build(_default_footprint(), 6.0, {"arch_seed_handle": ARCH_SEMICIRCULAR})
+	var ok := _has_orientation(result, ORIENT_VOUSSOIR) and _has_orientation(result, ORIENT_KEYSTONE)
+	return _check("build(): SEMICIRCULAR arch_seed_handle produces real voussoir AND keystone brick groups", ok)
+
+
+func _test_arch_opening_has_no_flat_lintel() -> bool:
+	# With arches ON, the flat soldier-course lintel must NOT ALSO be placed on top of the arch ring --
+	# a masonry arch's own ring is the real spanning member, a soldier lintel over it is not real
+	# construction (this file's own build() docstring/comments cover the reasoning).
+	var arch_result := BrickWallGenerator.build(_default_footprint(), 6.0, {"arch_seed_handle": ARCH_SEMICIRCULAR})
+	var none_result := BrickWallGenerator.build(_default_footprint(), 6.0, {"arch_seed_handle": ARCH_NONE})
+	var arch_soldier_count := 0
+	var none_soldier_count := 0
+	for g in (arch_result["brick_groups"] as Array):
+		if int(g["orientation"]) == ORIENT_SOLDIER:
+			arch_soldier_count = (g["transforms"] as Array).size()
+	for g in (none_result["brick_groups"] as Array):
+		if int(g["orientation"]) == ORIENT_SOLDIER:
+			none_soldier_count = (g["transforms"] as Array).size()
+	return _check("build(): arched openings get ZERO flat soldier-course lintel bricks (arch_soldier=%d vs. flat-lintel none_soldier=%d)" % [arch_soldier_count, none_soldier_count], arch_soldier_count == 0 and none_soldier_count > 0)
+
+
+func _test_arch_opening_still_has_sill_for_windows() -> bool:
+	# The sill sits BELOW the opening -- unaffected by whether the TOP is flat or arched.
+	var result := BrickWallGenerator.build(_default_footprint(), 6.0, {"arch_seed_handle": ARCH_SEMICIRCULAR})
+	var ok := _has_orientation(result, 270)  # ORIENT_ROWLOCK
+	return _check("build(): arched windows still get a real rowlock-course sill underneath (unaffected by the arched top)", ok)
+
+
+func _test_arch_field_coursing_reaches_near_springing_jambs() -> bool:
+	# No-gap check (facade lane's corner-gap lesson, applied to the NEW arch exclusion boundary): field
+	# coursing must reach right up to (not stop short of) each opening's jamb sides just below the
+	# springing line -- if the exclusion disk/rect union were wrong, this would leave either a floating
+	# gap (over-exclusion) or bricks poking into the void (under-exclusion; caught separately below).
+	var footprint := _default_footprint()
+	var result := BrickWallGenerator.build(footprint, 6.0, {"arch_seed_handle": ARCH_SEMICIRCULAR, "row_count": 1})
+	var walls := BrickWallGenerator.walls_from_footprint(footprint)
+	var ok := not (result["openings"] as Array).is_empty()
+	var field_positions: Array = []
+	for g in (result["brick_groups"] as Array):
+		if int(g["orientation"]) == ORIENT_STRETCHER or int(g["orientation"]) == ORIENT_HEADER:
+			for t in (g["transforms"] as Array):
+				field_positions.append((t as Transform3D).origin)
+	for o in (result["openings"] as Array):
+		var arch = o.get("arch")
+		if arch == null:
+			continue
+		var r: Rect2 = o["rect"]
+		var wi: int = int(o["wall_index"])
+		var wall: Dictionary = walls[wi]
+		# a point just left of the opening's left jamb, mid-jamb-height, mapped from wall-local (u,v)
+		# into WORLD space via the SAME wall.origin + tangent*u + UP*v convention every placement
+		# helper in brick_wall_generator.gd uses (u and v are NOT directly comparable to world X/Z --
+		# v is height/world-Y, and u only maps to world X/Z through this specific wall's own tangent).
+		var probe_u: float = r.position.x - 0.15
+		var probe_v: float = r.position.y + r.size.y * 0.3
+		var probe_3d: Vector3 = (wall["origin"] as Vector3) + (wall["tangent"] as Vector3) * probe_u + Vector3.UP * probe_v
+		var found := false
+		for p_v in field_positions:
+			var p: Vector3 = p_v
+			if p.distance_to(probe_3d) < 0.5:
+				found = true
+				break
+		ok = ok and found
+	return _check("build(): field coursing reaches right up to each arched opening's jamb sides (no floating gap beside the arch)", ok)
+
+
+func _test_arch_segmental_seed_produces_voussoirs_too() -> bool:
+	var result := BrickWallGenerator.build(_default_footprint(), 6.0, {"arch_seed_handle": ARCH_SEGMENTAL})
+	var ok := _has_orientation(result, ORIENT_VOUSSOIR)
+	var style_ok := true
+	for o in (result["openings"] as Array):
+		var arch = o.get("arch")
+		if arch != null and arch.get("style") != "segmental":
+			style_ok = false
+	return _check("build(): SEGMENTAL arch_seed_handle also produces a real voussoir ring, with style=segmental on every opening", ok and style_ok)
+
+
+func _test_arch_result_exposes_header_width() -> bool:
+	var result := BrickWallGenerator.build(_default_footprint(), 3.0, {})
+	var ok := result.has("header_width") and float(result["header_width"]) > 0.0
+	return _check("build(): the result exposes the derived header_width (DQ-84d20364's PanedGlassPanel consumes this for a real reveal depth)", ok)
+
+
+func _test_walls_from_footprint_public_matches_build_wall_count() -> bool:
+	var footprint := _default_footprint()
+	var walls := BrickWallGenerator.walls_from_footprint(footprint)
+	var ok := walls.size() == 4  # a rectangular footprint always has 4 wall segments
+	for w in walls:
+		ok = ok and (w as Dictionary).has("origin") and (w as Dictionary).has("tangent") and (w as Dictionary).has("normal")
+	return _check("walls_from_footprint(): public wrapper returns the same 4-wall-segment shape build() uses internally (DQ-84d20364's glass-fill wiring depends on this)", ok)

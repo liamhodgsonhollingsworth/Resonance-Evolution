@@ -1,0 +1,7 @@
+{
+  "_comment": "Physical-seed exemplar for BrickArchGenerator (DQ-b415f577): SEGMENTAL arch -- a circular arc flatter than a semicircle, the common economical window-head arch in US commercial masonry alongside the jack/flat arch (the 07-14 plan's original sec2.3 research). rise_ratio (rise / span) = 0.22, within the commonly-cited ~1/8-1/2 range for segmental arches over window openings -- a visually 'flattened' profile, distinct from the full semicircular arch this lane's Omaha reference actually shows (see semicircular_arch.json, the DEFAULT). Offered as the alternate, physical-seed-selectable style with zero code change. Sources: notes/research/brick_street_construction_methods_2026_07_16.md sec9 (Wavelet repo).",
+  "style": "segmental",
+  "rise_ratio": 0.22,
+  "voussoir_count": 9,
+  "keystone_enabled": true
+}

@@ -1,14 +1,17 @@
 extends Node3D
 ## brick_street_pavement_proof -- the brick-street-realism-2026-07-16 lane's render driver (Liam
 ## verbatim, Discord #dev, 2026-07-16T02:11:38Z), EXTENDED by the brick-wall-generator-2026-07-16
-## lane (DQ-e732faee) to also drive the facade generator. Replaces the prior street-surface
-## placeholder (Kenney's modern asphalt City Kit Roads, `brick_street_real_kit_proof.gd`, PR #203)
-## with REAL researched brick construction end to end: `StreetGridScaffold`'s lot/street layout
-## (UNCHANGED, merged PR #202) feeds BOTH `BrickPavementGenerator` (street SURFACE, PR #206) and
-## `BrickWallGenerator` (facade walls -- running/common/Flemish coursing, header courses, lintel/sill
-## openings, corner toothing, DQ-e732faee, this lane) instead of `KitGridPlacer`'s road-tile fill and
-## the plain placeholder box, respectively. `BrickWallGenerator`'s own docstring covers its full
-## research/physical-seed design; this driver only wires it in.
+## lane (DQ-e732faee) to also drive the facade generator, and EXTENDED AGAIN by the
+## brick-arch-glass-2026-07-16 lane (DQ-b415f577 + DQ-84d20364) to drive real voussoir arched
+## openings + window glass fill -- the two gaps that lane's own release note disclosed rather than
+## silently left unbuilt. Replaces the prior street-surface placeholder (Kenney's modern asphalt City
+## Kit Roads, `brick_street_real_kit_proof.gd`, PR #203) with REAL researched brick construction end
+## to end: `StreetGridScaffold`'s lot/street layout (UNCHANGED, merged PR #202) feeds
+## `BrickPavementGenerator` (street SURFACE, PR #206), `BrickWallGenerator` (facade walls -- running/
+## common/Flemish coursing, header courses, lintel/sill openings, corner toothing, arches,
+## DQ-e732faee + DQ-b415f577), and `PanedGlassPanel` (window glass fill, DQ-84d20364) instead of
+## `KitGridPlacer`'s road-tile fill and the plain placeholder box. Each generator's own docstring
+## covers its full research/physical-seed design; this driver only wires them together.
 ##
 ## SEED GUI (Liam 2026-07-16: "use some menu or GUI to change the seed that the rest of the examples
 ## generate from" + "every parameter... exposed... for me to change them"): every free_param of
@@ -47,6 +50,10 @@ const WALL_RUNNING_SEED := "res://assets/wall_exemplars/running_bond_wall.json"
 const WALL_COMMON_SEED := "res://assets/wall_exemplars/common_bond_wall.json"
 const WALL_FLEMISH_SEED := "res://assets/wall_exemplars/flemish_bond_wall.json"
 const WALL_STACK_TSCN_SEED := "res://assets/wall_exemplars/stack_bond_wall_exemplar.tscn"
+
+const ARCH_NONE := "none"
+const ARCH_SEGMENTAL := "res://assets/arch_exemplars/segmental_arch.json"
+const ARCH_SEMICIRCULAR := "res://assets/arch_exemplars/semicircular_arch.json"
 
 const WORLD_SEED := 2026
 const CHUNK_COORD := Vector2i(0, 0)
@@ -168,6 +175,15 @@ func _param_specs() -> Array:
 		{"key": "wall_door_height", "label": "door height (m)", "type": "float", "min": 1.8, "max": 2.6, "step": 0.05, "default": 2.1},
 		{"key": "wall_lintel_overhang", "label": "lintel overhang (m)", "type": "float", "min": 0.0, "max": 0.3, "step": 0.01, "default": 0.1},
 		{"key": "wall_sill_projection", "label": "sill projection (m)", "type": "float", "min": 0.0, "max": 0.1, "step": 0.005, "default": 0.02},
+		# ── BrickArchGenerator: arched openings (DQ-b415f577) ──────────────────────────────────────
+		{"key": "wall_arch_seed_handle", "label": "arch style (physical seed)", "type": "enum",
+			"options": [ARCH_NONE, ARCH_SEGMENTAL, ARCH_SEMICIRCULAR], "default": ARCH_SEMICIRCULAR},
+		# ── PanedGlassPanel: window glass fill (DQ-84d20364) ───────────────────────────────────────
+		{"key": "glass_pane_pattern", "label": "glass pane pattern", "type": "enum", "options": ["none", "grid"], "default": "none"},
+		{"key": "glass_muntin_rows", "label": "glass muntin rows", "type": "int", "min": 1, "max": 6, "step": 1, "default": 2},
+		{"key": "glass_muntin_cols", "label": "glass muntin cols", "type": "int", "min": 1, "max": 6, "step": 1, "default": 2},
+		{"key": "glass_inset_depth", "label": "glass inset depth (m)", "type": "float", "min": 0.0, "max": 0.1, "step": 0.005, "default": 0.05},
+		{"key": "glass_reflectivity", "label": "glass reflectivity", "type": "float", "min": 0.0, "max": 1.0, "step": 0.05, "default": 0.3},
 	]
 
 
@@ -295,15 +311,59 @@ func _rebuild_geometry(t: Dictionary) -> void:
 		"door_height": float(t.get("wall_door_height", 2.1)),
 		"lintel_overhang": float(t.get("wall_lintel_overhang", 0.1)),
 		"sill_projection": float(t.get("wall_sill_projection", 0.02)),
+		"arch_seed_handle": String(t.get("wall_arch_seed_handle", ARCH_SEMICIRCULAR)),
+	}
+	var glass_params := {
+		"glass_inset_depth": float(t.get("glass_inset_depth", 0.05)),
+		"glass_reflectivity": float(t.get("glass_reflectivity", 0.3)),
+		"pane_pattern": String(t.get("glass_pane_pattern", "none")),
+		"muntin_rows": int(t.get("glass_muntin_rows", 2)),
+		"muntin_cols": int(t.get("glass_muntin_cols", 2)),
 	}
 	var total_wall_bricks := 0
+	var total_glass_panes := 0
 	for f in building_footprints:
 		var rect: Rect2 = f["rect"]
 		var wresult := BrickWallGenerator.build(rect, wall_height, wall_params, 0.0)
+		var walls := BrickWallGenerator.walls_from_footprint(rect)
 		for mmi in BrickWallGenerator.wall_multimeshes(wresult):
 			_geometry_root.add_child(mmi)
 		for g in (wresult["brick_groups"] as Array):
 			total_wall_bricks += (g["transforms"] as Array).size()
+		# ── DQ-84d20364: window/door glass fill, fit against the SAME openings BrickWallGenerator's
+		# own coursing (+ arch ring, DQ-b415f577) just excluded field brick from -- never straight
+		# through to the sky/background.
+		var header_width_g: float = float(wresult.get("header_width", 0.1))
+		glass_params["wall_thickness"] = header_width_g
+		for o in (wresult["openings"] as Array):
+			var otype: String = String(o.get("type", ""))
+			if otype != "window" and otype != "door":
+				continue
+			var wi_g: int = int(o.get("wall_index", -1))
+			if wi_g < 0 or wi_g >= walls.size():
+				continue
+			var gresult := PanedGlassPanel.build(walls[wi_g], o, glass_params)
+			for pane in (gresult["panes"] as Array):
+				var pmi := MeshInstance3D.new()
+				pmi.mesh = pane["mesh"]
+				pmi.transform = pane["transform"]
+				var pmat := StandardMaterial3D.new()
+				pmat.albedo_color = pane["color"]
+				pmat.metallic = pane["metallic"]
+				pmat.roughness = pane["roughness"]
+				pmi.material_override = pmat
+				_geometry_root.add_child(pmi)
+				total_glass_panes += 1
+			for mun in (gresult["muntins"] as Array):
+				var mmi2 := MeshInstance3D.new()
+				mmi2.mesh = mun["mesh"]
+				mmi2.transform = mun["transform"]
+				var mmat := StandardMaterial3D.new()
+				mmat.albedo_color = mun["color"]
+				mmat.metallic = 0.6
+				mmat.roughness = 0.5
+				mmi2.material_override = mmat
+				_geometry_root.add_child(mmi2)
 		# a thin roof cap so each building reads as an enclosed volume from above/oblique angles,
 		# not an open shell -- simple flat placeholder, not this lane's research scope.
 		var roof := MeshInstance3D.new()
@@ -358,8 +418,9 @@ func _rebuild_geometry(t: Dictionary) -> void:
 		_geometry_root.add_child(mmi)
 		total_pavers += (result["paver_transforms"] as Array).size()
 
-	print("[brick_street_pavement_proof] rebuilt: %d lots (%d facade bricks, wall bond=%s), %d street strips, %d real brick pavers placed (paving pattern=%s)" %
-		[building_footprints.size(), total_wall_bricks, wall_params["seed_handle"], street_polygon.size(), total_pavers, pave_params["seed_handle"]])
+	print("[brick_street_pavement_proof] rebuilt: %d lots (%d facade bricks, wall bond=%s, arch=%s), %d glass panes/panels, %d street strips, %d real brick pavers placed (paving pattern=%s)" %
+		[building_footprints.size(), total_wall_bricks, wall_params["seed_handle"], wall_params["arch_seed_handle"],
+			total_glass_panes, street_polygon.size(), total_pavers, pave_params["seed_handle"]])
 
 
 func _process(delta: float) -> void:
