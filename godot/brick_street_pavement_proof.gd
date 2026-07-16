@@ -1,19 +1,24 @@
 extends Node3D
 ## brick_street_pavement_proof -- the brick-street-realism-2026-07-16 lane's render driver (Liam
-## verbatim, Discord #dev, 2026-07-16T02:11:38Z). Replaces the prior street-surface placeholder
-## (Kenney's modern asphalt City Kit Roads, `brick_street_real_kit_proof.gd`, PR #203) with a REAL
-## researched brick-pavement construction: `StreetGridScaffold`'s lot/street layout (UNCHANGED,
-## merged PR #202) now feeds `BrickPavementGenerator` (new, this lane) instead of `KitGridPlacer`'s
-## road-tile fill, for the street SURFACE specifically. Lots still render as simple placeholder boxes
-## (`BrickWallGenerator`, the facade generator, remains unbuilt -- separate future increment, per the
-## brick_street_scene_plan's own node 4).
+## verbatim, Discord #dev, 2026-07-16T02:11:38Z), EXTENDED by the brick-wall-generator-2026-07-16
+## lane (DQ-e732faee) to also drive the facade generator. Replaces the prior street-surface
+## placeholder (Kenney's modern asphalt City Kit Roads, `brick_street_real_kit_proof.gd`, PR #203)
+## with REAL researched brick construction end to end: `StreetGridScaffold`'s lot/street layout
+## (UNCHANGED, merged PR #202) feeds BOTH `BrickPavementGenerator` (street SURFACE, PR #206) and
+## `BrickWallGenerator` (facade walls -- running/common/Flemish coursing, header courses, lintel/sill
+## openings, corner toothing, DQ-e732faee, this lane) instead of `KitGridPlacer`'s road-tile fill and
+## the plain placeholder box, respectively. `BrickWallGenerator`'s own docstring covers its full
+## research/physical-seed design; this driver only wires it in.
 ##
 ## SEED GUI (Liam 2026-07-16: "use some menu or GUI to change the seed that the rest of the examples
 ## generate from" + "every parameter... exposed... for me to change them"): every free_param of
-## BOTH `StreetGridScaffold` and `BrickPavementGenerator` is a live `TunablePanel` slider/dropdown,
-## wired over the SAME `param_channel`/`ws://` transport the underground scene already proved out
-## (DQ-0343912a, Wavelet PR #910's protocol, `tools/param_channel_client.gd`) -- so the browser knob
-## panel / cross-window tuning convention Just Works here too, zero new transport.
+## `StreetGridScaffold`, `BrickPavementGenerator`, AND (as of this lane) `BrickWallGenerator` is a
+## live `TunablePanel` slider/dropdown, wired over the SAME `param_channel`/`ws://` transport the
+## underground scene already proved out (DQ-0343912a, Wavelet PR #910's protocol,
+## `tools/param_channel_client.gd`) -- so the browser knob panel / cross-window tuning convention
+## Just Works here too, zero new transport. Wall param keys are prefixed `wall_` to avoid colliding
+## with the pavement generator's own same-named params (both nodes independently expose
+## `seed_handle`/`seed`/`mortar_gap`).
 ##
 ## Launch modes (same shape as underground_wave6_proof.gd, this corpus's own established pattern):
 ##   <godot> --path godot res://brick_street_pavement_proof.tscn -- --shot
@@ -37,6 +42,11 @@ const PARAM_STATE_OUT := "res://live/brick_street_param_state.json"
 
 const HERRINGBONE_SEED := "res://assets/paver_exemplars/herringbone_2brick.json"
 const RUNNING_BOND_SEED := "res://assets/paver_exemplars/running_bond_1brick.json"
+
+const WALL_RUNNING_SEED := "res://assets/wall_exemplars/running_bond_wall.json"
+const WALL_COMMON_SEED := "res://assets/wall_exemplars/common_bond_wall.json"
+const WALL_FLEMISH_SEED := "res://assets/wall_exemplars/flemish_bond_wall.json"
+const WALL_STACK_TSCN_SEED := "res://assets/wall_exemplars/stack_bond_wall_exemplar.tscn"
 
 const WORLD_SEED := 2026
 const CHUNK_COORD := Vector2i(0, 0)
@@ -141,6 +151,23 @@ func _param_specs() -> Array:
 		{"key": "binder_thickness", "label": "binder layer thickness (m)", "type": "float", "min": 0.0, "max": 0.08, "step": 0.005, "default": 0.03},
 		{"key": "bedding_thickness", "label": "bedding sand thickness (m)", "type": "float", "min": 0.005, "max": 0.06, "step": 0.005, "default": 0.025},
 		{"key": "brick_thickness", "label": "brick thickness (m)", "type": "float", "min": 0.02, "max": 0.08, "step": 0.005, "default": 0.05},
+		# ── BrickWallGenerator: facade physical seed / bond (DQ-e732faee) ──────────────────────────
+		{"key": "wall_seed_handle", "label": "wall bond (physical seed)", "type": "enum",
+			"options": [WALL_RUNNING_SEED, WALL_COMMON_SEED, WALL_FLEMISH_SEED, WALL_STACK_TSCN_SEED], "default": WALL_RUNNING_SEED},
+		{"key": "wall_seed", "label": "wall brick seed (weathering jitter)", "type": "int", "min": 0, "max": 9999, "step": 1, "default": 1},
+		{"key": "wall_mortar_gap", "label": "wall joint width (m)", "type": "float", "min": 0.0, "max": 0.02, "step": 0.0005, "default": 0.0095},
+		# ── BrickWallGenerator: facade geometry ─────────────────────────────────────────────────────
+		{"key": "wall_height", "label": "wall height (m)", "type": "float", "min": 1.5, "max": 12.0, "step": 0.1, "default": 3.3},
+		{"key": "wall_row_count", "label": "window rows (floors)", "type": "int", "min": 1, "max": 6, "step": 1, "default": 3},
+		{"key": "wall_window_width", "label": "window width (m)", "type": "float", "min": 0.5, "max": 2.5, "step": 0.05, "default": 1.1},
+		{"key": "wall_window_height", "label": "window height (m)", "type": "float", "min": 0.6, "max": 2.8, "step": 0.05, "default": 1.6},
+		{"key": "wall_window_spacing", "label": "window spacing (m)", "type": "float", "min": 0.3, "max": 4.0, "step": 0.05, "default": 1.5},
+		{"key": "wall_sill_height_above_floor", "label": "sill height above floor (m)", "type": "float", "min": 0.3, "max": 1.5, "step": 0.05, "default": 0.9},
+		{"key": "wall_ground_floor_door", "label": "ground-floor door", "type": "bool", "default": true},
+		{"key": "wall_door_width", "label": "door width (m)", "type": "float", "min": 0.7, "max": 1.8, "step": 0.05, "default": 1.0},
+		{"key": "wall_door_height", "label": "door height (m)", "type": "float", "min": 1.8, "max": 2.6, "step": 0.05, "default": 2.1},
+		{"key": "wall_lintel_overhang", "label": "lintel overhang (m)", "type": "float", "min": 0.0, "max": 0.3, "step": 0.01, "default": 0.1},
+		{"key": "wall_sill_projection", "label": "sill projection (m)", "type": "float", "min": 0.0, "max": 0.1, "step": 0.005, "default": 0.02},
 	]
 
 
@@ -210,10 +237,10 @@ func _build_camera() -> void:
 		# Closer/lower, angled along the street's length so the herringbone coursing, the crown's
 		# subtle center-rise, and both curb+gutter lines are all legible in one frame -- not just a
 		# high oblique that reduces the paving to a texture smudge.
-		var target := Vector3(6.0, 0.0, 5.0)
-		var cpos := Vector3(1.2, 1.15, 1.0)
+		var target := Vector3(8.944, 1.5, 9.156)
+		var cpos := target + Vector3(2.2, 0.1, 2.2)
 		cam.transform = Transform3D(Basis.looking_at(target - cpos, Vector3.UP), cpos)
-		cam.fov = 60.0
+		cam.fov = 45.0
 	else:
 		var target2 := Vector3(10.0, 0.0, 10.0)
 		var cpos2 := target2 + Vector3(11.0, 17.0, 11.0)
@@ -251,17 +278,43 @@ func _rebuild_geometry(t: Dictionary) -> void:
 	ground.material_override = ground_mat
 	_geometry_root.add_child(ground)
 
-	# lots: simple placeholder boxes (BrickWallGenerator, the facade generator, is a separate future
-	# increment per the plan's own node 4 -- not this lane's job)
-	var lot_mat := StandardMaterial3D.new()
-	lot_mat.albedo_color = Color(0.72, 0.6, 0.5)
+	# ── lots: REAL coursed brick walls (DQ-e732faee, this lane) -- replaces the prior placeholder
+	# box (StreetGridScaffold.lot_box_mesh) with BrickWallGenerator's researched facade coursing.
+	var wall_height: float = float(t.get("wall_height", 3.3))
+	var wall_params := {
+		"seed_handle": String(t.get("wall_seed_handle", WALL_RUNNING_SEED)),
+		"seed": int(t.get("wall_seed", 1)),
+		"mortar_gap": float(t.get("wall_mortar_gap", 0.0095)),
+		"row_count": int(t.get("wall_row_count", 3)),
+		"window_width": float(t.get("wall_window_width", 1.1)),
+		"window_height": float(t.get("wall_window_height", 1.6)),
+		"window_spacing": float(t.get("wall_window_spacing", 1.5)),
+		"sill_height_above_floor": float(t.get("wall_sill_height_above_floor", 0.9)),
+		"ground_floor_door": bool(t.get("wall_ground_floor_door", true)),
+		"door_width": float(t.get("wall_door_width", 1.0)),
+		"door_height": float(t.get("wall_door_height", 2.1)),
+		"lintel_overhang": float(t.get("wall_lintel_overhang", 0.1)),
+		"sill_projection": float(t.get("wall_sill_projection", 0.02)),
+	}
+	var total_wall_bricks := 0
 	for f in building_footprints:
-		var mesh := StreetGridScaffold.lot_box_mesh(f, 3.0, 0.0)
-		var mi := MeshInstance3D.new()
-		mi.mesh = mesh
-		mi.material_override = lot_mat
-		mi.position = StreetGridScaffold.lot_box_center(f, 3.0, 0.0)
-		_geometry_root.add_child(mi)
+		var rect: Rect2 = f["rect"]
+		var wresult := BrickWallGenerator.build(rect, wall_height, wall_params, 0.0)
+		for mmi in BrickWallGenerator.wall_multimeshes(wresult):
+			_geometry_root.add_child(mmi)
+		for g in (wresult["brick_groups"] as Array):
+			total_wall_bricks += (g["transforms"] as Array).size()
+		# a thin roof cap so each building reads as an enclosed volume from above/oblique angles,
+		# not an open shell -- simple flat placeholder, not this lane's research scope.
+		var roof := MeshInstance3D.new()
+		var roof_mesh := BoxMesh.new()
+		roof_mesh.size = Vector3(maxf(0.01, rect.size.x), 0.15, maxf(0.01, rect.size.y))
+		roof.mesh = roof_mesh
+		var roof_mat := StandardMaterial3D.new()
+		roof_mat.albedo_color = Color(0.32, 0.28, 0.26)
+		roof.material_override = roof_mat
+		roof.position = Vector3(rect.get_center().x, wall_height + 0.075, rect.get_center().y)
+		_geometry_root.add_child(roof)
 
 	# ── the real deliverable: every street strip gets a full researched construction stack ─────────
 	var pave_params := {
@@ -305,8 +358,8 @@ func _rebuild_geometry(t: Dictionary) -> void:
 		_geometry_root.add_child(mmi)
 		total_pavers += (result["paver_transforms"] as Array).size()
 
-	print("[brick_street_pavement_proof] rebuilt: %d lots, %d street strips, %d real brick pavers placed (pattern=%s)" %
-		[building_footprints.size(), street_polygon.size(), total_pavers, pave_params["seed_handle"]])
+	print("[brick_street_pavement_proof] rebuilt: %d lots (%d facade bricks, wall bond=%s), %d street strips, %d real brick pavers placed (paving pattern=%s)" %
+		[building_footprints.size(), total_wall_bricks, wall_params["seed_handle"], street_polygon.size(), total_pavers, pave_params["seed_handle"]])
 
 
 func _process(delta: float) -> void:
