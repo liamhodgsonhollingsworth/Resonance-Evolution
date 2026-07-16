@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://brick_street_pavement_proof.gd" id="1_brick_street_pavement_proof"]
+
+[node name="BrickStreetPavementProof" type="Node3D"]
+script = ExtResource("1_brick_street_pavement_proof")
