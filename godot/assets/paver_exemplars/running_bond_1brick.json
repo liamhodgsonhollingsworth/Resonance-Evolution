@@ -1,0 +1,11 @@
+{
+  "_comment": "Physical-seed exemplar for BrickPavementGenerator: running/stretcher bond -- each course offset by half a brick length from the one below. This is the SAME bond BrickWallGenerator's plan (notes/planning/brick_street_scene_plan_2026_07_14.md sec2.3/sec4 node 4) already specs for wall facades, offered here as an alternate pedestrian-area PAVEMENT mode (sidewalks/plazas in the reference image, not the vehicular street itself, which defaults to herringbone -- notes/research/brick_street_construction_methods_2026_07_16.md sec2). Real paver ratio: length = 2 x width, brick_width=0.1m / brick_length=0.2m, matching the herringbone exemplar's scale so swapping the seed_handle mid-scene never changes the physical brick size, only the arrangement.",
+  "_verification": "Single-brick unit cell, lattice_a=(brick_length,0) (repeat along a course), lattice_b=(brick_length/2, brick_width) (each course up shifts by half a brick length) -- the textbook running-bond construction, confirmed gap-free/overlap-free at 100.0000% coverage by the same raster verification method as the herringbone exemplar.",
+  "brick_width": 0.1,
+  "brick_length": 0.2,
+  "members": [
+    {"offset": [0.0, 0.0], "rotation_deg": 0, "brick_id": "h1"}
+  ],
+  "lattice_a": [0.2, 0.0],
+  "lattice_b": [0.1, 0.1]
+}
